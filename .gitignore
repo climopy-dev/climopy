@@ -19,11 +19,10 @@ notes*
 __trash__
 __pycache__
 
-# Miscellaneous #
-#################
-send2trash
+# Miscellaneous
+# Ignore notebooks for now
 *.ipynb
-    # ignore python notebooks; these are for playing around
+send2trash
 
 # Compiled source #
 ###################

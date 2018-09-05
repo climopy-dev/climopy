@@ -1,5 +1,6 @@
+#!/usr/bin/env python3
 #------------------------------------------------------------------------------#
-# For now just load everything in tools.py
-# Need to break it up!
+# This makes package locally importable, as long as
+# this directory is on PYTHONPATH.
 #------------------------------------------------------------------------------#
-from .all import *
+from .atmosdata import *
