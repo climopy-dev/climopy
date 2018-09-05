@@ -3,4 +3,4 @@
 # This makes package locally importable, as long as
 # this directory is on PYTHONPATH.
 #------------------------------------------------------------------------------#
-from .atmosdata import *
+from .climpy import *

@@ -3,13 +3,13 @@ from setuptools import setup
 # https://stackoverflow.com/a/1857436/4970632
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
-    name         = 'AtmosData',
-    url          = 'https://github.com/lukelbd/atmosdata',
+    name         = 'ClimPy',
+    url          = 'https://github.com/lukelbd/climpy',
     author       = 'Luke Davis',
     author_email = 'lukelbd@gmail.com',
     # Package stuff
     # Also include package data
-    packages     = ['atmosdata'],
+    packages     = ['climpy'],
     # Needed for dependencies
     install_requires = ['numpy', 'matplotlib', 'xarray', 'scipy'],
     # *Strongly* suggested for sharing
