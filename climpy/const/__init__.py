@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Implement constants as *submodule*, so the
-# analysis functions can call 'import const'
-# and you can call 'from pubplot import const'
+# Implement constants as *submodule*
+# Reinforce this by keeping this file in subfolder
 from .const import *
