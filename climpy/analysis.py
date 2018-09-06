@@ -7,7 +7,7 @@ import numpy as np
 import scipy.signal as signal
 import scipy.stats as stats
 import scipy.optimize as optimize
-import const
+from . import const # as its own module
 from .base import *
 
 #------------------------------------------------------------------------------
