@@ -1,80 +1,64 @@
 #!/usr/bin/env python3
+"""
+Various geographic utilities. Includes calculus on spherical geometry
+and some other stuff. Padding arrays and whatnot.
+"""
 import numpy as np
-#------------------------------------------------------------------------------#
-# Geographic utilities
-#------------------------------------------------------------------------------#
-# Handy functions in degrees
-def sin(x):
-    return np.sin(x*np.pi/180)
-def cos(x):
-    return np.cos(x*np.pi/180)
-def tan(x):
-    return np.tan(x*np.pi/180)
-def arcsin(x):
-    return np.arcsin(x)*180/np.pi
-def arccos(x):
-    return np.arccos(x)*180/np.pi
-def arctan(x):
-    return np.arctan(x)*180/np.pi
+from . import const
 
-#------------------------------------------------------------------------------#
-# Basic
-#------------------------------------------------------------------------------#
-class Properties():
+# Helper class
+class GridProperties():
     """
     For storing latitude/longitude grid properties. Assumes global grid, and
     borders halfway between each grid center.
     """
     def __init__(self, lon, lat):
         # First, guess cell widths and edges
-        dlon1, dlon2, dlat1, dlat2 = lon[1]-lon[0], lon[-1]-lon[-2], lat[1]-lat[0], lat[-1]-lat[-2]
+        lon, lat = lon.astype(np.float32), lat.astype(np.float32)
+        dlon1, dlon2 = lon[1]-lon[0], lon[-1]-lon[-2]
+        dlat1, dlat2 = lat[1]-lat[0], lat[-1]-lat[-2]
         self.latb = np.concatenate((lat[:1]-dlat1/2, (lat[1:]+lat[:-1])/2, lat[-1:]+dlat2/2))
         self.lonb = np.concatenate((lon[:1]-dlon1/2, (lon[1:]+lon[:-1])/2, lon[-1:]+dlon2/2))
-
-        # Cell centers
         self.latc, self.lonc = lat.copy(), lon.copy()
 
-        # Corrections
-        # Switch
-        has90 = True if lat[-1]==90 else False
-        hasm90 = True if lat[0]==-90 else False # need these switches later
         # Use corrections for dumb grids with 'centers' at poles
-        if hasm90:
-            self.latc[0], self.latb[0] = -90+dlat1/4, -90
-        if has90:
-            self.latc[-1], self.latb[-1] = 90-dlat2/4, 90
+        if lat[0]==-90:
+            self.latc[0], self.latb[0] = -90 + dlat1/4, -90
+        if lat[-1]==90:
+            self.latc[-1], self.latb[-1] = 90 - dlat2/4, 90
+
         # Corrected grid widths (cells half as tall near pole)
         self.dlon = self.lonb[1:]-self.lonb[:-1]
         self.dlat = self.latb[1:]-self.latb[:-1]
-        if hasm90:
+        if lat[0]==-90:
             self.dlat[0] /= 2
-        if has90:
+        if lat[-1]==90:
             self.dlat[-1] /= 2
 
-        # Theta/phi coordinates
+        # Radians
         self.phic, self.phib, self.dphi = self.latc*np.pi/180, self.latb*np.pi/180, self.dlat*np.pi/180
         self.thetac, self.thetab, self.dtheta = self.lonc*np.pi/180, self.lonb*np.pi/180, self.dlon*np.pi/180
 
         # Area weights (function of latitude only)
         # Includes the latitude correction
+        # Close approximation to area; cosine is extremely accurate
+        # Also make lon by lat, so broadcasting rules can apply
         self.weights = self.dphi[None,:]*self.dtheta[:,None]*np.cos(self.phic[None,:])
         self.areas = self.dphi[None,:]*self.dtheta[:,None]*np.cos(self.phic[None,:])*(const.a**2)
         # areas = dphi*dtheta*np.cos(phic)*(const.a**2)[None,:]
-            # close approximation to area; cosine is extremely accurate
-            # make lon by lat, so broadcasting rules can apply
 
     def __repr__(self): # what happens when viewing in interactive session
         # if __str__ not set (the print() result), will use __repr__
         n = 3
-        return "Properties of grid latitudes/longitudes.\n"\
-        f"Lat centers (latc): {', '.join(f'{self.latc[i]:.2f}' for i in range(n))}, ... {self.latc[-1]:.2f}\n"\
-        f"Lat borders (latb): {', '.join(f'{self.latb[i]:.2f}' for i in range(n))}, ... {self.latb[-1]:.2f}\n"\
-        f"Lat widths (dlat): {', '.join(f'{self.dlat[i]:.2f}' for i in range(n))}, ... {self.dlat[-1]:.2f}\n"\
-        f"Lon centers (lonc): {', '.join(f'{self.lonc[i]:.2f}' for i in range(n))}, ... {self.lonc[-1]:.2f}\n"\
-        f"Lon borders (lonb): {', '.join(f'{self.lonb[i]:.2f}' for i in range(n))}, ... {self.lonb[-1]:.2f}\n"\
-        f"Lon widths (dlon): {', '.join(f'{self.dlon[i]:.2f}' for i in range(n))}, ... {self.dlon[-1]:.2f}\n"\
-        "Coordinates in radians also provided (lat=phi, lon=theta).\n"\
-        "Approximate grid cell areas also provided (longitude x latitude)."
+        return \
+        f"Lat centers (latc): {', '.join(f'{self.latc[i]: 7.2f}' for i in range(n))}, ... {self.latc[-1]: .2f}\n"\
+        f"Lat borders (latb): {', '.join(f'{self.latb[i]: 7.2f}' for i in range(n))}, ... {self.latb[-1]: .2f}\n"\
+        f"Lat widths  (dlat): {', '.join(f'{self.dlat[i]: 7.2f}' for i in range(n))}, ... {self.dlat[-1]: .2f}\n"\
+        f"Lon centers (lonc): {', '.join(f'{self.lonc[i]: 7.2f}' for i in range(n))}, ... {self.lonc[-1]: .2f}\n"\
+        f"Lon borders (lonb): {', '.join(f'{self.lonb[i]: 7.2f}' for i in range(n))}, ... {self.lonb[-1]: .2f}\n"\
+        f"Lon widths  (dlon): {', '.join(f'{self.dlon[i]: 7.2f}' for i in range(n))}, ... {self.dlon[-1]: .2f}\n"\
+        "For radians replace 'lat' with 'phi', 'lon' with 'theta'.\n"\
+        "For grid cell areas see 'areas'."
 
 def geopad(lon, lat, data, nlon=1, nlat=0):
     """
@@ -190,16 +174,14 @@ def haversine(lon1, lat1, lon2, lat2):
         ))
     return km
 
-#------------------------------------------------------------------------------#
-# Calculus
-#------------------------------------------------------------------------------#
 def laplacian(lon, lat, data, accuracy=4):
     """
     Get Laplacian over geographic grid.
     Input is longitude, latitude, and data in any units.
-    Equation: del^2 = (1/a^2*cos^2(phi))(d/dtheta)^2 +
-                (1/a^2*cos(phi))(d/dphi)(cos(phi)*d/dphi)
-        This is the geographic coordinate version.
+    Equation: del^2 =
+        (1/a^2*cos^2(phi)) * (d/dtheta)^2
+        + (1/a^2*cos(phi))   * (d/dphi)(cos(phi)*d/dphi)
+    This is the geographic coordinate version.
     """
     # Setup
     npad = accuracy//2 # need +/-1 for O(h^2) approx, +/-2 for O(h^4), etc.

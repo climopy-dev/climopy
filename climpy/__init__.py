@@ -5,11 +5,12 @@
 # giant 5,000-line single file
 #------------------------------------------------------------------------------#
 name = 'ClimPy'
-from . import const     # separate submodule
-from .analysis import * # statistical and objective analysis stuff
-from .geocalc import *  # geography related stuff
-from .diff import *     # finite differencing
-from .data import *     # data input/output, downloading
-from .misc import *     # misc tools
-from .params import *   # parameter calculations
+from . import const      # separate submodule
+from . import waq        # wave-activity related stuff, pretty specific
+from .diff import *      # finite differencing
+from .oa import *        # statistical and objective analysis stuff
+from .ncio import *      # data input/output
+from .downloads import * # downloading data
+from .geotools import *  # geography related stuff
+from .misctools import * # misc tools
 

@@ -8,19 +8,10 @@ import xarray as xr
 import scipy.signal as signal
 import scipy.stats as stats
 import time as T # have some big algorithms here; want to guage how long they take
-from . import const
+from ..arraytools import *
+from .. import geotools
+from .. import const
 
-#------------------------------------------------------------------------------#
-# Cross-section and zonal-mean parameters
-# Perhaps should always rely in XArray objects
-# TODO: Put stuff here from timescales experiment.
-#------------------------------------------------------------------------------#
-
-#------------------------------------------------------------------------------
-# TODO: Physical meteorological quantities
-# This sections is *very limited*, and should consider deleting it
-# Should probably be replaced with *climate.py* stuff
-#------------------------------------------------------------------------------
 def pt(lev, T, axis=2):
     """
     Get potential temperature from T; by default, assume the height dimension
@@ -49,10 +40,10 @@ def absvo(lat, Zeta):
 def pv(lat, theta, P, Zeta, uneven=True):
     """
     Gets Ertel's PV on theta-surface, from the pressure level info and
-    vorticity... note theta should be in K.
-    Returns...
-        * absolute vorticity, the numerator
-        * mass factor sigma, the denominator
+    vorticity. Note theta should be in K.
+    Returns:
+      * absolute vorticity, the numerator
+      * mass factor sigma, the denominator
     To get PV yourself, just divide them, but might need components.
     Already provided by ERA-Interim.
     """
@@ -81,8 +72,8 @@ def qgpv(lon, lat, lev, TT, Phi,
         If the former, input geopotential heights in m;
         If the latter, input geopotential (NOT heights, actual geopotential)
     Equation: qg = f + zeta + (f/rho0)(d/dz)(rho0*(theta-thetabar)/(d/dz)thetabar)
-    REDUCES HEIGHT DIMENSION LENGTH BY 4, PRESERVES LON/LAT DIMENSIONS BY WRAPPING; RETURNS
-    ADJUSTED METADATA.
+    Reduces height dimension length by 4, preserves lon/lat dimensions by wrapping.
+    Returns adjusted metadata.
 
     * Note that, with Z = -Hln(p/p0), have dZ = -H(p0/p)(dp/p0) = -Hd(ln(p)) simply
     log-derivative in height, so the (d/dz)'s in the right-hand term cancel.
@@ -162,27 +153,30 @@ def qgpv(lon, lat, lev, TT, Phi,
 def eqlat(lon, lat, q, skip=10, sigma=None, fix=False): #n=1001, skip=10):
     """
     Get series of equivalent latitudes corresponding to PV levels evenly
-    sampled from distribution of sorted PVs. Solves the equation...
+    sampled from distribution of sorted PVs. Solves the equation:
+
         Area == integral_(-pi/2)^x a^2*2*pi*cos(phi) dphi
-    ...which is the area occupied by PV zonalized below a given contour.
+
+    which is the area occupied by PV zonalized below a given contour.
+
     Returns:
         * band, the equivalent latitude
         * qband, its associated Q threshold
         * w, grid weights (for future use)
     """
     # Initial stuff
-    areas = Properties(lon, lat).areas
-        # delivers grid areas, as function of latitude
+    # Delivers grid areas, as function of latitude
+    areas = geotools.GridProperties(lon, lat).areas
 
     # Flatten
-    q, shape = _flatten(q, end=2) # gives current q, and former shape
+    q, shape = lead_flatten(q, 2) # gives current q, and former shape
 
     # And consider mass-weighting this stuff
     if sigma is not None:
-        mass = _flatten(sigma, end=2)*areas[...,None]
-            # note that at least singleton dimension is added
+        # Note that at least singleton dimension is added
+        mass = lead_flatten(sigma, 2)*areas[...,None]
+        # Get cumulative mass from pole
         masscum = mass.cumsum(axis=1).sum(axis=0, keepdims=True)
-            # cumulative mass from pole
 
     # Determing Q contour values for evaluating eqlat (no interpolation; too slow)
     K = q.shape[-1] # number of extra dims
@@ -210,13 +204,13 @@ def eqlat(lon, lat, q, skip=10, sigma=None, fix=False): #n=1001, skip=10):
                 bands[0,n,k] = np.interp(mass, masscumk, lat) # simple interpolation to one point
 
     # Reshape, and return
-    return _unflatten(bands, shape, end=2), _unflatten(q_bands, shape, end=2)
+    return lead_unflatten(bands, shape, 2), lead_unflatten(q_bands, shape, 2)
 
 def waqlocal(lon, lat, q,
         nh=True, skip=10):
     """
     Get local wave activity measure.
-    Input...
+    Input:
         * lon, grid longitudes
         * lat, grid latitudes
         * q, the PV stuff
@@ -226,12 +220,12 @@ def waqlocal(lon, lat, q,
     if nh:
         lat, q = -np.flipud(lat), -np.flip(q, axis=1)
             # negated q, so monotonically increasing "northward"
-    grid = Properties(lon, lat)
+    grid = geotools.GridProperties(lon, lat)
     areas, dphi, phib = grid.areas, grid.dphi, grid.phib
     integral = const.a*phib[None,:]
 
     # Flatten (eqlat can do this, but not necessary here)
-    q, shape = _flatten(q, end=2) # flatten
+    q, shape = lead_flatten(q, 2)
 
     # Get equivalent latiitudes
     bands, q_bands = eqlat(lon, lat, q, skip=skip) # note w is just lonbylat
@@ -242,7 +236,7 @@ def waqlocal(lon, lat, q,
     percent = 0
     for k in range(K):
         if (k/K)>(.01*percent):
-            print('%d%% finished...' % (100*k/K,))
+            print('%d%% finished' % (100*k/K,))
             percent = percent+10
         # Loop through each contour
         waq_k = np.empty((L,N))
@@ -280,20 +274,20 @@ def waqlocal(lon, lat, q,
 
     # Return
     if nh: waq = np.flip(waq, axis=1)
-    return _unflatten(waq, shape)
+    return lead_unflatten(waq, shape)
 
 def waq(lon, lat, q, sigma=None, omega=None,
         nh=True, skip=10): #, ignore=None): #N=1001, ignore=None):
     """
     Get finite-amplitude wave activity.
-    Input...
-        * lon, grid longitudes
-        * lat, grid latitudes
-        * q, the PV quantity
-        * sigma (optional), the instability
-        * omega (optional), the quantity being integrated; note the isentropic mass equation
-        * skip, the interval of sorted q you choose (passed to eqlat)
-        * nh (bool)
+    Input:
+      * lon, grid longitudes
+      * lat, grid latitudes
+      * q, the PV quantity
+      * sigma (optional), the instability
+      * omega (optional), the quantity being integrated; note the isentropic mass equation
+      * skip, the interval of sorted q you choose (passed to eqlat)
+      * nh (bool)
     """
     # Grid considerations
     if nh:
@@ -301,13 +295,13 @@ def waq(lon, lat, q, sigma=None, omega=None,
         if omega is not None: omega = -np.flip(omega, axis=1)
         if sigma is not None: sigma = np.flipd(sigma, axis=1)
         # negated q/omega, so monotonically increasing "northward"
-    grid = Properties(lon, lat)
+    grid = geotools.GridProperties(lon, lat)
     areas, dphi, phib = grid.areas, grid.dphi, grid.phib
 
     # Flatten (eqlat can do this, but not necessary here)
-    q, shape = _flatten(q, end=2) # flatten
-    if omega is not None: omega, _ = _flatten(omega, end=2) # flatten
-    if sigma is not None: sigma, _ = _flatten(sigma, end=2)
+    q, shape = lead_flatten(q, 2)
+    if omega is not None: omega, _ = lead_flatten(omega, 2)
+    if sigma is not None: sigma, _ = lead_flatten(sigma, 2)
 
     # Get equivalent latiitudes
     bands, q_bands = eqlat(lon, lat, q, sigma=sigma, skip=skip) # note w is just lonbylat
@@ -319,7 +313,7 @@ def waq(lon, lat, q, sigma=None, omega=None,
     percent = 0
     for k in range(K):
         if (k/K)>(.01*percent):
-            print('%d%% finished...' % (percent,))
+            print('%d%% finished' % (percent,))
             percent = percent+10
         # Loop through each contour
         waq_k = np.empty(N)
@@ -369,5 +363,5 @@ def waq(lon, lat, q, sigma=None, omega=None,
 
     # Return
     if nh: waq = np.flip(waq, axis=1)
-    return _unflatten(waq, shape)
+    return lead_unflatten(waq, shape)
 
