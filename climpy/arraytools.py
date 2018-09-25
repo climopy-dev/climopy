@@ -2,6 +2,7 @@
 """
 Includes several helper/base functions shared by other tools.
 """
+import numpy as np
 def trail_flatten(data, nflat):
     """
     Flatten *trailing* dimensions onto single dimension (useful).

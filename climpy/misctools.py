@@ -3,8 +3,12 @@
 Includes miscelaneous useful functions.
 """
 import numpy as np
-from .base import *
+from itertools import zip_longest
+from .arraytools import *
 
+################################################################################
+# Time handling stuff
+################################################################################
 def year(dt):
     """
     Gets year from numpy datetime object (used e.g. by xarray, pandas).
@@ -21,6 +25,25 @@ def month(dt):
     # Below will convert datetime64 units from [ns] (default) to months, then spit out months relative to year
     # UNIX time starts at 1970-01-01 00:00:00
     return dt.astype('datetime64[M]').astype(np.int32)%12 + 1
+
+################################################################################
+# Random vector stuff
+# Doesn't really fit 'theme' of climpy but whatevs
+################################################################################
+def zip(*iterables):
+    """
+    Special kind of zip that fails when iterators not same length.
+    See: https://stackoverflow.com/a/32954700/4970632
+    For purpose of object() see: https://stackoverflow.com/a/28306434/4970632
+    """
+    sentinel = object() # filler object; point is, will always be unique!
+    for combo in zip_longest(*iterables, fillvalue=sentinel):
+        # if sentinel in combo:
+        if any(sentinel is c for c in combo):
+            print(combo)
+            raise ValueError('Iterables have different lengths: '
+                f'{", ".join(str(len(i)) for i in iterables)}.')
+        yield combo
 
 def match(*args):
     """

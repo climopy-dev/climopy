@@ -1,0 +1,17 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.8	//
+intersection	/home/ldavis/climpy/climpy/misctools.py	/^def intersection(x, segment1, segment2, xlog=False):$/;"	f
+match	/home/ldavis/climpy/climpy/misctools.py	/^def match(*args):$/;"	f
+month	/home/ldavis/climpy/climpy/misctools.py	/^def month(dt):$/;"	f
+np	/home/ldavis/climpy/climpy/misctools.py	/^import numpy as np$/;"	i
+rolling	/home/ldavis/climpy/climpy/misctools.py	/^def rolling(data, window=5, axis=-1):$/;"	f
+roots	/home/ldavis/climpy/climpy/misctools.py	/^def roots(poly):$/;"	f
+running	/home/ldavis/climpy/climpy/misctools.py	/^def running(*args, **kwargs):$/;"	f
+slope	/home/ldavis/climpy/climpy/misctools.py	/^def slope(x, y, axis=-1):$/;"	f
+year	/home/ldavis/climpy/climpy/misctools.py	/^def year(dt):$/;"	f
+zip	/home/ldavis/climpy/climpy/misctools.py	/^def zip(*iterables):$/;"	f
+zip_longest	/home/ldavis/climpy/climpy/misctools.py	/^from itertools import zip_longest$/;"	i

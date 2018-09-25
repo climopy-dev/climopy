@@ -103,12 +103,12 @@ def nc(filename, param, lonmin=0, times=None, lons=None, lats=None, levs=None, *
 # ERA-interim
 #-------------------------------------------------------------------------------
 def eraint(params, stream, levtype,
-        daterange=None, yearrange=None, monthrange=None, dayrange=None,
-        years=None, months=None, # can specify list
-        levrange=None, levs=None,
-        hours=(0,6,12,18), hour=None,
-        res=1.0, box=None,
-        filename='eraint.nc'):
+    daterange=None, yearrange=None, monthrange=None, dayrange=None,
+    years=None, months=None, # can specify list
+    levrange=None, levs=None,
+    hours=(0,6,12,18), hour=None,
+    res=1.0, box=None,
+    filename='eraint.nc'):
     """
     Retrieves ERA-Interim DATA using the provided API. User MUST have, in home
     directory, a file named '.ecmwfapirc'; see API documentation, but should look like:

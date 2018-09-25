@@ -9,7 +9,7 @@ from . import const     # separate submodule
 from .analysis import * # statistical and objective analysis stuff
 from .geocalc import *  # geography related stuff
 from .diff import *     # finite differencing
-from .data import *     # data input/output, downloading
-from .misc import *     # misc tools
+from .io import *       # data input/output, downloading
+from .misctools import *     # misc tools
 from .params import *   # parameter calculations
 

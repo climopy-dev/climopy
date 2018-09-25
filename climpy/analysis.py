@@ -8,7 +8,7 @@ import scipy.signal as signal
 import scipy.stats as stats
 import scipy.optimize as optimize
 from . import const # as its own module
-from .base import *
+from .arraytools import *
 
 #------------------------------------------------------------------------------
 # Statistics

@@ -3,7 +3,7 @@
 Includes various finite difference schemes.
 """
 import numpy as np
-from .base import *
+from .arraytools import *
 
 # def derivl(h, y, axis=0, accuracy=2, keepedges=True):
 #     """
