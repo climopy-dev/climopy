@@ -24,8 +24,8 @@ from scipy import stats
 #from numpy import genfromtxt
 #from mpl_toolkits.basemap import Basemap
 
-import general_functions as gf
-reload(gf)
+# import general_functions as gf
+# reload(gf)
 
 
 #scipy.linalg
@@ -33,7 +33,7 @@ reload(gf)
 #.............................................
 # PLOTTING COMMANDS
 #.............................................
-gf.cc()
+# gf.cc()
 plt.ion()
 #%matplotlib inline
 #%matplotlib qt
@@ -69,15 +69,15 @@ for k in np.arange(0,num_iters):
 
 win_rect = np.ones(chunk_length,)
 
-Pxx_HO = np.empty((num_iters,chunk_length/2+1), dtype=np.complex_)
-Pxx_H = np.empty((num_iters,chunk_length/2+1), dtype=np.complex_)
+Pxx_HO = np.empty((num_iters,chunk_length//2+1), dtype=np.complex_)
+Pxx_H = np.empty((num_iters,chunk_length//2+1), dtype=np.complex_)
 
 for k in np.arange(0,num_iters):
     F, pxx = sig.csd(xa[k,:], xa[k,:], window = 'hann', noverlap = 0, nperseg = chunk_length,\
                      nfft = np.size(xa,1)/float(num_chunks), scaling = 'density', detrend = False)
     Pxx_H[k,:] = np.abs(pxx)/np.sum(np.abs(pxx))
 
-    F, pxx = sig.csd(xa[k,:], xa[k,:], window = 'hann', noverlap = chunk_length/2, nperseg = chunk_length, \
+    F, pxx = sig.csd(xa[k,:], xa[k,:], window = 'hann', noverlap = chunk_length//2, nperseg = chunk_length, \
                      nfft = np.size(xa,1)/float(num_chunks), scaling = 'density', detrend = False)
     Pxx_HO[k,:] = np.abs(pxx)/np.sum(np.abs(pxx))
     
@@ -88,7 +88,8 @@ for k in np.arange(0,num_iters):
 plot_Power = Pxx_HO
 plot_Power_upper = np.percentile(plot_Power,95,axis=0)
 
-gf.cfig(20)
+plt.figure()
+# gf.cfig(20)
 for k in np.arange(0,num_iters):
     plt.plot(F,plot_Power[k,:],linewidth = .5, color = 'gray')
 
@@ -102,9 +103,9 @@ plt.title('Hanning + overlap')
 #--------------------------------------------------
 # calculate and plot red-noise fit
 N = chunk_length
-h = np.arange(0,N/2+1)
+h = np.arange(0,N//2+1)
 Te = -1./np.log(alpha)
-rnoise = (1.-alpha**2)/(1.-2.*alpha*np.cos(h*np.pi/(N/2.))+alpha**2)
+rnoise = (1.-alpha**2)/(1.-2.*alpha*np.cos(h*np.pi/(N//2.))+alpha**2)
 
 rnoise = rnoise/np.sum(rnoise)
 
@@ -114,9 +115,10 @@ dof = 1.2*(2.*(num_chunks*2.-1.))  #for 50% overlap    #2*2.8*num_chunks*chunk_l
 fst = stats.f.ppf(.95,dof,1000)
 spec99 = fst*rnoise
 plt.plot(F,spec99,'--',color = 'r', label = '95% conf. bound')
+plt.legend()
 #--------------------------------------------------
 
-gf.show_plot()
+# gf.show_plot()
 #==============================================================================
 
 #==============================================================================
@@ -124,7 +126,8 @@ gf.show_plot()
 plot_Power = Pxx_H
 plot_Power_upper = np.percentile(plot_Power,95,axis=0)
 
-gf.cfig(30)
+plt.figure()
+# gf.cfig(30)
 for k in np.arange(0,num_iters):
     plt.plot(F,plot_Power[k,:],linewidth = .5, color = 'gray')
 
@@ -138,9 +141,9 @@ plt.title('Hanning only')
 #--------------------------------------------------
 # calculate and plot red-noise fit
 N = chunk_length
-h = np.arange(0,N/2+1)
+h = np.arange(0,N//2+1)
 Te = -1./np.log(alpha)
-rnoise = (1.-alpha**2)/(1.-2.*alpha*np.cos(h*np.pi/(N/2.))+alpha**2)
+rnoise = (1.-alpha**2)/(1.-2.*alpha*np.cos(h*np.pi/(N//2.))+alpha**2)
 
 rnoise = rnoise/np.sum(rnoise)
 
@@ -150,10 +153,11 @@ dof = (2.*num_chunks)*1.2
 fst = stats.f.ppf(.95,dof,1000)
 spec99 = fst*rnoise
 plt.plot(F,spec99,'--',color = 'r', label = '95% conf. bound')
+plt.legend()
 
 #--------------------------------------------------
 
-gf.show_plot()
+# gf.show_plot()
 #==============================================================================
 
 #%% checking the variance compared to the total variance in our spectrum

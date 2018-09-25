@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 #import matplotlib.mlab as mlab
 #import scipy.signal as sig
 #from scipy import stats
+import os
 import scipy.io as sio
 #from scipy import interpolate
 #import numpy.ma as ma
@@ -41,7 +42,8 @@ plt.ion()
 
 
 #%% START CODE
-DATA = sio.loadmat('mslp_erainterim_daily_33N_170E.mat')
+d = os.path.dirname(__file__)
+DATA = sio.loadmat(d + '/mslp_erainterim_daily_33N_170E.mat')
 X = DATA['Xin']
 TIME = DATA['TIME']
 

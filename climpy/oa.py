@@ -80,13 +80,17 @@ def rednoise(ntime, a, init=[-1,1], samples=1, mean=0, stdev=1, nested=False):
         data = data.squeeze()
     return mean + stdev*data # rescale to have specified stdeviation/mean
 
-def waves(x, wavelens, phase=None, samples=1):
+def waves(x, wavenums=None, wavelens=None, phase=None):
     """
     Compose array of sine waves.
     Useful for testing performance of filters.
     Input:
-        x: iterable or scalar, in which case 'x' is np.arange(0,x)
+        x: if scalar, 'x' is np.arange(0,x)
+           if iterable, can be n-dimensional, and will calculate sine
+           from coordinates on every dimension
+    Required kwarg -- either of:
         wavelens: wavelengths for sine function
+        wavenums: wavenumbers for sine function
     Output:
         data: data composed of waves.
     Notes:
@@ -95,23 +99,22 @@ def waves(x, wavelens, phase=None, samples=1):
       * this make sense because when working with filters, almost
         always need to use units corresponding to axis.
     """
-    samples = np.atleast_1d(samples)
-    wavelens = np.atleast_1d(wavelens)
+    # Wavelengths
+    if wavenums is None and wavelens is None:
+        raise ValueError('Must declare wavenums or wavelengths.')
+    elif wavelens is not None:
+        wavenums = 1.0/np.atleast_1d(wavelens)
+    wavenums = np.atleast_1d(wavenums)
     if not hasattr(x, '__iter__'):
         x = np.arange(x)
-    data = np.zeros((len(x),*samples)) # user can make N-D array
-    data, shape = trail_flatten(data)
+    data = np.zeros(x.shape) # user can make N-D array
     # Get waves
-    for i in range(data.shape[-1]):
-        if phase is None:
-            phis = np.random.uniform(0,2*np.pi,len(wavelens))
-        else:
-            phis = phase*np.ones([len(wavelens)])
-        for wavelen,phi in zip(wavelens,phis):
-            data[:,i] += np.sin(2*np.pi*(x/wavelen) + phi)
-    data = trail_unflatten(data, shape)
-    if len(samples)==1 and samples[0]==1:
-        data = data.squeeze()
+    if phase is None:
+        phis = np.random.uniform(0,2*np.pi,len(wavenums))
+    else:
+        phis = phase*np.ones([len(wavenums)])
+    for wavenum,phi in zip(wavenums,phis):
+        data += np.sin(2*np.pi*wavenum*x + phi)
     return data
 
 #------------------------------------------------------------------------------#
@@ -133,6 +136,7 @@ def linefit(*args, axis=-1, build=False, stderr=False):
         y: regression params on axis 'axis', with offset at index 0,
            slope at index 1.
     """
+    # Perform regression
     # Polyfit can perform regressions on data with series in columns,
     # separate samples along rows.
     if len(args)==1:
@@ -145,18 +149,18 @@ def linefit(*args, axis=-1, build=False, stderr=False):
     y, shape = lead_flatten(permute(y, axis))
     z, v = np.polyfit(x, y.T, deg=1, cov=True)
     z = np.fliplr(z.T) # put a first, b next
+    # Prepare output
     if build:
         # Repalce regression dimension with best-fit line
         z = z[:,:1] + x*z[:,1:]
     elif stderr:
         # Replace the regression dimension with (slope, standard error)
-        f = z[:,:1] + x*z[:,1:] # build the best-fit
-        s = np.array(f.shape[:1])
         n = y.shape[1]
-        resid = y - f # get residual
+        s = np.array(z.shape[:1])
+        resid = y - (z[:,:1] + x*z[:,1:]) # residual
         mean = resid.mean(axis=1)
-        var = resid.var(axis=1)
-        rho = np.sum((resid[:,1:]-mean[:,None])*(resid[:,:-1]-mean[:,None]), axis=1)/((n-1)*var)
+        var  = resid.var(axis=1)
+        rho  = np.sum((resid[:,1:]-mean[:,None])*(resid[:,:-1]-mean[:,None]), axis=1)/((n-1)*var)
         scale = (n-2)/(n*((1-rho)/(1+rho))-2)
         s = np.sqrt(v[0,0,:]*scale)
         z[:,0] = s # the standard error
@@ -377,7 +381,7 @@ def running(*args, **kwargs):
     return rolling(*args, **kwargs)
 
 def filter(x, b, a=1, n=1, axis=-1,
-              pad=True, padvalue=np.nan):
+              fix=True, fixvalue=np.nan):
     """
     Apply scipy.signal.lfilter to data. By default this does *not* pad
     ends of data. May keep it this way.
@@ -387,9 +391,16 @@ def filter(x, b, a=1, n=1, axis=-1,
         a: scale factor in index 0, followed by a coefficients (recursive component)
         n: number of times to filter data (will go forward-->backward-->forward...)
         axis: axis along which we filter data
+    Optional:
+        fix: whether to (a) trim leading part of axis by number of a/b coefficients
+        and (b) fill trimmed values with NaNs; will also attempt to *re-center*
+        the data if a net-forward (e.g. f, fbf, fbfbf, ...) filtering was performed; this
+        won't work for recursive filters, but does for non-recursive filters
     Output:
         y: filtered data
     Notes:
+      * Consider adding **empirical method for trimming either side of recursive
+        filter that trims up to where impulse response is negligible**
       * If x has odd number of obs along axis, lfilter will trim
         the last one. Just like rolling().
       * For non-recursive time-space filters, 'a' should just be
@@ -412,22 +423,23 @@ def filter(x, b, a=1, n=1, axis=-1,
             step = 1 if j%2==0 else -1 # forward-backward application
             y[i,::step] = signal.lfilter(b, a, y[i,::step], axis=-1)
     y = y+ym # add mean back in
-    # Capture component that, if filter was non-recursive, does not include
-    # data points with clipped edges
-    # Forward-backward runs, so filtered data is in correct position w.r.t. x
-    # e.g. if n is 2, we cut off the (len(b)-1) from each side
-    n_2sides = (n//2)*2*n_half
-    # Net forward run, so filtered data is shifted right by n_half
-    # Also have to trim data on both sides if it's foward-->backward-->forward e.g.
-    n_left = int((n%2)==1)*2*n_half
-    # Determine part that 'sees' all coefficients
-    if n_2sides==0:
-        y = y[:,n_left:]
-    else:
-        y = y[:,n_2sides+n_left:-n_2sides]
-    if pad:
-        y_left  = padvalue*np.ones((y.shape[0], n_2sides+n_left//2))
-        y_right = padvalue*np.ones((y.shape[0], n_2sides+n_left//2))
+    # Fancy manipulation
+    if fix:
+        # Capture component that (for non-recursive filter) doesn't include datapoints with clipped edges
+        # Forward-backward runs, so filtered data is in correct position w.r.t. x
+        # e.g. if n is 2, we cut off the (len(b)-1) from each side
+        n_2sides = (n//2)*2*n_half
+        # Net forward run, so filtered data is shifted right by n_half
+        # Also have to trim data on both sides if it's foward-->backward-->forward e.g.
+        n_left = int((n%2)==1)*2*n_half
+        # Determine part that 'sees' all coefficients
+        if n_2sides==0:
+            y = y[:,n_left:]
+        else:
+            y = y[:,n_2sides+n_left:-n_2sides]
+        # shape[axis] = shape[axis] - 2*n_2sides - n_left # use if not padding 
+        y_left  = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
+        y_right = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
         y = np.concatenate((y_left, y, y_right), axis=-1)
     # Return
     y = unpermute(lead_unflatten(y, shape), axis)
@@ -486,52 +498,45 @@ def impulse():
 #------------------------------------------------------------------------------#
 # Filters and windows
 #------------------------------------------------------------------------------#
-def window(wintype, M=100):
+def harmonics(x, k=4, axis=-1, absval=False): #n=np.inf, kmin=0, kmax=np.inf): #, kscale=1, krange=None, k=None):
     """
-    Retrieves weighting function window.
-    """
-    # Prepare window
-    if wintype=='boxcar':
-        win = np.ones(M)
-    elif wintype=='hanning':
-        win = np.hanning(M) # window
-    elif wintype=='hamming':
-        win = np.hamming(M)
-    elif wintype=='blakman':
-        win = np.blackman(M)
-    elif wintype=='kaiser':
-        win = np.kaiser(M)
-    else:
-        raise ValueError('Unknown window type: %s' % (wintype,))
-    return win/win.sum()
-
-def fboxcar(x, k=4, axis=-1): #n=np.inf, kmin=0, kmax=np.inf): #, kscale=1, krange=None, k=None):
-    """
-    Apply boxcar window in Fourier space.
-    Extracts the time series associated with cycle, given by the first k
-    Fourier harmonics for the time series.
+    Select the first k Fourier harmonics of the time series. Useful
+    for example in removing seasonal cycle or something.
     """
     # Get fourier transform
     x   = permute(x, axis)
     fft = np.fft.fft(x, axis=-1)
-    # Remove frequencies outside range
-    # FFT will have some error and give non-zero imaginary components, but
-    # we just naively cast to real
+    # Remove frequencies outside range. The FFT will have some error and give
+    # non-zero imaginary components, but we can get magnitude or naively cast to real
     fft[...,0] = 0
     fft[...,k+1:-k] = 0
-    return unpermute(np.fft.ifft(fft).real, axis)
-    # # Naively remove certain frequencies
-    # # Should ignore first coefficient, the mean
-    # f = np.where((freq[1:]>=kmin) | (freq[1:]<=kmax))
-    # # Gets indices of n largest values
-    # if n==np.inf:
-    #     fremove = f
-    # else:
-    #     p = np.abs(fft)**2
-    #     fremove = f[np.argpartition(p, -n)[-n:]]
-    # # And filter back
-    # # FFT should be symmetric, so remove locations at corresponding negative freqs
-    # fft[fremove+1], fft[-fremove-1] = 0, 0
+    if absval:
+        y = unpermute(np.abs(np.fft.ifft(fft)), axis)
+    else:
+        y = unpermute(np.real(np.fft.ifft(fft)), axis)
+    return y
+
+def highpower(x):
+    """
+    Select only the highest power frequencies. Useful for
+    crudely reducing noise.
+    """
+    # Naively remove certain frequencies
+    # Should ignore first coefficient, the mean
+    x   = permute(x, axis)
+    fft = np.fft.fft(x, axis=-1)
+    fftfreqs = np.arange(1, fft.shape[-1]//2) # up to fft.size/2 - 1, units cycles per sample
+    # Get indices of n largest values
+    # Use *argpartition* because it's more efficient, will just put
+    # -nth element into sorted position, everything after that unsorted
+    # but larger (don't need exact order!)
+    p = np.abs(fft)**2
+    f = np.argpartition(p, -n, axis=-1)[...,-n:]
+    y = fft.copy()
+    y[...] = 0 # fill in
+    y[...,f] = fft[...,f] # put back the high-power frequencies
+    freqs = fftfreqs[...,f]
+    return freqs, y # frequencies and the high-power filter
 
 def lanczos(dx, width, cutoff, response=True):
     """
@@ -610,70 +615,229 @@ def butterworth(dx, width, cutoff, btype='low'):
 #------------------------------------------------------------------------------#
 # Spectral analysis
 #------------------------------------------------------------------------------#
-def spectrum(x, M=72, wintype='boxcar', param=None, axis=-1):
+def window(wintype, n, normalize=False):
+    """
+    Retrieves weighting function window, identical to get_window().
+    For windows that require extra parameters, window
+    must be a tuple of window-name, parameter.
+    """
+    # Default error messages are shit, make them better
+    if wintype=='welch':
+        raise ValueError('Welch window needs 2-tuple of (name,beta).')
+    if wintype=='kaiser':
+        raise ValueError('Welch window needs 2-tuple of (name,beta).')
+    if wintype=='gaussian':
+        raise ValueError('Gaussian window needs 2-tuple of (name,stdev).')
+    # Get window
+    win = signal.get_window(wintype, n)
+    if normalize:
+        win = win/win.sum() # default normalizes so *maximum (usually central) value is 1*
+    return win
+
+def spectrum(dx, y, nperseg=72, wintype='boxcar', axis=-1,
+        manual=False, detrend='linear', scaling='spectrum'):
     """
     Gets the spectral decomposition for particular windowing technique.
     Uses simple numpy fft.
+    Input:
+        dx: timestep in physical units (used for scaling the frequency-coordinates)
+        y:  the data
+    Output:
+        f: wavenumbers, in <x units>**-1
+        P: power spectrum, in units <data units>**2
     """
-    # Initital stuff; get integer number of half-overlapped windows
-    N = x.size
-    pm = M//2
-    Nround = pm*(N//pm)
-    x = x[:Nround]
-    if N-Nround>0: print(f'Points removed: {N-Nround:d}.')
-    # Get copsectrum, quadrature spectrum, and powers for each window
-    win = window(wintype, M)
-    loc = np.arange(pm, Nround-pm+pm//2, pm) # jump by half window length
-    Cx = np.empty((loc.size, pm)) # have half/window size number of freqs
-    for i,l in enumerate(loc):
-        # numpy fft gives power A+Bi, so want sqrt(A^2 + B^2)/2 for +/- wavenumbers
-        Cx[i,:] = np.abs(np.fft.fft(win*signal.detrend(x[l-pm:l+pm]))[:pm])**2
-    freq = np.fft.fftfreq(M)[:pm] # frequency
-    return freq, Cx.mean(axis=0)
+    # Checks
+    l = y.shape[axis]
+    r = l % nperseg
+    if r>0:
+        s = [slice(None) for i in range(y.ndim)]
+        s[axis] = slice(None,-r)
+        y = y[s] # slice it up
+        print(f'Warning: Trimmed {r} out of {l} points to accommodate length-{nperseg} window.')
+        # raise ValueError(f'Window width {nperseg} does not divide axis length {y.shape[axis]}.')
+    if manual:
+        # Get copsectrum, quadrature spectrum, and powers for each window
+        y, shape = lead_flatten(permute(y, axis)) # shape is shape of permuted data
+        N = y.shape[1] # window count
+        win = window(wintype, nperseg)
+        pm = nperseg//2
+        loc = np.arange(pm, N-pm+pm//2, pm) # jump by half window length
+        P = np.empty(y.shape) # power
+        for j in range(y.shape[0]):
+            Cx = np.empty((loc.size, pm)) # have half/window size number of freqs
+            for i,l in enumerate(loc):
+                # Note np.fft gives power A+Bi, so want sqrt(A^2 + B^2)/2
+                # for +/- wavenumbers, easy
+                wy = win*signal.detrend(y[j,l-pm:l+pm], type=detrend)
+                Cx[i,:] = np.abs(np.fft.fft(wy)[:pm])**2
+            P[j,:] = Cx.mean(axis=0)
+        f = np.fft.fftfreq(nperseg)[:pm] # frequency
+        P = unpermute(lead_unflatten(P, shape), axis)
+        P = unpermute(P, axis)
+    else:
+        # Just use scipy csd
+        # 'one-sided' says to only return first symmetric half if data is real
+        # 'scaling' queries whether to:
+        # * scale 'per wavenumber'/'per Hz', option 'density', default;
+        #   this is analagous to a Planck curve with intensity per wavenumber
+        # * show the power (so units are just data units squared); this is
+        #   usually what we want
+        wintype = window(wintype, nperseg) # has better error messages
+        f, P = signal.csd(y, y, window=wintype,
+                return_onesided=True, scaling=scaling,
+                nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
+    # Convert frequency to physical units
+    # Scale so variance of windows (sum of power spectrum) equals variance of this
+    # scale = y.var(axis=axis, keepdims=True)/P.sum(axis=axis, keepdims=True)
+    # Scale so power is in proportion to total
+    scale = 1.0/P.sum(axis=axis, keepdims=True)
+    return f/dx, P*scale
 
-def xspectrum(x, y, M=72, wintype='boxcar', param=None, centerphase=np.pi):
+def spectrum2d(dx, dy, z, nperseg, wintype='boxcar',
+        axes=(-2,-1), # first position is *cyclic* (perform simple real transform), second is *not* (windowed)
+        manual=False, detrend='linear', scaling='spectrum'):
+    """
+    Performs 2-d spectral decomposition, with windowing along only *one* dimension,
+    in style of Randel and Held 1991. Therefore assumption is we have *cyclic*
+    data along one dimension.
+    Input:
+        dx: cylic dimension physical units step
+        dy: non-cyclic dimension physical units step
+        z:  the data
+        nperseg: window width
+        axes: first position is cyclic axis (we perform no windowing), second
+            position is non-cyclic (perform windowing, and get complex coeffs)
+    Output:
+        f: wavenumbers, in <x units>**-1
+        P: power spectrum, in units <data units>**2
+    """
+    # Checks
+    caxis = axes[0]
+    taxis = axes[1] # axis for windowing
+    print(f'Cyclic dimension in position {caxis}, length {z.shape[caxis]}.')
+    print(f'Data to be windowed in position {taxis}, length {z.shape[taxis]}, window length {nperseg}.')
+    if caxis<0:
+        caxis = z.ndim-caxis
+    if taxis<0:
+        taxis = z.ndim-taxis
+    l = z.shape[taxis]
+    r = l % nperseg
+    if r>0:
+        s = [slice(None) for i in range(z.ndim)]
+        s[taxis] = slice(None,-r)
+        z = z[s] # slice it up
+        print(f'Warning: Trimmed {r} out of {l} points to accommodate length-{nperseg} window.')
+        # raise ValueError(f'Window width {nperseg} does not divide axis length {z.shape[axis]}.')
+    # Permute
+    # Axis where we get *complex* coefficients (i.e. have negative frequencies) in -2 position
+    # Axis where we retrieve *real* coefficients in -1 position
+    # print('initial:', z.shape)
+    z = permute(z, taxis, -1) # put on -1, then will be moved to -2
+    query = int(taxis<caxis)
+    z = permute(z, caxis-query, -1) # put on -1
+    # print('final:', z.shape)
+    nflat = z.ndim-2 # we overwrite z, so must save this value!
+    z, shape = lead_flatten(z, nflat=nflat) # flatten remaining dimensions
+    # Get copsectrum, quadrature spectrum, and powers for each window
+    win = window(wintype, nperseg)
+    M = z.shape[1] # cyclic dimension is in position 1
+    N = z.shape[2] # non-cyclic dimension in position 2
+    pm = nperseg//2
+    loc = np.arange(pm, N-pm+0.1, pm).astype(int) # jump by half window length
+    if len(loc)==0:
+        raise ValueError('Window length too big.')
+    shape[-2] = M//2
+    shape[-1] = pm*2
+    P = np.empty((z.shape[0], *shape[-2:])) # power
+    for j in range(z.shape[0]):
+        Cx = np.empty((loc.size, *shape[-2:])) # have half/window size number of freqs
+        for i,l in enumerate(loc):
+            # Detrend and compute Fourier transform; note cyclic axis has no trend
+            wy = z[j,:,l-pm:l+pm] # apply window
+            wy = signal.detrend(wy, type='constant', axis=0) # remove mean
+            wy = signal.detrend(wy, type=detrend, axis=1) # remove trend or mean
+            # print('cx container:', Cx.shape)
+            # print('original data:', z.shape)
+            # print('weighted data:', wy.shape)
+            coefs = np.fft.rfft2(wy, axes=(1,0))
+            coefs = coefs[1:,:] # remove the zero-frequency value; keep both sides of complex transform
+            # print('result:', coefs.shape)
+            Cx[i,:,:] = np.abs(coefs)**2
+        P[j,:,:] = Cx.mean(axis=0)
+    # Dimensions
+    fx = np.fft.rfftfreq(2*shape[-2]-1) # just the positive-direction Fourier coefs
+    fy = np.fft.fftfreq(shape[-1]) # we use the whole thing
+    # Fix array
+    P = lead_unflatten(P, shape, nflat=nflat)
+    # print('initial:', P.shape)
+    P = unpermute(P, caxis-query, -2) # put caxis back, accounting for if taxis moves to left
+    # print('middle:', P.shape)
+    P = unpermute(P, taxis, -1) # put taxis back
+    P.max()
+    # print('final:', P.shape)
+    # Convert frequency to physical units
+    # Scale so variance of windows (sum of power spectrum) equals variance of this
+    # scale = z.var(axis=axis, keepdims=True)/P.sum(axis=axis, keepdims=True)
+    # Scale so power is in proportion to total
+    scale = 1.0/P.sum(axis=axes, keepdims=True) # sum over the multiple axes
+    return fx/dx, fy/dy, P*scale # power density (sum over grid is 1)
+
+def xspectrum(x, y, nperseg=72, wintype='boxcar', centerphase=np.pi, axis=-1,
+        manual=False, detrend='linear'):
     """
     Calculates the cross spectrum for particular windowing technique.
     Uses simply numpy fft.
     """
-    # Iniital stuff; get integer number of half-overlapped windows
-    N = x.size
-    pm = M//2
-    Nround = pm*(N//pm)
-    x, y = x[:Nround], y[:Nround]
-    if N-Nround>0: print(f'Points removed: {N-Nround:d}.')
-
-    # Get copsectrum, quadrature spectrum, and powers for each window
-    win = window(wintype, M)
-    loc = np.arange(pm, Nround-pm+pm//2, pm) # jump by half window length
-    shape = (loc.size, pm) # have half window size number of freqs
-    Fxx, Fyy, CO, Q = np.empty(shape), np.empty(shape), np.empty(shape), np.empty(shape)
-    for i,l in enumerate(loc):
-        Cx = np.fft.fft(win*signal.detrend(x[l-pm:l+pm]))[:pm]
-        Cy = np.fft.fft(win*signal.detrend(y[l-pm:l+pm]))[:pm]
-        Fxx[i,:] = np.abs(Cx)**2
-        Fyy[i,:] = np.abs(Cy)**2
-        CO[i,:] = Cx.real*Cy.real + Cx.imag*Cy.imag
-        Q[i,:] = Cx.real*Cy.imag - Cy.real*Cx.imag
-
-    # Get average cospectrum and other stuff, return
-    Fxx, Fyy, CO, Q = Fxx.mean(0), Fyy.mean(0), CO.mean(0), Q.mean(0)
-    Coh = (CO**2 + Q**2)/(Fxx*Fyy) # coherence
-    p = np.arctan2(Q, CO) # phase
-    p[p >= centerphase+np.pi] -= 2*np.pi
-    p[p < centerphase-np.pi] += 2*np.pi
-    freq = np.fft.fftfreq(M)[:pm] # frequency
+    if manual:
+        # Initial stuff; get integer number of half-overlapped windows
+        N = x.size
+        pm = nperseg//2
+        Nround = pm*(N//pm)
+        x, y = x[:Nround], y[:Nround]
+        if N-Nround>0: print(f'Points removed: {N-Nround:d}.')
+        # Get copsectrum, quadrature spectrum, and powers for each window
+        win = window(wintype, nperseg)
+        loc = np.arange(pm, Nround-pm+pm//2, pm) # jump by half window length
+        shape = (loc.size, pm) # have half window size number of freqs
+        Fxx, Fyy, CO, Q = np.empty(shape), np.empty(shape), np.empty(shape), np.empty(shape)
+        for i,l in enumerate(loc):
+            Cx = np.fft.fft(win*signal.detrend(x[l-pm:l+pm], detrend=detrend))[:pm]
+            Cy = np.fft.fft(win*signal.detrend(y[l-pm:l+pm], detrend=detrend))[:pm]
+            Fxx[i,:] = np.abs(Cx)**2
+            Fyy[i,:] = np.abs(Cy)**2
+            CO[i,:] = Cx.real*Cy.real + Cx.imag*Cy.imag
+            Q[i,:] = Cx.real*Cy.imag - Cy.real*Cx.imag
+        # Get average cospectrum and other stuff, return
+        Fxx, Fyy, CO, Q = Fxx.mean(0), Fyy.mean(0), CO.mean(0), Q.mean(0)
+        Coh = (CO**2 + Q**2)/(Fxx*Fyy) # coherence
+        p = np.arctan2(Q, CO) # phase
+        p[p >= centerphase+np.pi] -= 2*np.pi
+        p[p < centerphase-np.pi] += 2*np.pi
+        freq = np.fft.fftfreq(nperseg)[:pm] # frequency
+    else:
+        # Just use builtin scipy method
+        f, P = signal.csd(x, x, window=wintype,
+                return_onesided=True, scaling='spectrum',
+                nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
     return freq, Coh, p
+
+def spectrum2():
+    """
+    Compute the 2-dimensional Fourier decomposition, and produce power estimates
+    with windowing as above.
+    """
+    raise NotImplementedError()
 
 def autospectrum():
     """
-    Uses scipy.signal.welch windowing method to generate an estimate of the spectrum.
+    Uses scipy.signal.welch windowing method to generate an estimate of the
+    lagged spectrum.
     """
-    return
+    raise NotImplementedError()
 
 def autoxspectrum():
     """
-    Uses scipy.signal.cpd automated method to generate cross-spectrum estimate.
+    Uses scipy.signal.csd automated method to generate an estimate of the
+    lagged cross-spectrum.
     """
-    return
-
+    raise NotImplementedError()
