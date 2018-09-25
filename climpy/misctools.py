@@ -6,6 +6,38 @@ import numpy as np
 from itertools import zip_longest
 from .arraytools import *
 
+# Trigonometric functions in degrees
+def sin(x):
+    return np.sin(x*np.pi/180)
+def cos(x):
+    return np.cos(x*np.pi/180)
+def tan(x):
+    return np.tan(x*np.pi/180)
+def csc(x):
+    return 1/np.sin(x*np.pi/180)
+def sec(x):
+    return 1/np.cos(x*np.pi/180)
+def cot(x):
+    return 1/np.tan(x*np.pi/180)
+def arcsin(x):
+    return np.arcsin(x)*180/np.pi
+def arccos(x):
+    return np.arccos(x)*180/np.pi
+def arctan(x):
+    return np.arctan(x)*180/np.pi
+def arccsc(x):
+    return np.arcsin(1/x)*180/np.pi
+def arcsec(x):
+    return np.arccos(1/x)*180/np.pi
+def arccot(x):
+    return np.arctan(1/x)*180/np.pi
+
+def isiter(v):
+    """
+    Test whether value is iterable.
+    """
+    return hasattr(v,'__iter__') or hasattr(v,'__getitem__')
+
 ################################################################################
 # Time handling stuff
 ################################################################################
@@ -70,6 +102,34 @@ def match(*args):
     elif any(not np.all(v[slice_i]==vs[0][slices[0]]) for v,slice_i in zip(vs,slices)):
         raise ValueError('Vectors are not identical between matching minima/maxima.')
     return slices + [vs[0][slices[0]]]
+
+def intersection(x, segment1, segment2, xlog=False):
+    """
+    Find the (first) intersection point for two line segments.
+    Optionally do this in log-space for the x-axis.
+    """
+    #--------------------------------------------------------------------------#
+    # Initial stuff
+    segment1, segment2 = np.array(segment1), np.array(segment2)
+    if xlog: # transform x coordinates optionally
+        transform  = lambda x: np.log10(x)
+        itransform = lambda x: 10**x
+    else:
+        transform  = lambda x: x
+        itransform = lambda x: x
+    #--------------------------------------------------------------------------#
+    # Get intersection
+    diff = segment1 - segment2
+    if (diff>0).all() or (diff<0).all():
+        print("Warning: No intersections found.")
+        return np.nan, np.nan
+    idx = np.where(diff>0)[0][0]
+    x, y = diff[idx-1:idx+1], transform(x[idx-1:idx+1]) # two-element vectors
+    px = itransform(y[0] + (0-x[0])*((y[1]-y[0])/(x[1]-x[0])))
+    x, y = y, segment2[idx-1:idx+1] # once again for the y-position; can also use segment1
+    py = (y[0] + (transform(px)-x[0])*((y[1]-y[0])/(x[1]-x[0])))
+    return px, py
+
 # def match(v1, v2):
 #     """
 #     Match two 1D vectors; will return slices for producing the matching
@@ -95,97 +155,4 @@ def match(*args):
 #     elif not (v1[slice1]==v2[slice2]).all():
 #         raise ValueError('Vectors are not identical between matching minima/maxima.')
 #     return slice1, slice2, v1[slice1]
-
-#------------------------------------------------------------------------------
-# Math/simple
-#------------------------------------------------------------------------------
-def intersection(x, segment1, segment2, xlog=False):
-    """
-    Find the (first) intersection point for two line segments.
-    Optionally do this in log-space for the x-axis.
-    """
-    #--------------------------------------------------------------------------#
-    # Initial stuff
-    segment1, segment2 = np.array(segment1), np.array(segment2)
-    if xlog:
-        func = lambda x: np.log10(x)
-        ifunc = lambda x: 10**x
-    else:
-        func = lambda x: x
-        ifunc = lambda x: x
-    #--------------------------------------------------------------------------#
-    # Get intersection
-    diff = segment1 - segment2
-    if (diff>0).all() or (diff<0).all():
-        print("Warning: No intersections found.")
-        return np.nan, np.nan
-    idx = np.where(diff>0)[0][0]
-    x, y = diff[idx-1:idx+1], func(x[idx-1:idx+1]) # two-element vectors
-    px = ifunc(y[0] + (0-x[0])*((y[1]-y[0])/(x[1]-x[0])))
-    x, y = y, segment2[idx-1:idx+1] # once again for the y-position; can also use segment1
-    py = (y[0] + (func(px)-x[0])*((y[1]-y[0])/(x[1]-x[0])))
-    return px, py
-
-def rolling(data, window=5, axis=-1):
-    """
-    Read this: https://stackoverflow.com/a/4947453/4970632
-    Generates rolling numpy window along final axis; can then operate with
-    functions like polyfit or mean along the new last axis of output.
-    Just creates *view* of original array, without duplicating data, so no worries
-    about efficiency.
-    * Will generate a new axis in the -1 position that is a running representation
-      of value in axis numver <axis>.
-    * Strides are apparently the 'number of bytes' one has to skip in memory
-      to move to next position *on the given axis*. For example, a 5 by 5
-      array of 64bit (8byte) values will have array.strides == (40,8).
-    * Should consider using swapaxes instead of these permute and unpermute
-      functions, might be simpler.
-    TODO: Add option that preserves *edges* i.e. does not reduces length
-    of dimension to be 'rolled' by (window-1).
-    """
-    # Roll axis, reshape, and get generate running dimension
-    # data = np.rollaxis(data, axis, data.ndim)
-    if axis<0: axis = data.ndim+axis # e.g. if 3 dims, and want to axis dim -1, this is dim number 2
-    data = permute(data, axis)
-    shape = data.shape[:-1] + (data.shape[-1]-(window-1), window)
-    strides = [*data.strides, data.strides[-1]] # repeat striding on end
-    data = np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
-    return unpermute(data, axis, select=-2) # want to 'put back' axis -2;
-        # axis -1 is our new "rolling"/"averaging" dimension, keep that in same position
-
-def running(*args, **kwargs):
-    """
-    Easier to remember name.
-    """
-    return rolling(*args, **kwargs)
-
-def roots(poly):
-    """
-    Find real-valued root for polynomial with input coefficients; pretty simple.
-    Format of input array p: p[0]*x^n + p[1]*x^n-1 + ... + p[n-1]*x + p[n]
-    """
-    # Just use numpy's roots function, and filter results.
-    r = np.roots(poly) # input polynomial; returns ndarray
-    filt = (r==np.real(r))
-    r = r[filt].astype(np.float32) # take only real-valued ones
-    return r
-
-def slope(x, y, axis=-1):
-    """
-    Get linear regression along axis, ignoring NaNs. Uses np.polyfit.
-    """
-    # First, reshape
-    y = np.rollaxis(y, axis, y.ndim).T # reverses dimension order
-    yshape = y.shape # save shape
-    y = np.reshape(y, (yshape[0], np.prod(yshape[1:])), order='F')
-
-    # Next, supply to polyfit
-    coeff = np.polyfit(x, y, deg=1) # is ok with 2d input data
-        # DOES NOT accept more than 2d; also, much faster than loop with stats.linregress
-
-    # And finally, make
-    # Coefficients are returned in reverse; e.g. 2-deg fit gives c[0]*x^2 + c[1]*x + c[2]
-    slopes = coeff[0,:]
-    slopes = np.reshape(slopes, (1, y.shape[1:]), order='F').T
-    return np.rollaxis(slopes, y.ndim-1, axis)
 
