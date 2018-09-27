@@ -71,24 +71,27 @@ def lead_unflatten(data, shape, nflat=None):
         raise ValueError(f'Trailing dimensions on data, {data.shape[1:]}, do not match tailing dimensions on new shape, {shape[nflat:]}.')
     return np.reshape(data, shape, order='F')
 
-def permute(data, axis=-1, select=-1):
+def permute(data, source=-1, destination=-1):
     """
-    Permutes axis <axis> onto the *last* dimension.
-    Rollaxis moves axis until to *left* of axis number data.ndim, i.e. to
-    the end because that is 1 more than the last axis number.
+    Permutes axis <source> onto the *last* dimension by default.
+    This used to use rollaxis but it sucks as acknowledged by maintainers:
+    https://github.com/numpy/numpy/issues/9473
+    The moveaxis command is way way more intuitive.
     """
-    if select<0:
-        select = data.ndim + select
-    return np.rollaxis(data, axis=axis, start=select)
+    # print('before:', data.shape, source, destination)
+    data = np.moveaxis(data, source, destination)
+    # print('after:', data.shape)
+    return data
 
-def unpermute(data, axis=-1, select=-1):
+def unpermute(data, source=-1, destination=-1):
     """
-    Undoes action of permute; permutes *last* dimension back onto axis <axis>.
-    Alternatively, roll the different axis <select> until it lies "before"
-    (i.e. to the left) axis <axis>, which is useful e.g. if you added some new
-    trailing dimensions.
+    Undoes action of permute, by default putting *last* dimension onto axis <source>.
+    This used to use rollaxis but it sucks as acknowledged by maintainers:
+    https://github.com/numpy/numpy/issues/9473
+    The moveaxis command is way way more intuitive.
     """
-    if select<0:
-        select = data.ndim + select
-    return np.rollaxis(data, axis=select, start=axis)
+    # print('before:', data.shape, source, destination)
+    data = np.moveaxis(data, destination, source)
+    # print('after:', data.shape)
+    return data
 

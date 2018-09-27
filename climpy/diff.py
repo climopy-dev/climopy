@@ -175,6 +175,7 @@ def deriv_uneven(x, y, axis=0, keepedges=False):
     h1, h2 = x1-x0, x2-x1 # the x-steps
     # f = (x2 - x1)/(x2 - x0)
     # diff = (1-f)*(y2 - y1)/(x2 - x1) + f*(y1 - y0)/(x1 - x0) # version 1
+    # print(h1.shape, h2.shape, y0.shape, y1.shape, y2.shape)
     diff = -h2*y0/(h1*(h1+h2)) - (h1-h2)*y1/(h1*h2) + h1*y2/(h2*(h1+h2))
     if keepedges: # pad with simple differences on edges
         bh = np.diff(x[...,:2], axis=-1)
