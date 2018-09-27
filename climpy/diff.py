@@ -20,7 +20,28 @@ from .arraytools import *
 #     # return np.rollaxis(diff, y.ndim-1, axis)
 #     return unpermute(diff, axis)
 
-def deriv1(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False):
+def geth(h):
+    """
+    Determine scalar step h.
+    """
+    h = np.atleast_1d(h)
+    if len(h)==1:
+        return h[0]
+    else:
+        return h[1]-h[0]
+
+def integrate(x, y, y0=0, axis=0):
+    """
+    Integrate stuff.
+    """
+    dx = x[1:] - x[:-1]
+    dx = np.concatenate((dx[:1], dx))
+    shape = [1]*y.ndim
+    shape[axis] = dx.size
+    dx = np.reshape(dx, shape) # add singletons
+    return y0 + (y*dx).cumsum()
+
+def deriv(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False):
     """
     First order finite differencing. Can be accurate to h^2, h^4, or h^6.
     Reduces axis length by "accuracy" amount, except for zero version (special).
@@ -43,6 +64,7 @@ def deriv1(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
     # x = permute(x, xaxis)
     # Simple Euler scheme
     # y = np.rollaxis(y, axis, y.ndim)
+    h = geth(h)
     ldiff, rdiff = (), ()
     if keepedges:
         keepleft = keepright = True
@@ -78,6 +100,12 @@ def deriv1(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
     # return np.rollaxis(diff, y.ndim-1, axis)
     return unpermute(diff, axis)
 
+def deriv1(*args, **kwargs):
+    """
+    Defined for name consistency.
+    """
+    return deriv(*args, **kwargs)
+
 def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False):
     """
     Second order finite differencing. Can be accurate to h^2, h^4, or h^6.
@@ -89,6 +117,7 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
     """
     # Simple Euler scheme
     # y = np.rollaxis(y, axis, y.ndim)
+    h = geth(h)
     ldiff, rdiff = (), ()
     if keepedges:
         keepleft = keepright = True
