@@ -16,7 +16,7 @@ def trail_flatten(data, nflat=None):
     shape = list(data.shape)
     if nflat is None:
         nflat = data.ndim-1 # all but last dimension
-    if nflat<=1: # just apply singleton dimension
+    if nflat<=0: # just apply singleton dimension
         return data[...,None], [*shape, 1]
     if nflat is None:
         nflat = data.ndim-1 # all but last dimension
@@ -31,10 +31,10 @@ def trail_unflatten(data, shape, nflat=None):
     """
     if nflat is None:
         nflat = len(shape)-1 # all but last dimension
-    if nflat<=1: # just remove singleton dimension
+    if nflat<=0: # just remove singleton dimension
         return data[...,0]
     if data.shape[-1] != np.prod(shape[-nflat:]):
-        raise ValueError(f'Number of trailing elements {data.shape[-1]} does not match trailing shape {shape[nflat:]:s}.')
+        raise ValueError(f'Number of trailing elements {data.shape[-1]} does not match trailing shape {shape[nflat:]}.')
     if not all(s1==s2 for s1,s2 in zip(data.shape[:-1], shape[:-nflat])):
         raise ValueError(f'Leading dimensions on data, {data.shape[:-1]}, do not match leading dimensions on new shape, {shape[:-nflat]}.')
     return np.reshape(data, shape, order='F')
@@ -48,7 +48,7 @@ def lead_flatten(data, nflat=None):
     shape = list(data.shape)
     if nflat is None:
         nflat = data.ndim-1 # all but last dimension
-    if nflat<=1: # just apply singleton dimension
+    if nflat<=0: # just apply singleton dimension
         return data[None,...], [1, *shape]
     # if np.sum(data.shape[:nflat])==0:
     #     shape = [1, *shape]
@@ -63,7 +63,7 @@ def lead_unflatten(data, shape, nflat=None):
     """
     if nflat is None:
         nflat = len(shape)-1 # all but last dimension
-    if nflat<=1: # just remove singleton dimension
+    if nflat<=0: # just remove singleton dimension
         return data[0,...]
     if data.shape[0] != np.prod(shape[:nflat]):
         raise ValueError(f'Number of leading elements {data.shape[0]} does not match leading shape {shape[nflat:]}.')

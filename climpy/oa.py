@@ -10,6 +10,7 @@ import os
 import numpy as np
 import scipy.signal as signal
 import scipy.stats as stats
+import scipy.linalg as linalg
 import scipy.optimize as optimize
 from . import const # as its own module
 from .arraytools import *
@@ -42,7 +43,7 @@ def gaussian(N=1000, mean=0, sigma=1):
 #------------------------------------------------------------------------------
 # Artificial data
 #------------------------------------------------------------------------------
-def rednoise(ntime, a, init=[-1,1], samples=1, mean=0, stdev=1, nested=False):
+def rednoise(ntime, a, init=1, samples=1, mean=0, stdev=1, nested=False):
     """
     Creates artificial red noise time series, i.e. a weighted sum of random perturbations.
     Equation is: x(t) = a*x(t-dt) + b*eps(t)
@@ -55,8 +56,8 @@ def rednoise(ntime, a, init=[-1,1], samples=1, mean=0, stdev=1, nested=False):
     """
     # Initial stuff
     ntime -= 1 # exclude the initial timestep
-    if not hasattr(samples,'__iter__'):
-        samples = [samples]
+    init = np.atleast_1d(init)
+    samples = np.atleast_1d(samples)
     data = np.empty((ntime+1,*samples)) # user can make N-D array
     b = (1-a**2)**0.5  # from OA class
     # Nested loop
@@ -68,6 +69,8 @@ def rednoise(ntime, a, init=[-1,1], samples=1, mean=0, stdev=1, nested=False):
             data[t,i] = a*data[t-1,i] + b*eps[t-1]
     # if hasattr(init,'__iter__') and len(init)==2:
     #     data = data + np.random.uniform(*init, size=data.shape[1]) # overkill
+    if data.shape[-1]!=init.shape[-1] and init.size!=1:
+        raise ValueError('Length of vector of initial positions must equal number of sample time series.')
     data = data + init # scalar or iterable (in which case, right-broadcasting takes place)
     # Trying to be fancy, just turned out fucking way slower
     # aseries = b*np.array([a**(ntime-i) for i in range(1,ntime+1)])
@@ -274,11 +277,166 @@ def autocovar(*args, **kwargs):
 #------------------------------------------------------------------------------#
 # Empirical orthogonal functions and related decomps
 #------------------------------------------------------------------------------#
-def eof(data, neof=5):
+def eof(data, record=-2, space=-1, weights=None, neof=5, normalize=False):
     """
-    Calculates the temporal EOFs, using most efficient method.
+    Calculates the temporal EOFs, using the scipy algorithm for
+    Hermetian (or real symmetric) matrices. This version allows
+    calculating just 'n' most important ones.
+    Input:
+        data: data of arbitrary shape
+    Kwargs:
+        neof: number of eigenvalues we want
+        record: axis used as 'record' dimension -- should only be 1
+        space: axes used as 'space' dimension -- can be many
     """
-    raise NotImplementedError('Not yet implemented.')
+    # First query array shapes and stuff
+    m_dims = np.atleast_1d(record)
+    n_dims = np.atleast_1d(space)
+    if m_dims.size>1:
+        raise ValueError('Record dimension must lie on only one axis.')
+    m_dims[m_dims<0] = data.ndim + m_dims[m_dims<0]
+    n_dims[n_dims<0] = data.ndim + n_dims[n_dims<0]
+    if any(i<0 or i>=data.ndim for i in [*m_dims, * n_dims]):
+        raise ValueError('Invalid dimensions.')
+    space_after  = all(i>m_dims[0] for i in n_dims)
+    if not space_after and not all(i<m_dims[0] for i in n_dims):
+        raise ValueError('Organize your data! Need space dimensions to come before/after time dimension.')
+    # Remove the mean and optionally standardize the data
+    data = data - data.mean(axis=m_dims[0], keepdims=True) # remove mean
+    if normalize:
+        data = data / data.stdev(axis=m_dims[0], keepdims=True) # optionally standardize, usually not wanted for annular mode stuff
+    # Next apply weights
+    m = np.prod([data.shape[i] for i in n_dims])
+    n = np.prod([data.shape[i] for i in m_dims])
+    if weights is None:
+        weights = 1
+    weights = np.atleast_1d(weights) # want numpy array
+    try:
+        if m>n: # more sampling than space dimensions
+            data  = data*np.sqrt(weights)
+            dataw = data
+        else: # more space than sampling dimensions
+            dataw = data*weights
+    except ValueError:
+        raise ValueError(f'Dimensionality of weights {weights.shape} incompatible with dimensionality of space dimensions {data.shape[-2:]}!')
+    # Turn matrix into record by space
+    # print('initial', data.shape)
+    data  = permute(data, record, -1)
+    dataw = permute(dataw, record, -1)
+    # print('record permute', data.shape)
+    for i,axis in enumerate(n_dims):
+        axis = axis-i-1 if space_after else axis # if permuting when space comes *after* record, actual axes of our data keep changing
+        data  = permute(data, axis, -1)
+        dataw = permute(dataw, axis, -1)
+    # Only flatten after apply weights (e.g. if have level and latitude dimensoins)
+    shape_trail = data.shape[-n_dims.size:]
+    data,  _ = trail_flatten(data,  n_dims.size)
+    dataw, _ = trail_flatten(dataw, n_dims.size)
+    shape_lead = data.shape[:-2]
+    data,  _ = lead_flatten(data,  data.ndim-2)
+    dataw, _ = lead_flatten(dataw, dataw.ndim-2)
+    # Prepare output; will add a new 'eof dimension' to the trailing side
+    if data.ndim!=3:
+        raise ValueError(f"Shit's on fire yo.")
+    nextra, m, n = data.shape[0], data.shape[1], data.shape[2] # n extra, record, and space
+    pcs   = np.empty((nextra, neof,  m, 1))
+    projs = np.empty((nextra, neof,  1,  n))
+    evals = np.empty((nextra, neof,  1,  1))
+    nstar = np.empty((nextra, neof, 1,  1))
+
+    # Get EOFs and PCs and stuff
+    for i in range(data.shape[0]):
+        # Initial
+        x = data[i,:,:] # array will be sampling by space
+        xw = dataw[i,:,:]
+        # Get reduced degrees of freedom for spatial eigenvalues
+        # TODO: Fix the weight projection below
+        rho = np.corrcoef(x.T[:,1:], x.T[:,:-1])[0,1] # must be (space x time)
+        rho_ave = (rho*weights).sum()/weights.sum()
+        nstar[i,:,0,0] = m*((1-rho_ave)/(1+rho_ave)) # simple degrees of freedom estimation
+        # Get EOFs using covariance matrix on *shortest* dimension
+        if x.shape[0] > x.shape[1]:
+            # Get *temporal* covariance matrix since time dimension larger
+            eigrange = [n-neof, n-1] # eigenvalues to get
+            l, v = linalg.eigh((xw.T@xw)/m, eigvals=eigrange, eigvals_only=False)
+            z = xw@v # i.e. multiply (time x space) by (space x neof), get (time x neof)
+            z = (z-z.mean(axis=0))/z.std(axis=0) # standardize pcs
+            p = x.T@z/m # i.e. multiply (space x time) by (time x neof), get (space x neof)
+        else:
+            # Get *spatial* dispersion matrix since space dimension longer
+            # This time 'eigenvectors' are actually the pcs
+            eigrange = [m-neof, m-1] # eigenvalues to get
+            l, z = linalg.eigh((xw@x.T)/n, eigvals=eigrange, eigvals_only=False)
+            z = (z-z.mean(axis=0))/z.std(axis=0) # standardize pcs
+            p = x.T@z/m # i.e. multiply (space x time) by (time by neof), get (space x neof)
+        # Store in big arrays
+        pcs[i,:,:,0]   = z.T[::-1,:] # neof by time
+        projs[i,:,0,:] = p.T[::-1,:] # neof by space
+        evals[i,:,0,0] = l[::-1] # neof
+        # # Sort
+        # idx = L.argsort()[::-1]
+        # L, Z = L[idx], Z[:,idx]
+
+    # Return them along the correct dimension
+    nlead = len(shape_lead)
+    pcs   = lead_unflatten(pcs,   [*shape_lead, neof, m, 1], nlead)
+    projs = lead_unflatten(projs, [*shape_lead, neof, 1, n], nlead)
+    evals = lead_unflatten(evals, [*shape_lead, neof, 1, 1],  nlead)
+    nstar = lead_unflatten(nstar, [*shape_lead, neof, 1, 1],  nlead)
+    ntrail = len(shape_trail)
+    flat_trail = [1]*len(shape_trail)
+    pcs   = trail_unflatten(pcs,   [*shape_lead, neof, m, *flat_trail],  ntrail)
+    projs = trail_unflatten(projs, [*shape_lead, neof, 1,  *shape_trail], ntrail)
+    evals = trail_unflatten(evals, [*shape_lead, neof, 1,  *flat_trail],  ntrail)
+    nstar = trail_unflatten(nstar, [*shape_lead, neof, 1,  *flat_trail],  ntrail)
+    # Permute 'eof' dimension onto the end (note we had to put it before the
+    # record and space dimensions so we could perform 'trail_unflatten')
+    di, df = len(shape_lead), pcs.ndim-1 # eofs are on the one *after* those leading dimensions
+    pcs   = np.moveaxis(pcs, di, df)
+    projs = np.moveaxis(projs, di, df)
+    evals = np.moveaxis(evals, di, df)
+    nstar = np.moveaxis(nstar, di, df)
+    # Finally, permute stuff back to original positions
+    for i,axis in enumerate(space):
+        axis = axis-i-1 if space_after else axis
+        pcs = unpermute(pcs, axis, -2)
+        projs = unpermute(projs, axis, -2)
+        evals = unpermute(evals, axis, -2)
+        nstar = unpermute(nstar, axis, -2)
+    pcs = unpermute(pcs, record, -2)
+    projs = unpermute(projs, record, -2)
+    evals = unpermute(evals, record, -2)
+    nstar = unpermute(nstar, record, -2)
+    # And return everything! Beautiful!
+    return evals, nstar, projs, pcs
+
+    #--------------------------------------------------------------------------#
+    # Data should be time by location
+    # # Standardize
+    # Z = (Z-Z.mean(0))/Z.std(0)
+    # # Fractions
+    # frac = np.abs(L)/L.sum()
+    # # And re-project; now *rows* are anomalies associated with 1std of each PC of original time series
+    # Xun[np.isnan(Xun)] = Z[np.isnan(Z)] = 0 # replace with zero, so matrix multiplication will work
+    # Doutput = (Z.T@Xun)/Xun.shape[0] # use the new shape
+    # D = np.full(old_shape,np.nan)
+    # D[:,goodfilt] = Doutput
+    # print('EOFs calculated.')
+    # # Autocorrelations
+    # out = (D, Z)
+    # if return_frac:
+    #     rho = np.zeros((X.shape[1],))
+    #     for i in range(X.shape[1]):
+    #         if i%10000 == 0: print(i)
+    #         rho[i] = np.corrcoef(X[:-1,i],X[1:,i])[1,0]
+    #     rho_ave = (rho*w).sum()/w.sum()
+    #     Nstar = X.shape[0]*((1-rho_ave)/(1+rho_ave))
+    #     delta_frac = (L*np.sqrt(2/Nstar))/L.sum()
+    #     print('Spatial mean autocorrelation: %.5f' % rho_ave)
+    #     out = out + (frac, delta_frac)
+    # if return_filt:
+    #     out = out + (goodfilt,)
+    # return out
 
 def eot(data, neof=5):
     """
