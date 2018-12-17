@@ -4,6 +4,10 @@
 .vimsession
 .*.sw[a-z]
 
+# Ignore sample data #
+###############
+data
+
 # Other stuff #
 ###############
 trash

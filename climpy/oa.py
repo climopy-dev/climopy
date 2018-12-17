@@ -31,10 +31,11 @@ def solve(poly):
 #------------------------------------------------------------------------------#
 # Random distributions
 #------------------------------------------------------------------------------#
-def gaussian(N=1000, mean=0, sigma=1):
+def gaussian(N=1000, mean=0, stdev=None, sigma=1):
     """
     Returns sample points on Gaussian curve.
     """
+    sigma = stdev if stdev is not None else sigma
     norm = stats.norm(loc=mean, scale=sigma)
     x = np.linspace(norm.ppf(0.0001), norm.ppf(0.9999), N) # get x through percentile range
     pdf = norm.pdf(x, loc=mean, scale=sigma)
@@ -43,7 +44,7 @@ def gaussian(N=1000, mean=0, sigma=1):
 #------------------------------------------------------------------------------
 # Artificial data
 #------------------------------------------------------------------------------
-def rednoise(ntime, a, init=1, samples=1, mean=0, stdev=1, nested=False):
+def rednoise(ntime, a, samples=1, mean=0, stdev=1, nested=False):
     """
     Creates artificial red noise time series, i.e. a weighted sum of random perturbations.
     Equation is: x(t) = a*x(t-dt) + b*eps(t)
@@ -51,12 +52,9 @@ def rednoise(ntime, a, init=1, samples=1, mean=0, stdev=1, nested=False):
      * Output will have shape ntime by nsamples.
      * Enforce that the first timestep always equals the 'starting' position.
      * Use 'nested' flag to control which algorithm to use.
-     * Use 'init' to either a) declare integer starting point or b) pick
-       some random number from a uniform distribution in that range.
     """
     # Initial stuff
     ntime -= 1 # exclude the initial timestep
-    init = np.atleast_1d(init)
     samples = np.atleast_1d(samples)
     data = np.empty((ntime+1,*samples)) # user can make N-D array
     b = (1-a**2)**0.5  # from OA class
@@ -67,11 +65,13 @@ def rednoise(ntime, a, init=1, samples=1, mean=0, stdev=1, nested=False):
         eps = np.random.normal(loc=0, scale=1, size=ntime)
         for t in range(1,ntime+1):
             data[t,i] = a*data[t-1,i] + b*eps[t-1]
+    # Seriously overkill
+    # init = np.atleast_1d(init)
     # if hasattr(init,'__iter__') and len(init)==2:
     #     data = data + np.random.uniform(*init, size=data.shape[1]) # overkill
-    if data.shape[-1]!=init.shape[-1] and init.size!=1:
-        raise ValueError('Length of vector of initial positions must equal number of sample time series.')
-    data = data + init # scalar or iterable (in which case, right-broadcasting takes place)
+    # if data.shape[-1]!=init.shape[-1] and init.size!=1:
+    #     raise ValueError('Length of vector of initial positions must equal number of sample time series.')
+    # data = data + init # scalar or iterable (in which case, right-broadcasting takes place)
     # Trying to be fancy, just turned out fucking way slower
     # aseries = b*np.array([a**(ntime-i) for i in range(1,ntime+1)])
     # for i in range(samples):
@@ -277,17 +277,21 @@ def autocovar(*args, **kwargs):
 #------------------------------------------------------------------------------#
 # Empirical orthogonal functions and related decomps
 #------------------------------------------------------------------------------#
-def eof(data, record=-2, space=-1, weights=None, neof=5, normalize=False):
+def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=False):
     """
-    Calculates the temporal EOFs, using the scipy algorithm for
-    Hermetian (or real symmetric) matrices. This version allows
-    calculating just 'n' most important ones.
+    Calculates the temporal EOFs, using the scipy algorithm for Hermetian (or
+    real symmetric) matrices. This version allows calculating just 'n'
+    most important ones, so should be faster.
     Input:
-        data: data of arbitrary shape
+        data:
+            data of arbitrary shape
     Kwargs:
-        neof: number of eigenvalues we want
-        record: axis used as 'record' dimension -- should only be 1
-        space: axes used as 'space' dimension -- can be many
+        neof:
+            number of eigenvalues we want
+        record:
+            axis used as 'record' dimension -- should only be 1
+        space:
+            axes used as 'space' dimension -- can be many
     """
     # First query array shapes and stuff
     m_dims = np.atleast_1d(record)
@@ -300,7 +304,8 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, normalize=False):
         raise ValueError('Invalid dimensions.')
     space_after  = all(i>m_dims[0] for i in n_dims)
     if not space_after and not all(i<m_dims[0] for i in n_dims):
-        raise ValueError('Organize your data! Need space dimensions to come before/after time dimension.')
+        raise ValueError('Reorder your data! Need space dimensions to come before/after time dimension.')
+
     # Remove the mean and optionally standardize the data
     data = data - data.mean(axis=m_dims[0], keepdims=True) # remove mean
     if normalize:
@@ -319,14 +324,20 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, normalize=False):
             dataw = data*weights
     except ValueError:
         raise ValueError(f'Dimensionality of weights {weights.shape} incompatible with dimensionality of space dimensions {data.shape[-2:]}!')
-    # Turn matrix into record by space
-    # print('initial', data.shape)
-    data  = permute(data, record, -1)
-    dataw = permute(dataw, record, -1)
-    # print('record permute', data.shape)
-    for i,axis in enumerate(n_dims):
-        axis = axis-i-1 if space_after else axis # if permuting when space comes *after* record, actual axes of our data keep changing
-        data  = permute(data, axis, -1)
+
+    # Turn matrix into *record* by *space*, or 'M' by 'N'
+    # 1) Move record dimension to right
+    data  = permute(data, m_dims[0], -1)
+    dataw = permute(dataw, m_dims[0], -1)
+    # 2) successively move space dimensions to far right, proceeding from the
+    # rightmost space dimension to leftmost space dimension so axis numbers
+    # do not change
+    dims = n_dims.copy()
+    if space_after: # time was before, so new space dims changed
+        dims -= 1
+    dims = np.sort(dims)[::-1]
+    for axis in dims:
+        data = permute(data, axis, -1)
         dataw = permute(dataw, axis, -1)
     # Only flatten after apply weights (e.g. if have level and latitude dimensoins)
     shape_trail = data.shape[-n_dims.size:]
@@ -335,14 +346,15 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, normalize=False):
     shape_lead = data.shape[:-2]
     data,  _ = lead_flatten(data,  data.ndim-2)
     dataw, _ = lead_flatten(dataw, dataw.ndim-2)
-    # Prepare output; will add a new 'eof dimension' to the trailing side
+    # Prepare output
+    # Dimensions will be extraneous by eofs by time by space
     if data.ndim!=3:
         raise ValueError(f"Shit's on fire yo.")
     nextra, m, n = data.shape[0], data.shape[1], data.shape[2] # n extra, record, and space
-    pcs   = np.empty((nextra, neof,  m, 1))
-    projs = np.empty((nextra, neof,  1,  n))
-    evals = np.empty((nextra, neof,  1,  1))
-    nstar = np.empty((nextra, neof, 1,  1))
+    pcs   = np.empty((nextra, neof, m, 1))
+    projs = np.empty((nextra, neof, 1, n))
+    evals = np.empty((nextra, neof, 1, 1))
+    nstar = np.empty((nextra, neof, 1, 1))
 
     # Get EOFs and PCs and stuff
     for i in range(data.shape[0]):
@@ -370,43 +382,52 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, normalize=False):
             z = (z-z.mean(axis=0))/z.std(axis=0) # standardize pcs
             p = x.T@z/m # i.e. multiply (space x time) by (time by neof), get (space x neof)
         # Store in big arrays
-        pcs[i,:,:,0]   = z.T[::-1,:] # neof by time
+        pcs[i,:,:,0] = z.T[::-1,:] # neof by time
         projs[i,:,0,:] = p.T[::-1,:] # neof by space
         evals[i,:,0,0] = l[::-1] # neof
         # # Sort
         # idx = L.argsort()[::-1]
         # L, Z = L[idx], Z[:,idx]
 
-    # Return them along the correct dimension
-    nlead = len(shape_lead)
+    # Return along the correct dimension
+    # The 'lead's were *extraneous* dimensions; we got EOFs along them
+    nlead = len(shape_lead) # expand back to original; leave space for EOFs
     pcs   = lead_unflatten(pcs,   [*shape_lead, neof, m, 1], nlead)
     projs = lead_unflatten(projs, [*shape_lead, neof, 1, n], nlead)
-    evals = lead_unflatten(evals, [*shape_lead, neof, 1, 1],  nlead)
-    nstar = lead_unflatten(nstar, [*shape_lead, neof, 1, 1],  nlead)
+    evals = lead_unflatten(evals, [*shape_lead, neof, 1, 1], nlead)
+    nstar = lead_unflatten(nstar, [*shape_lead, neof, 1, 1], nlead)
+    # The 'trail's were *spatial* dimensions, which were allowed to be more than 1D
     ntrail = len(shape_trail)
     flat_trail = [1]*len(shape_trail)
     pcs   = trail_unflatten(pcs,   [*shape_lead, neof, m, *flat_trail],  ntrail)
-    projs = trail_unflatten(projs, [*shape_lead, neof, 1,  *shape_trail], ntrail)
-    evals = trail_unflatten(evals, [*shape_lead, neof, 1,  *flat_trail],  ntrail)
-    nstar = trail_unflatten(nstar, [*shape_lead, neof, 1,  *flat_trail],  ntrail)
-    # Permute 'eof' dimension onto the end (note we had to put it before the
-    # record and space dimensions so we could perform 'trail_unflatten')
-    di, df = len(shape_lead), pcs.ndim-1 # eofs are on the one *after* those leading dimensions
-    pcs   = np.moveaxis(pcs, di, df)
-    projs = np.moveaxis(projs, di, df)
-    evals = np.moveaxis(evals, di, df)
-    nstar = np.moveaxis(nstar, di, df)
-    # Finally, permute stuff back to original positions
-    for i,axis in enumerate(space):
-        axis = axis-i-1 if space_after else axis
-        pcs = unpermute(pcs, axis, -2)
-        projs = unpermute(projs, axis, -2)
-        evals = unpermute(evals, axis, -2)
-        nstar = unpermute(nstar, axis, -2)
-    pcs = unpermute(pcs, record, -2)
-    projs = unpermute(projs, record, -2)
-    evals = unpermute(evals, record, -2)
-    nstar = unpermute(nstar, record, -2)
+    projs = trail_unflatten(projs, [*shape_lead, neof, 1, *shape_trail], ntrail)
+    evals = trail_unflatten(evals, [*shape_lead, neof, 1, *flat_trail],  ntrail)
+    nstar = trail_unflatten(nstar, [*shape_lead, neof, 1, *flat_trail],  ntrail)
+    # Permute 'eof' dimension onto the start (note we had to put it between
+    # extraneous dimensions and time/space dimensions so we could perform
+    # the above unflatten moves)
+    init = len(shape_lead) # eofs are on the one *after* those leading dimensions
+    pcs   = np.moveaxis(pcs, init, 0)
+    projs = np.moveaxis(projs, init, 0)
+    evals = np.moveaxis(evals, init, 0)
+    nstar = np.moveaxis(nstar, init, 0)
+    # Finally, permute stuff on right-hand dimensions back to original positions
+    # 1) The spatial dimensions. This time proceed from left-to-right so
+    # axis numbers onto which we permute are correct.
+    dims = n_dims.copy()
+    dims += 1 # account for EOF
+    if space_after:
+        dims -= 1 # the dims are *actually* one slot to left, since time was not put back yet
+    dims = np.sort(dims)
+    for axis in dims:
+        pcs = unpermute(pcs, axis)
+        projs = unpermute(projs, axis)
+        evals = unpermute(evals, axis)
+        nstar = unpermute(nstar, axis)
+    pcs = unpermute(pcs, m_dims[0]+1)
+    projs = unpermute(projs, m_dims[0]+1)
+    evals = unpermute(evals, m_dims[0]+1)
+    nstar = unpermute(nstar, m_dims[0]+1)
     # And return everything! Beautiful!
     return evals, nstar, projs, pcs
 
