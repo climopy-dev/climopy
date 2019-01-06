@@ -123,6 +123,7 @@ def waves(x, wavenums=None, wavelens=None, phase=None):
     if wavenums is None and wavelens is None:
         raise ValueError('Must declare wavenums or wavelengths.')
     elif wavelens is not None:
+        # dx = x[1] - x[0]
         wavenums = 1.0/np.atleast_1d(wavelens)
     wavenums = np.atleast_1d(wavenums)
     if not hasattr(x, '__iter__'):
@@ -880,6 +881,7 @@ def butterworth(dx, order, cutoff, btype='low'):
 def window(wintype, n, normalize=False):
     """
     Retrieves weighting function window, identical to get_window().
+
     For windows that require extra parameters, window
     must be a tuple of window-name, parameter.
     """
@@ -896,8 +898,8 @@ def window(wintype, n, normalize=False):
         win = win/win.sum() # default normalizes so *maximum (usually central) value is 1*
     return win
 
-def spectrum(y, dx=1, cyclic=False,
-        nperseg=100, wintype='boxcar', axis=-1,
+def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
+        nperseg=100, wintype='boxcar', center=np.pi, axis=-1,
         manual=False, detrend='linear', scaling='spectrum'):
     """
     Gets the spectral decomposition for particular windowing technique.
@@ -905,32 +907,56 @@ def spectrum(y, dx=1, cyclic=False,
 
     Parameters
     ----------
-    y:
+    y1:
         the data
+    y2:
+        the data, if you want cross-spectral power
     dx:
         timestep in physical units (used for scaling the frequency-coordinates)
     cyclic:
         whether data is cyclic along axis; in this case the nperseg
         will be overridden
 
-    Returns
+    Returns (single transform)
     -------
     f:
         wavenumbers, in <x units>**-1
     P:
         power spectrum, in units <data units>**2
+
+    Returns (cross transform, coherence == False)
+    -------
+    f:
+        wavenumbers, in <x units>**-1
+    P:
+        co-power spectrum
+    Q:
+        quadrature power spectrum
+    Py1:
+        power spectrum for y1
+    Py2:
+        power spectrum for y2
+
+    Returns (cross transform, coherence == True)
+    -------
+    f:
+        wavenumbers, in <x units>**-1
+    Coh:
+        coherence squared
+    Phi:
+        average phase relationship
     """
     # Initial stuff
-    N = y.shape[axis] # window count
+    N = y1.shape[axis] # window count
     if cyclic:
         nperseg = N
+    nperseg = 2*(nperseg // 2) # enforce even window size
     r = N % nperseg
-    if r>0:
-        s = [slice(None) for i in range(y.ndim)]
+    if r!=0:
+        s = [slice(None) for i in range(y1.ndim)]
         s[axis] = slice(None,-r)
-        y = y[s] # slice it up
+        y1 = y1[tuple(s)] # slice it up
         print(f'Warning: Trimmed {r} out of {N} points to accommodate length-{nperseg} window.')
-        # raise ValueError(f'Window width {nperseg} does not divide axis length {y.shape[axis]}.')
 
     # Just use scipy csd
     # 'one-sided' says to only return first symmetric half if data is real
@@ -939,9 +965,9 @@ def spectrum(y, dx=1, cyclic=False,
     #    this is analagous to a Planck curve with intensity per wavenumber
     #  * show the power (so units are just data units squared); this is
     #    usually what we want
-    if not manual:
+    if not manual and y2 is None:
         wintype = window(wintype, nperseg) # has better error messages
-        f, P = signal.csd(y, y, window=wintype,
+        f, P = signal.csd(y1, y1, window=wintype,
                 return_onesided=True, scaling=scaling,
                 nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
 
@@ -949,183 +975,256 @@ def spectrum(y, dx=1, cyclic=False,
     # Have checked these and results are identical
     else:
         # Get copsectrum, quadrature spectrum, and powers for each window
-        y, shape = lead_flatten(permute(y, axis)) # shape is shape of permuted data
-        win = window(wintype, nperseg)
+        y1, shape = lead_flatten(permute(y1, axis)) # shape is shape of *original* data
+        extra = y1.shape[0]
         pm = nperseg//2
+        shape[-1] = pm # new shape
         # List of *center* indices for windows
+        win = window(wintype, nperseg)
         loc = np.arange(pm, N-pm+pm//2, pm) # jump by half window length
-        P = np.empty(y.shape) # power
-        for j in range(y.shape[0]):
-            Cx = np.empty((loc.size, pm)) # have half/window size number of freqs
+        if len(loc)==0:
+            raise ValueError('Window length too big.')
+        # Ouput arrays
+        Py1 = np.empty((loc.size, extra, pm)) # power
+        if y2 is not None:
+            CO = Py1.copy()
+            Q = Py1.copy()
+            Py2 = Py1.copy()
+        for j in range(extra):
+            # Loop through windows
             for i,l in enumerate(loc):
-                # Note np.fft gives power A+Bi, so want sqrt(A^2 + B^2)/2
-                # for +/- wavenumbers, easy
-                wy = win*signal.detrend(y[j,l-pm:l+pm], type=detrend)
-                Cx[i,:] = np.abs(np.fft.fft(wy)[:pm])**2
-            P[j,:] = Cx.mean(axis=0)
-        f = np.fft.fftfreq(nperseg)[:pm] # frequency
-        P = unpermute(lead_unflatten(P, shape), axis)
-        P = unpermute(P, axis)
+                if y2 is None:
+                    # Simple
+                    wy = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
+                    Fy1 = np.fft.rfft(wy)[1:]
+                    Py1[i,j,:] = np.abs(Fy1)**2
+                else:
+                    # Frequencies
+                    wy1 = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
+                    wy2 = win*signal.detrend(y2[j,l-pm:l+pm], type=detrend)
+                    Fy1 = np.fft.rfft(wy1)[1:]
+                    Fy2 = np.fft.rfft(wy2)[1:]
+                    # Powers
+                    Py1[i,j,:] = np.abs(Fy1)**2
+                    Py2[i,j,:] = np.abs(Fy2)**2
+                    CO[i,j,:]  = Fy1.real*Fy2.real + Fy1.imag*Fy2.imag
+                    Q[i,j,:]   = Fy1.real*Fy1.imag - Fy2.real*Fy1.imag
 
-    # Convert frequency to physical units
-    # Scale so variance of windows (sum of power spectrum) equals variance of this
-    # scale = y.var(axis=axis, keepdims=True)/P.sum(axis=axis, keepdims=True)
-    # Scale so power is in proportion to total
-    scale = 1.0/P.sum(axis=axis, keepdims=True)
-    return f/dx, P*scale
+    # Helper function
+    def reshape(x):
+        x = lead_unflatten(x, shape)
+        x = unpermute(x, axis)
+        return x
 
-def spectrum2d(z, dx=1, dy=1, nperseg=100, wintype='boxcar',
+    # Get window averages, reshape, and other stuff
+    # NOTE: For the 'real' transform, all values but Nyquist must
+    # be divided by two, so that an 'average' of the power equals
+    # the covariance.
+    f = np.fft.rfftfreq(nperseg)[1:] # frequencies
+    if y2 is None:
+        # Average windows
+        Py1 = Py1.mean(axis=0)
+        Py1[:,:-1] /= 2
+        Py1 = reshape(Py1)
+        return f/dx, Py1
+    else:
+        # Averages
+        CO  = CO.mean(axis=0)
+        Q   = Q.mean(axis=0)
+        Py1 = Py1.mean(axis=0)
+        Py2 = Py2.mean(axis=0)
+        for array in (Py1, Py2, CO, Q):
+            array[:,:-1] /= 2
+        if coherence: # return coherence and phase instead
+            # Coherence and stuff
+            Coh = (CO**2 + Q**2)/(Py1*Py2)
+            Phi = np.arctan2(Q, CO) # phase
+            Phi[Phi >= center + np.pi] -= 2*np.pi
+            Phi[Phi <  center - np.pi] += 2*np.pi
+            Coh = reshape(Coh)
+            Phi = reshape(Phi)
+            return f/dx, Coh, Phi
+        else:
+            # Reshape and return
+            CO  = reshape(CO)
+            Q   = reshape(Q)
+            Py1 = reshape(Py1)
+            Py2 = reshape(Py2)
+            return f/dx, CO, Q, Py1, Py2
+
+def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
+        nperseg=100, wintype='boxcar',
         axes=(-2,-1), # first position is *cyclic* (perform simple real transform), second is *not* (windowed)
         manual=False, detrend='linear', scaling='spectrum'):
     """
     Performs 2-d spectral decomposition, with windowing along only *one* dimension,
     in style of Randel and Held 1991. Therefore assumption is we have *cyclic*
-    data along one dimension.
+    data along one dimension, the 'x' dimension.
 
-    Parameters
-    ---------
-        dx :
-            cylic dimension physical units step
-        dy :
-            non-cyclic dimension physical units step
-        z :
-            the data
-        nperseg :
-            window width
-        axes :
-            first position is cyclic axis (we perform no windowing), second
-            position is non-cyclic (perform windowing, and get complex coeffs)
-    Returns
+    Returns (single transform)
     -------
-        f :
-            wavenumbers, in <x units>**-1
-        P :
-            power spectrum, in units <data units>**2
+    f:
+        wavenumbers, in <x units>**-1
+    P:
+        power spectrum, in units <data units>**2
+
+    Returns (cross transform, coherence == False)
+    -------
+    f:
+        wavenumbers, in <x units>**-1
+    P:
+        co-power spectrum
+    Q:
+        quadrature power spectrum
+    Py1:
+        power spectrum for y1
+    Py2:
+        power spectrum for y2
+
+    Returns (cross transform, coherence == True)
+    -------
+    f:
+        wavenumbers, in <x units>**-1
+    Coh:
+        coherence squared
+    Phi:
+        average phase relationship
     """
     # Checks
-    caxis = axes[0]
-    taxis = axes[1] # axis for windowing
-    print(f'Cyclic dimension in position {caxis}, length {z.shape[caxis]}.')
-    print(f'Data to be windowed in position {taxis}, length {z.shape[taxis]}, window length {nperseg}.')
+    caxis, taxis = axes
+    if len(z1.shape)<2:
+        raise ValueError('Need at least rank 2 array.')
+    print(f'Cyclic dimension in position {caxis}, length {z1.shape[caxis]}.')
+    print(f'Data to be windowed in position {taxis}, length {z1.shape[taxis]}, window length {nperseg}.')
     if caxis<0:
-        caxis = z.ndim-caxis
+        caxis = z1.ndim-caxis
     if taxis<0:
-        taxis = z.ndim-taxis
-    l = z.shape[taxis]
+        taxis = z1.ndim-taxis
+    # if caxis<=taxis: # could generalize, but tried that for eof2D and it was huge pain in the ass
+    #     # TODO: Actually perhaps this is not necessary?
+    #     raise ValueError('Cyclic axis must be to right of non-cyclic axis.')
+    nperseg = 2*(nperseg // 2) # enforce even window size because I said so
+    l = z1.shape[taxis]
     r = l % nperseg
     if r>0:
-        s = [slice(None) for i in range(z.ndim)]
+        s = [slice(None) for i in range(z1.ndim)]
         s[taxis] = slice(None,-r)
-        z = z[s] # slice it up
+        z1 = z1[s] # slice it up
         print(f'Warning: Trimmed {r} out of {l} points to accommodate length-{nperseg} window.')
-        # raise ValueError(f'Window width {nperseg} does not divide axis length {z.shape[axis]}.')
+        # raise ValueError(f'Window width {nperseg} does not divide axis length {z1.shape[axis]}.')
 
     # Permute
-    # Axis where we get *complex* coefficients (i.e. have negative frequencies) in -2 position
-    # Axis where we retrieve *real* coefficients in -1 position
-    # print('initial:', z.shape)
-    z = permute(z, taxis, -1) # put on -1, then will be moved to -2
-    query = int(taxis<caxis)
-    z = permute(z, caxis-query, -1) # put on -1
-    nflat = z.ndim-2 # we overwrite z, so must save this value!
-    z, shape = lead_flatten(z, nflat=nflat) # flatten remaining dimensions
-
-    # Get copsectrum, quadrature spectrum, and powers for each window
-    win = window(wintype, nperseg)
-    M = z.shape[1] # cyclic dimension is in position 1
-    N = z.shape[2] # non-cyclic dimension in position 2
+    # Will put the *non-cyclic* axis on position 1, *cyclic* axis on position 2
+    # Mirrors convention for row-major geophysical data array storage, time
+    # by pressure by lat by lon (the cyclic one).
+    offset = int(taxis<caxis) # TODO: does this work, or is stuff messed up?
+    z1 = permute(z1, taxis, -1) # put on -1, then will be moved to -2
+    z1 = permute(z1, caxis - offset, -1) # put on -1
+    nflat = z1.ndim - 2 # we overwrite z1, so must save this value!
+    z1, shape = lead_flatten(z1, nflat) # flatten remaining dimensions
+    # Shapes and whatnot
+    extra = z1.shape[0]
+    N = z1.shape[1] # non-cyclic dimension
+    M = z1.shape[2] # cyclic dimension
     pm = nperseg//2
-    loc = np.arange(pm, N-pm+0.1, pm).astype(int) # jump by half window length
+    # For output data
+    shape[-2] = 2*pm # just store the real component
+    shape[-1] = M//2
+
+    # Helper function
+    # Gets 2D Fourier decomp, reorders negative frequencies on non-cyclic
+    # axis so frequencies there are monotonically ascending.
+    def freqs(x, pm):
+        x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
+        x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
+        F = np.fft.rfft2(x, axes=(0,1)) # last axis specified should get a *real* transform
+        F = F[:,1:] # remove the zero-frequency value
+        return np.concatenate((F[pm:,:], F[1:pm+1,:]), axis=0)
+
+    # The window *centers* for time windowing
+    win = window(wintype, nperseg)
+    loc = np.arange(pm, N - pm + 0.1, pm).astype(int) # jump by half window length
     if len(loc)==0:
         raise ValueError('Window length too big.')
-    shape[-2] = M//2
-    shape[-1] = pm*2
-    P = np.empty((z.shape[0], *shape[-2:])) # power
-    for j in range(z.shape[0]):
-        Cx = np.empty((loc.size, *shape[-2:])) # have half/window size number of freqs
+    # Get the spectra
+    Pz1 = np.empty((loc.size, extra, *shape[-2:])) # power
+    if z2 is not None:
+        CO = Pz1.copy()
+        Q = Pz1.copy()
+        Pz2 = Pz1.copy()
+    for j in range(extra):
         for i,l in enumerate(loc):
-            # Detrend and compute Fourier transform; note cyclic axis has no trend
-            wy = z[j,:,l-pm:l+pm] # apply window
-            wy = signal.detrend(wy, type='constant', axis=0) # remove mean
-            wy = signal.detrend(wy, type=detrend, axis=1) # remove trend or mean
-            # print('cx container:', Cx.shape)
-            # print('original data:', z.shape)
-            # print('weighted data:', wy.shape)
-            coefs = np.fft.rfft2(wy, axes=(1,0))
-            coefs = coefs[1:,:] # remove the zero-frequency value; keep both sides of complex transform
-            # print('result:', coefs.shape)
-            Cx[i,:,:] = np.abs(coefs)**2
-        P[j,:,:] = Cx.mean(axis=0)
+            if z2 is None:
+                # Reorder negative frequencies; use Nyquist
+                Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
+                # Power
+                Pz1[i,j,:,:] = np.abs(Fz1)**2
+            else:
+                # Frequencies
+                Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
+                Fz2 = freqs(z2[j,l-pm:l+pm,:], pm)
+                # Powers
+                CO[i,j,:,:]  = Fz1.real*Fz2.real + Fz1.imag*Fz2.imag
+                Q[i,j,:,:]   = Fz1.real*Fz1.imag - Fz2.real*Fz1.imag
+                Pz1[i,j,:,:] = np.abs(Fz1)**2
+                Pz2[i,j,:,:] = np.abs(Fz2)**2
 
-    # Dimensions
-    fx = np.fft.rfftfreq(2*shape[-2]-1) # just the positive-direction Fourier coefs
-    fy = np.fft.fftfreq(shape[-1]) # we use the whole thing
+    # Frequencies
+    # Make sure Nyquist frequency is appropriately signed on either side of array
+    fx = np.fft.fftfreq(2*pm) # just the positive-direction Fourier coefs
+    fx = np.concatenate((-np.abs(fx[pm:pm+1]), fx[pm+1:], fx[1:pm], np.abs(fx[pm:pm+1])), axis=0)
+    fy = np.fft.rfftfreq(M)[1:]/2 # for some reason is off by factor of 2
 
-    # Fix array
-    P = lead_unflatten(P, shape, nflat=nflat)
-    # print('initial:', P.shape)
-    P = unpermute(P, caxis-query, -2) # put caxis back, accounting for if taxis moves to left
-    # print('middle:', P.shape)
-    P = unpermute(P, taxis, -1) # put taxis back
-    P.max()
-    # print('final:', P.shape)
+    # Helper function
+    # Reshapes final result, and scales powers so we can take dimensional
+    # average without needing to divide by 2
+    def reshape(x):
+        x[:,:,:-1] /= 2
+        x = lead_unflatten(x, shape, nflat)
+        x = unpermute(x, caxis - offset, -2) # put caxis back, accounting for if taxis moves to left
+        x = unpermute(x, taxis, -1) # put taxis back
+        return x
 
-    # Convert frequency to physical units
-    # Scale so variance of windows (sum of power spectrum) equals variance of this
-    # scale = z.var(axis=axis, keepdims=True)/P.sum(axis=axis, keepdims=True)
-    # Scale so power is in proportion to total
-    scale = 1.0/P.sum(axis=axes, keepdims=True) # sum over the multiple axes
-    return fx/dx, fy/dy, P*scale # power density (sum over grid is 1)
-
-def xspectrum(x, y, nperseg=72, wintype='boxcar', centerphase=np.pi, axis=-1,
-        manual=False, detrend='linear'):
-    """
-    Calculates the cross spectrum for particular windowing technique.
-    Uses simply numpy fft.
-    """
-    if manual:
-        # Initial stuff; get integer number of half-overlapped windows
-        N = x.size
-        pm = nperseg//2
-        Nround = pm*(N//pm)
-        x, y = x[:Nround], y[:Nround]
-        if N-Nround>0: print(f'Points removed: {N-Nround:d}.')
-        # Get copsectrum, quadrature spectrum, and powers for each window
-        win = window(wintype, nperseg)
-        loc = np.arange(pm, Nround-pm+pm//2, pm) # jump by half window length
-        shape = (loc.size, pm) # have half window size number of freqs
-        Fxx, Fyy, CO, Q = np.empty(shape), np.empty(shape), np.empty(shape), np.empty(shape)
-        for i,l in enumerate(loc):
-            Cx = np.fft.fft(win*signal.detrend(x[l-pm:l+pm], detrend=detrend))[:pm]
-            Cy = np.fft.fft(win*signal.detrend(y[l-pm:l+pm], detrend=detrend))[:pm]
-            Fxx[i,:] = np.abs(Cx)**2
-            Fyy[i,:] = np.abs(Cy)**2
-            CO[i,:] = Cx.real*Cy.real + Cx.imag*Cy.imag
-            Q[i,:] = Cx.real*Cy.imag - Cy.real*Cx.imag
-        # Get average cospectrum and other stuff, return
-        Fxx, Fyy, CO, Q = Fxx.mean(0), Fyy.mean(0), CO.mean(0), Q.mean(0)
-        Coh = (CO**2 + Q**2)/(Fxx*Fyy) # coherence
-        p = np.arctan2(Q, CO) # phase
-        p[p >= centerphase+np.pi] -= 2*np.pi
-        p[p < centerphase-np.pi] += 2*np.pi
-        freq = np.fft.fftfreq(nperseg)[:pm] # frequency
+    # Get window averages, reshape, and other stuff
+    # NOTE: For the 'real' transform, all values but Nyquist must
+    # be divided by two, so that an 'average' of the power equals
+    # the covariance.
+    if z2 is None:
+        # Return
+        Pz1 = Pz1.mean(axis=0)
+        Pz1[:,:,:-1] /= 2
+        Pz1 = reshape(Pz1)
+        return fx/dx, fy/dy, Pz1
     else:
-        # Just use builtin scipy method
-        f, P = signal.csd(x, x, window=wintype,
-                return_onesided=True, scaling='spectrum',
-                nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
-    return freq, Coh, p
+        # Averages
+        CO  = CO.mean(axis=0)
+        Q   = Q.mean(axis=0)
+        Pz1 = Pz1.mean(axis=0)
+        Pz2 = Pz2.mean(axis=0)
+        for array in (Pz1, Pz2, CO, Q):
+            array[:,:,:-1] /= 2
+        if coherence: # return coherence and phase instead
+            # Coherence and stuff
+            Coh = (CO**2 + Q**2)/(Pz1*Pz2)
+            Phi = np.arctan2(Q, CO) # phase
+            Phi[Phi >= center + np.pi] -= 2*np.pi
+            Phi[Phi <  center - np.pi] += 2*np.pi
+            # Reshape and return
+            Coh = reshape(Coh)
+            Phi = reshape(Phi)
+            return fx/dx, fy/dy, Coh, Phi
+        else:
+            # Reshape
+            CO  = reshape(CO)
+            Q   = reshape(Q)
+            Pz1 = reshape(Pz1)
+            Pz2 = reshape(Pz2)
+            return fx/dx, fy/dy, CO, Q, Pz1, Pz2
 
 def autospectrum():
     """
     Uses scipy.signal.welch windowing method to generate an estimate of the
-    lagged spectrum.
+    *lagged* spectrum. Can also optionally do this with two variables.
     """
     raise NotImplementedError()
 
-def autoxspectrum():
-    """
-    Uses scipy.signal.csd automated method to generate an estimate of the
-    lagged cross-spectrum.
-    """
-    raise NotImplementedError()

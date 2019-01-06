@@ -25,8 +25,9 @@ def trail_flatten(data, nflat=None):
     shape = list(data.shape)
     if nflat is None:
         nflat = data.ndim-1 # all but last dimension
-    if nflat<=0: # just apply singleton dimension
-        return data[...,None], [*shape, 1]
+    if nflat<=0: # just add singleton dimension
+        return data[...,None], shape
+        # return data[...,None], [*shape, 1]
     if nflat is None:
         nflat = data.ndim-1 # all but last dimension
     return np.reshape(data, (*data.shape[:-nflat], np.prod(data.shape[-nflat:]).astype(int)), order='F'), shape
@@ -47,7 +48,8 @@ def trail_unflatten(data, shape, nflat=None):
     """
     if nflat is None:
         nflat = len(shape)-1 # all but last dimension
-    if nflat<=0: # just remove singleton dimension
+    # if nflat<=0 or shape[-1]==1: # just remove singleton dimension
+    if nflat<=0:
         return data[...,0]
     if data.shape[-1] != np.prod(shape[-nflat:]):
         raise ValueError(f'Number of trailing elements {data.shape[-1]} does not match trailing shape {shape[nflat:]}.')
@@ -71,9 +73,8 @@ def lead_flatten(data, nflat=None):
     if nflat is None:
         nflat = data.ndim-1 # all but last dimension
     if nflat<=0: # just apply singleton dimension
-        return data[None,...], [1, *shape]
-    # if np.sum(data.shape[:nflat])==0:
-    #     shape = [1, *shape]
+        # return data[None,...], [1, *shape]
+        return data[None,...], shape
     return np.reshape(data, (np.prod(data.shape[:nflat]).astype(int), *data.shape[nflat:]), order='C'), shape # make column major
 
 def lead_unflatten(data, shape, nflat=None):
@@ -93,8 +94,9 @@ def lead_unflatten(data, shape, nflat=None):
         choose rank-1 i.e. enough to restore from a rank 2 array
     """
     if nflat is None:
-        nflat = len(shape)-1 # all but last dimension
-    if nflat<=0: # just remove singleton dimension
+        nflat = len(shape) - 1 # all but last dimension
+    # if nflat<=0 or shape[0]==1:
+    if nflat<=0: # we artificially added a singleton dimension; remove it
         return data[0,...]
     if data.shape[0] != np.prod(shape[:nflat]):
         raise ValueError(f'Number of leading elements {data.shape[0]} does not match leading shape {shape[nflat:]}.')
