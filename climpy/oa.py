@@ -58,13 +58,16 @@ def rednoise(ntime, a, samples=1, mean=0, stdev=1, nested=False):
     samples = np.atleast_1d(samples)
     data = np.empty((ntime+1,*samples)) # user can make N-D array
     b = (1-a**2)**0.5  # from OA class
+
     # Nested loop
     data, shape = trail_flatten(data)
     data[0,:] = 0 # initialize
     for i in range(data.shape[-1]):
         eps = np.random.normal(loc=0, scale=1, size=ntime)
+        # data[1:,i] = a*data[:-1,i] + b*eps[:-1] # won't work because next state function of previous state
         for t in range(1,ntime+1):
             data[t,i] = a*data[t-1,i] + b*eps[t-1]
+
     # Seriously overkill
     # init = np.atleast_1d(init)
     # if hasattr(init,'__iter__') and len(init)==2:
@@ -78,6 +81,8 @@ def rednoise(ntime, a, samples=1, mean=0, stdev=1, nested=False):
     #     eps = np.random.normal(loc=0, scale=1, size=ntime)
     #     vals = eps[:,None]@aseries[None,:] # matrix for doing math on
     #     data[1:,i] = [np.trace(vals,ntime-i) for i in range(1,ntime+1)]
+
+    # Return
     data = trail_unflatten(data, shape)
     if len(samples)==1 and samples[0]==1:
         data = data.squeeze()
