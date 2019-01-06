@@ -8,28 +8,40 @@ from .arraytools import *
 
 # Trigonometric functions in degrees
 def sin(x):
+    """Sine in degrees."""
     return np.sin(x*np.pi/180)
 def cos(x):
+    """Cosine in degrees."""
     return np.cos(x*np.pi/180)
 def tan(x):
+    """Tangent in degrees."""
     return np.tan(x*np.pi/180)
 def csc(x):
+    """Cosecant in degrees."""
     return 1/np.sin(x*np.pi/180)
 def sec(x):
+    """Secant in degrees."""
     return 1/np.cos(x*np.pi/180)
 def cot(x):
+    """Cotangent in degrees."""
     return 1/np.tan(x*np.pi/180)
 def arcsin(x):
+    """Inverse sine returning degrees."""
     return np.arcsin(x)*180/np.pi
 def arccos(x):
+    """Inverse cosine returning degrees."""
     return np.arccos(x)*180/np.pi
 def arctan(x):
+    """Inverse tangent returning degrees."""
     return np.arctan(x)*180/np.pi
 def arccsc(x):
+    """Inverse cosecant returning degrees."""
     return np.arcsin(1/x)*180/np.pi
 def arcsec(x):
+    """Inverse secant returning degrees."""
     return np.arccos(1/x)*180/np.pi
 def arccot(x):
+    """Inverse cotangent returning degrees."""
     return np.arctan(1/x)*180/np.pi
 
 def isiter(v):
@@ -83,6 +95,7 @@ def match(*args):
     segment from either vector, and the vector itself, so use as follows:
         i1, i2, ..., vmatch = match(v1, v2, ...)
         v1[i1] == v2[i2] == ... == vmatch
+
     Useful e.g. for matching the time dimensions of 3D or 4D variables collected
     over different years and months.
     """
@@ -108,7 +121,7 @@ def intersection(x, segment1, segment2, xlog=False):
     Find the (first) intersection point for two line segments.
     Optionally do this in log-space for the x-axis.
     """
-    #--------------------------------------------------------------------------#
+
     # Initial stuff
     segment1, segment2 = np.array(segment1), np.array(segment2)
     if xlog: # transform x coordinates optionally
@@ -117,7 +130,7 @@ def intersection(x, segment1, segment2, xlog=False):
     else:
         transform  = lambda x: x
         itransform = lambda x: x
-    #--------------------------------------------------------------------------#
+
     # Get intersection
     diff = segment1 - segment2
     if (diff>0).all() or (diff<0).all():
@@ -155,4 +168,3 @@ def intersection(x, segment1, segment2, xlog=False):
 #     elif not (v1[slice1]==v2[slice2]).all():
 #         raise ValueError('Vectors are not identical between matching minima/maxima.')
 #     return slice1, slice2, v1[slice1]
-

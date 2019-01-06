@@ -7,11 +7,20 @@ import numpy as np
 def trail_flatten(data, nflat=None):
     """
     Flatten *trailing* dimensions onto single dimension.
-    Argument 'nflat' controls number of dimensions flattened; default is to
-    choose <ndim-1> i.e. enough to flatten into a 2x2 array.
-     * Note that numpy prod of an empty iterable will be 1; so, adds singleton dim.
-     * Note we use tuple expansion of the [shape] tuple
-     * Note default for numpy is is row-major.
+
+    Parameters
+    ----------
+    data : array
+        input data
+    nflat : int or None
+        number of dimensions flattened -- default is to
+        choose rank-1 i.e. enough to flatten into a rank 2 array
+
+    Notes
+    -----
+    * Note that numpy prod of an empty iterable will be 1; so, adds singleton dim.
+    * Note we use tuple expansion of the [shape] tuple
+    * Note default for numpy is is row-major.
     """
     shape = list(data.shape)
     if nflat is None:
@@ -25,9 +34,16 @@ def trail_flatten(data, nflat=None):
 def trail_unflatten(data, shape, nflat=None):
     """
     Undo action of trail_flatten.
-    Argument 'shape' is desired shape of reconstructed array.
-    Argument 'nflat' controls number of dimensions unflattened; default is to
-    choose <ndim-1> i.e. enough to flatten into a 2x2 array.
+
+    Parameters
+    ----------
+    data : array
+        the input data
+    shape : iterable of ints
+        desired shape of reconstructed array.
+    nflat : int or None
+        number of dimensions unflattened -- default is to
+        choose rank-1 i.e. enough to flatten into a rank 2 array
     """
     if nflat is None:
         nflat = len(shape)-1 # all but last dimension
@@ -41,9 +57,15 @@ def trail_unflatten(data, shape, nflat=None):
 
 def lead_flatten(data, nflat=None):
     """
-    Flatten *leading* dimensions onto single dimension.
-    Argument 'nflat' controls number of dimensions flattened; default is to
-    choose <ndim-1> i.e. enough to flatten into a 2x2 array.
+    Flatten *trailing* dimensions onto single dimension.
+
+    Parameters
+    ----------
+    data : array
+        input data
+    nflat : int or None
+        number of dimensions flattened -- default is to
+        choose rank-1 i.e. enough to flatten into a rank 2 array
     """
     shape = list(data.shape)
     if nflat is None:
@@ -57,9 +79,18 @@ def lead_flatten(data, nflat=None):
 def lead_unflatten(data, shape, nflat=None):
     """
     Undo action of lead_flatten.
-    Argument 'shape' is desired shape of reconstructed array.
-    Argument 'nflat' controls number of dimensions unflattened; default is to
-    choose <ndim-1> i.e. enough to flatten into a 2x2 array.
+
+    Flatten *trailing* dimensions onto single dimension.
+
+    Parameters
+    ----------
+    data : array
+        input data
+    shape : iterable of ints
+        desired shape of reconstructed array.
+    nflat : int or None
+        number of dimensions unflattened -- default is to
+        choose rank-1 i.e. enough to restore from a rank 2 array
     """
     if nflat is None:
         nflat = len(shape)-1 # all but last dimension
@@ -73,25 +104,33 @@ def lead_unflatten(data, shape, nflat=None):
 
 def permute(data, source=-1, destination=-1):
     """
-    Permutes axis <source> onto the *last* dimension by default.
-    This used to use rollaxis but it sucks as acknowledged by maintainers:
+    Permutes axes, by default moving to the *last* dimension.
+
+    Arguments
+    ---------
+    source : int
+        dimension to be permuted
+    destination : int
+        destination for that dimension
+
+    Notes
+    -----
+    This is now a simple wrapper around np.moveaxis.
+    This used to use np.rollaxis but it sucks as acknowledged by maintainers:
     https://github.com/numpy/numpy/issues/9473
-    The moveaxis command is way way more intuitive.
     """
-    # print('before:', data.shape, source, destination)
     data = np.moveaxis(data, source, destination)
-    # print('after:', data.shape)
     return data
 
 def unpermute(data, source=-1, destination=-1):
     """
-    Undoes action of permute, by default putting *last* dimension onto axis <source>.
-    This used to use rollaxis but it sucks as acknowledged by maintainers:
-    https://github.com/numpy/numpy/issues/9473
-    The moveaxis command is way way more intuitive.
+    Arguments
+    ---------
+    source : int
+        dimension that was previously moved
+    destination : int
+        destination for that moved dimension
     """
-    # print('before:', data.shape, source, destination)
     data = np.moveaxis(data, destination, source)
-    # print('after:', data.shape)
     return data
 

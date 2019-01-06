@@ -46,12 +46,17 @@ def gaussian(N=1000, mean=0, stdev=None, sigma=1):
 #------------------------------------------------------------------------------
 def rednoise(ntime, a, samples=1, mean=0, stdev=1, nested=False):
     """
-    Creates artificial red noise time series, i.e. a weighted sum of random perturbations.
+    Creates artificial red noise time series, i.e. a weighted sum
+    of random perturbations.
+
     Equation is: x(t) = a*x(t-dt) + b*eps(t)
     where a is the lag-1 autocorrelation and b is a scaling term.
-     * Output will have shape ntime by nsamples.
-     * Enforce that the first timestep always equals the 'starting' position.
-     * Use 'nested' flag to control which algorithm to use.
+
+    Notes
+    -----
+    * Output will have shape ntime by nsamples.
+    * Enforce that the first timestep always equals the 'starting' position.
+    * Use 'nested' flag to control which algorithm to use.
     """
     # Initial stuff
     ntime -= 1 # exclude the initial timestep
@@ -92,20 +97,27 @@ def waves(x, wavenums=None, wavelens=None, phase=None):
     """
     Compose array of sine waves.
     Useful for testing performance of filters.
-    Input:
-        x: if scalar, 'x' is np.arange(0,x)
-           if iterable, can be n-dimensional, and will calculate sine
-           from coordinates on every dimension
-    Required kwarg -- either of:
-        wavelens: wavelengths for sine function
-        wavenums: wavenumbers for sine function
-    Output:
-        data: data composed of waves.
-    Notes:
-      * 'x' will always be normalized so that wavelength
-        is with reference to first step.
-      * this make sense because when working with filters, almost
-        always need to use units corresponding to axis.
+
+    Parameters
+    ----------
+    x : scalar or iterable
+        * if scalar, 'x' is np.arange(0,x)
+        * if iterable, can be n-dimensional, and will calculate sine from coordinates on every dimension
+    wavelens :
+        wavelengths for sine function (use either this or wavenums)
+    wavenums :
+        wavenumbers for sine function (use either this or wavelens)
+
+    Returns
+    -------
+    data :
+        data composed of waves.
+
+    Notes
+    -----
+    'x' will always be normalized so that wavelength is with reference to
+    first step. This make sense because when working with filters, almost
+    always need to use units corresponding to axis.
     """
     # Wavelengths
     if wavenums is None and wavelens is None:
@@ -131,18 +143,26 @@ def waves(x, wavenums=None, wavelens=None, phase=None):
 def linefit(*args, axis=-1, build=False, stderr=False):
     """
     Get linear regression along axis, ignoring NaNs. Uses np.polyfit.
-    Input:
-        y:    assumed 'x' is 0 to len(y)-1
-        x, y: arbitrary 'x', must monotonically increase
-    Optional:
-        axis: regression axis
-        build: whether to replace regression axis with scalar slope, or
-            reconstructed best-fit line.
-        stderr: if not doing 'build', whether to add standard error on
-            the slope in index 1 of regressoin axis.
-    Output:
-        y: regression params on axis 'axis', with offset at index 0,
-           slope at index 1.
+
+    Parameters
+    ----------
+    y :
+        assumed 'x' is 0 to len(y)-1
+    x, y :
+        arbitrary 'x', must monotonically increase
+    axis :
+        regression axis
+    build :
+        whether to replace regression axis with scalar slope, or
+        reconstructed best-fit line.
+    stderr :
+        if not doing 'build', whether to add standard error on
+        the slope in index 1 of regressoin axis.
+
+    Returns
+    -------
+    y : regression params on axis 'axis', with offset at index 0,
+        slope at index 1.
     """
     # Perform regression
     # Polyfit can perform regressions on data with series in columns,
@@ -184,7 +204,8 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
     """
     Calculates a best-fit red noise autocorrelation spectrum.
     Goes up to nlag-timestep autocorrelation.
-    Input:
+    Parameters
+    ----------
         data: the input data (this function computes necessary correlation coeffs).
     Output:
         spectrum: the autocorrelation spectrum out to nlag lags.
@@ -226,7 +247,8 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
 def autocorr(data, nlag=None, lag=None, verbose=False, axis=0, _normalize=True):
     """
     Gets the autocorrelation spectrum at successive lags.
-    Input:
+    Parameters
+    ----------
         data: the input data.
     Output:
         autocorrs: the autocorrelations as a function of lag.
@@ -287,7 +309,8 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
     Calculates the temporal EOFs, using the scipy algorithm for Hermetian (or
     real symmetric) matrices. This version allows calculating just 'n'
     most important ones, so should be faster.
-    Input:
+    Parameters
+    ----------
         data:
             data of arbitrary shape
     Kwargs:
@@ -436,7 +459,6 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
     # And return everything! Beautiful!
     return evals, nstar, projs, pcs
 
-    #--------------------------------------------------------------------------#
     # Data should be time by location
     # # Standardize
     # Z = (Z-Z.mean(0))/Z.std(0)
@@ -489,33 +511,47 @@ def rolling(x, w, axis=-1, btype='lowpass',
     Implementation is similar to scipy.signal.lfilter. Note for non-recursive
     (i.e. windowing) filters, the 'a' vector is just 1, followed by zeros.
     Read this: https://stackoverflow.com/a/4947453/4970632
+
     Generates rolling numpy window along final axis; can then operate with
     functions like polyfit or mean along the new last axis of output.
+
     Just creates *view* of original array, without duplicating data, so no worries
     about efficiency.
-    Input:
-        x: data, and we roll along axis 'axis'.
-    Optional:
-        w (int or iterable): boxcar window length, or custom weights
-        pad (bool):        whether to pad the edges of axis back to original size
-        padvalue (float): what to pad with (default np.nan)
-        btype (string):    whether to apply lowpass, highpass, or bandpass
-        kwargs: remaining kwargs passed to windowing function
-    Output:
-        x: data windowed along arbitrary dimension
-    Notes:
-      * For 1-D data numpy 'convolve' would be appropriate, problem is 'concolve'
-        doesn't take multidimensional input! Likely that the source code employs
-        something similar to what I do below anyway.
-      * If x has odd number of obs along axis, result will have last element
-        trimmed. Just like filter().
-      * Will generate a new axis in the -1 position that is a running representation
-        of value in axis numver <axis>.
-      * Strides are apparently the 'number of bytes' one has to skip in memory
-        to move to next position *on the given axis*. For example, a 5 by 5
-        array of 64bit (8byte) values will have array.strides == (40,8).
-      * Should consider using swapaxes instead of these permute and unpermute
-        functions, might be simpler.
+
+    Parameters
+    ----------
+    x :
+        data, and we roll along axis 'axis'.
+    w : int or iterable
+        boxcar window length, or custom weights
+    pad : bool
+        whether to pad the edges of axis back to original size
+    padvalue : float
+        what to pad with (default np.nan)
+    btype : string
+        whether to apply lowpass, highpass, or bandpass
+    **kwargs :
+        remaining kwargs passed to windowing function
+
+    Returns
+    -------
+    x :
+        data windowed along arbitrary dimension
+
+    Notes
+    -----
+    * For 1-D data numpy 'convolve' would be appropriate, problem is 'concolve'
+    doesn't take multidimensional input! Likely that the source code employs
+    something similar to what I do below anyway.
+    * If x has odd number of obs along axis, result will have last element
+    trimmed. Just like filter().
+    * Will generate a new axis in the -1 position that is a running representation
+    of value in axis numver <axis>.
+    * Strides are apparently the 'number of bytes' one has to skip in memory
+    to move to next position *on the given axis*. For example, a 5 by 5
+    array of 64bit (8byte) values will have array.strides == (40,8).
+    * Should consider using swapaxes instead of these permute and unpermute
+    functions, might be simpler.
     """
     # Roll axis, reshape, and get generate running dimension
     n_orig = x.shape[axis]
@@ -569,19 +605,29 @@ def filter(x, b, a=1, n=1, axis=-1,
     """
     Apply scipy.signal.lfilter to data. By default this does *not* pad
     ends of data. May keep it this way.
-    Input:
-        x: data to be filtered
-        b: b coefficients (non-recursive component)
-        a: scale factor in index 0, followed by a coefficients (recursive component)
-        n: number of times to filter data (will go forward-->backward-->forward...)
-        axis: axis along which we filter data
-    Optional:
-        fix: whether to (a) trim leading part of axis by number of a/b coefficients
+
+    Parameters
+    ----------
+    x :
+        data to be filtered
+    b :
+        b coefficients (non-recursive component)
+    a :
+        scale factor in index 0, followed by a coefficients (recursive component)
+    n :
+        number of times to filter data (will go forward-->backward-->forward...)
+    axis :
+        axis along which we filter data
+    fix :
+        whether to (a) trim leading part of axis by number of a/b coefficients
         and (b) fill trimmed values with NaNs; will also attempt to *re-center*
-        the data if a net-forward (e.g. f, fbf, fbfbf, ...) filtering was performed; this
-        won't work for recursive filters, but does for non-recursive filters
-    Output:
-        y: filtered data
+        the data if a net-forward (e.g. f, fbf, fbfbf, ...) filtering was
+        performed (this works for non-recursive filters only)
+
+    Output
+    ------
+    y :
+        filtered data
     Notes:
       * Consider adding **empirical method for trimming either side of recursive
         filter that trims up to where impulse response is negligible**
@@ -634,8 +680,11 @@ def response(dx, b, a=1, n=1000, simple=False):
     Calculate response function given the a and b coefficients for some
     analog filter. Note we *need to make the exponent frequencies into
     rad/physical units* for results to make sense.
+
     Dennis Notes: https://atmos.washington.edu/~dennis/552_Notes_ftp.html
-    Formula:
+
+    Formula
+    -------
                 jw               -jw            -jmw
         jw  B(e)    b[0] + b[1]e + .... + b[m]e
         H(e) = ---- = ------------------------------------
@@ -726,26 +775,40 @@ def lanczos(dx, width, cutoff, response=True):
     """
     Returns *coefficients* for Lanczos high-pass filter with
     desired wavelength specified.
-    Input:
-        width: length of filter in physical units
-        cutoff: cutoff wavelength in physical units
-        dx: units of your x-dimension (so that cutoff can be translated
-        from physical units to 'timestep' units)
-    Returns:
-      b: numerator coeffs
-      a: denominator coeffs
     See: https://scitools.org.uk/iris/docs/v1.2/examples/graphics/SOI_filtering.html
-    Notes:
-      * The smoothing should only be *approximate* (see Hartmann notes), response
-        function never exactly perfect like with Butterworth filter.
-      * The '2' factor appearing in multiple places may seem random. But actually
-        converts linear frequency (i.e. wavenumber) to angular frequency in
-        sine call below. The '2' doesn't appear in any other factor just as a
-        consequence of the math.
-      * Code is phrased slightly differently, more closely follows Libby's discription in class.
-      * Keep in mind 'cutoff' must be provided in *time step units*. Change
-        the converter 'dx' otherwise.
-      * Example, n=9 returns 4+4+1=9 points in the 'concatenate' below.
+
+    Parameters
+    ----------
+    width :
+        length of filter in physical units
+    cutoff :
+        cutoff wavelength in physical units
+    dx :
+         units of your x-dimension (so that cutoff can be translated
+         from physical units to 'timestep' units)
+
+    Returns
+    -------
+    b :
+        numerator coeffs
+    a :
+        denominator coeffs
+
+    Notes
+    -----
+    * The smoothing should only be *approximate* (see Hartmann notes), response
+    function never exactly perfect like with Butterworth filter.
+    * The '2' factor appearing in multiple places may seem random. But actually
+    converts linear frequency (i.e. wavenumber) to angular frequency in
+    sine call below. The '2' doesn't appear in any other factor just as a
+    consequence of the math.
+    * Code is phrased slightly differently, more closely follows Libby's discription in class.
+    * Keep in mind 'cutoff' must be provided in *time step units*. Change
+    the converter 'dx' otherwise.
+
+    Example
+    -------
+    n=9 returns 4+4+1=9 points in the 'concatenate' below.
     """
     # Coefficients and initial stuff
     alpha = 1.0/(cutoff/dx) # convert alpha to wavenumber (new units are 'inverse timesteps')
@@ -761,29 +824,44 @@ def lanczos(dx, width, cutoff, response=True):
     window = np.concatenate((np.flipud(Cktilde), np.array([C0]), Cktilde))
     return window[1:-1], 1
 
-def butterworth(dx, width, cutoff, btype='low'):
+def butterworth(dx, order, cutoff, btype='low'):
     """
     Applies Butterworth filter to data. Since this is a *recursive*
     filter, non-trivial to apply, so this uses scipy 'lfilter'.
-    Get an 'impulse response function' by passing a bunch of zeros, and
-    single non-zero 'point'.
-    See Libby's function for more details.
-    Notes:
-      * Unlike Lanczos filter, the *length* of this should be
+
+    To get an 'impulse response function', pass a bunch of zeros with a single
+    non-zero 'point' as the dx. See Libby's function for more details.
+
+    Parameters
+    ----------
+      dx :
+        data spacing
+      order :
+        order of the filter
+      cutoff :
+        cutoff frequency in 'x' units
+
+    Returns
+    -------
+      b :
+        numerator coeffs
+      a :
+        denominator coeffs
+
+    Notes
+    -----
+    * Need to run *forward and backward* to prevent time-shifting.
+    * The 'analog' means units of cutoffs are rad/s.
+    * Unlike Lanczos filter, the *length* of this should be
         determined always as function of timestep, because really high
         order filters can get pretty wonky.
-      * Need to run *forward and backward* to prevent time-shifting.
-      * Cutoff is point at which gain reduces to 1/sqrt(2) of the
+    * Cutoff is point at which gain reduces to 1/sqrt(2) of the
         initial frequency. If doing bandpass, can 
-      * The 'analog' means units of cutoffs are rad/s.
-    Returns:
-      b: numerator coeffs
-      a: denominator coeffs
     """
     # Initial stuff
-    # n = (width/dx)//1 # convert to timestep units
-    # n = (n//2)*2 + 1 # odd numbered
-    n = width # or order
+    # N = (width/dx)//1 # convert to timestep units
+    # N = (N//2)*2 + 1 # odd numbered
+    N = order # or order
     analog = False # seem to need digital, lfilter needed to actually filter stuff and doesn't accept analog
     if analog:
         cutoff = 2*np.pi/(cutoff/dx) # from wavelengths to rad/time steps
@@ -791,9 +869,9 @@ def butterworth(dx, width, cutoff, btype='low'):
         cutoff = 1.0/cutoff # to Hz, or cycles/unit
         cutoff = cutoff*(2*dx) # to cycles/(2 timesteps), must be relative to nyquist
         # cutoff = (1/cutoff)*(2/(1/dx)) # python takes this in frequency units!
-    print(f'order-{n:.0f} Butterworth filter')
+    print(f'order-{N:.0f} Butterworth filter')
     # Apply filter
-    b, a = signal.butter(n-1, cutoff, btype=btype, analog=analog, output='ba')
+    b, a = signal.butter(N-1, cutoff, btype=btype, analog=analog, output='ba')
     return b, a
 
 #------------------------------------------------------------------------------#
@@ -818,33 +896,63 @@ def window(wintype, n, normalize=False):
         win = win/win.sum() # default normalizes so *maximum (usually central) value is 1*
     return win
 
-def spectrum(dx, y, nperseg=72, wintype='boxcar', axis=-1,
+def spectrum(y, dx=1, cyclic=False,
+        nperseg=100, wintype='boxcar', axis=-1,
         manual=False, detrend='linear', scaling='spectrum'):
     """
     Gets the spectral decomposition for particular windowing technique.
     Uses simple numpy fft.
-    Input:
-        dx: timestep in physical units (used for scaling the frequency-coordinates)
-        y:  the data
-    Output:
-        f: wavenumbers, in <x units>**-1
-        P: power spectrum, in units <data units>**2
+
+    Parameters
+    ----------
+    y:
+        the data
+    dx:
+        timestep in physical units (used for scaling the frequency-coordinates)
+    cyclic:
+        whether data is cyclic along axis; in this case the nperseg
+        will be overridden
+
+    Returns
+    -------
+    f:
+        wavenumbers, in <x units>**-1
+    P:
+        power spectrum, in units <data units>**2
     """
-    # Checks
-    l = y.shape[axis]
-    r = l % nperseg
+    # Initial stuff
+    N = y.shape[axis] # window count
+    if cyclic:
+        nperseg = N
+    r = N % nperseg
     if r>0:
         s = [slice(None) for i in range(y.ndim)]
         s[axis] = slice(None,-r)
         y = y[s] # slice it up
-        print(f'Warning: Trimmed {r} out of {l} points to accommodate length-{nperseg} window.')
+        print(f'Warning: Trimmed {r} out of {N} points to accommodate length-{nperseg} window.')
         # raise ValueError(f'Window width {nperseg} does not divide axis length {y.shape[axis]}.')
-    if manual:
+
+    # Just use scipy csd
+    # 'one-sided' says to only return first symmetric half if data is real
+    # 'scaling' queries whether to:
+    #  * scale 'per wavenumber'/'per Hz', option 'density', default;
+    #    this is analagous to a Planck curve with intensity per wavenumber
+    #  * show the power (so units are just data units squared); this is
+    #    usually what we want
+    if not manual:
+        wintype = window(wintype, nperseg) # has better error messages
+        f, P = signal.csd(y, y, window=wintype,
+                return_onesided=True, scaling=scaling,
+                nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
+
+    # Manual approach
+    # Have checked these and results are identical
+    else:
         # Get copsectrum, quadrature spectrum, and powers for each window
         y, shape = lead_flatten(permute(y, axis)) # shape is shape of permuted data
-        N = y.shape[1] # window count
         win = window(wintype, nperseg)
         pm = nperseg//2
+        # List of *center* indices for windows
         loc = np.arange(pm, N-pm+pm//2, pm) # jump by half window length
         P = np.empty(y.shape) # power
         for j in range(y.shape[0]):
@@ -858,18 +966,7 @@ def spectrum(dx, y, nperseg=72, wintype='boxcar', axis=-1,
         f = np.fft.fftfreq(nperseg)[:pm] # frequency
         P = unpermute(lead_unflatten(P, shape), axis)
         P = unpermute(P, axis)
-    else:
-        # Just use scipy csd
-        # 'one-sided' says to only return first symmetric half if data is real
-        # 'scaling' queries whether to:
-        # * scale 'per wavenumber'/'per Hz', option 'density', default;
-        #   this is analagous to a Planck curve with intensity per wavenumber
-        # * show the power (so units are just data units squared); this is
-        #   usually what we want
-        wintype = window(wintype, nperseg) # has better error messages
-        f, P = signal.csd(y, y, window=wintype,
-                return_onesided=True, scaling=scaling,
-                nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
+
     # Convert frequency to physical units
     # Scale so variance of windows (sum of power spectrum) equals variance of this
     # scale = y.var(axis=axis, keepdims=True)/P.sum(axis=axis, keepdims=True)
@@ -877,23 +974,33 @@ def spectrum(dx, y, nperseg=72, wintype='boxcar', axis=-1,
     scale = 1.0/P.sum(axis=axis, keepdims=True)
     return f/dx, P*scale
 
-def spectrum2d(dx, dy, z, nperseg, wintype='boxcar',
+def spectrum2d(z, dx=1, dy=1, nperseg=100, wintype='boxcar',
         axes=(-2,-1), # first position is *cyclic* (perform simple real transform), second is *not* (windowed)
         manual=False, detrend='linear', scaling='spectrum'):
     """
     Performs 2-d spectral decomposition, with windowing along only *one* dimension,
     in style of Randel and Held 1991. Therefore assumption is we have *cyclic*
     data along one dimension.
-    Input:
-        dx: cylic dimension physical units step
-        dy: non-cyclic dimension physical units step
-        z:  the data
-        nperseg: window width
-        axes: first position is cyclic axis (we perform no windowing), second
+
+    Parameters
+    ---------
+        dx :
+            cylic dimension physical units step
+        dy :
+            non-cyclic dimension physical units step
+        z :
+            the data
+        nperseg :
+            window width
+        axes :
+            first position is cyclic axis (we perform no windowing), second
             position is non-cyclic (perform windowing, and get complex coeffs)
-    Output:
-        f: wavenumbers, in <x units>**-1
-        P: power spectrum, in units <data units>**2
+    Returns
+    -------
+        f :
+            wavenumbers, in <x units>**-1
+        P :
+            power spectrum, in units <data units>**2
     """
     # Checks
     caxis = axes[0]
@@ -912,6 +1019,7 @@ def spectrum2d(dx, dy, z, nperseg, wintype='boxcar',
         z = z[s] # slice it up
         print(f'Warning: Trimmed {r} out of {l} points to accommodate length-{nperseg} window.')
         # raise ValueError(f'Window width {nperseg} does not divide axis length {z.shape[axis]}.')
+
     # Permute
     # Axis where we get *complex* coefficients (i.e. have negative frequencies) in -2 position
     # Axis where we retrieve *real* coefficients in -1 position
@@ -919,9 +1027,9 @@ def spectrum2d(dx, dy, z, nperseg, wintype='boxcar',
     z = permute(z, taxis, -1) # put on -1, then will be moved to -2
     query = int(taxis<caxis)
     z = permute(z, caxis-query, -1) # put on -1
-    # print('final:', z.shape)
     nflat = z.ndim-2 # we overwrite z, so must save this value!
     z, shape = lead_flatten(z, nflat=nflat) # flatten remaining dimensions
+
     # Get copsectrum, quadrature spectrum, and powers for each window
     win = window(wintype, nperseg)
     M = z.shape[1] # cyclic dimension is in position 1
@@ -948,9 +1056,11 @@ def spectrum2d(dx, dy, z, nperseg, wintype='boxcar',
             # print('result:', coefs.shape)
             Cx[i,:,:] = np.abs(coefs)**2
         P[j,:,:] = Cx.mean(axis=0)
+
     # Dimensions
     fx = np.fft.rfftfreq(2*shape[-2]-1) # just the positive-direction Fourier coefs
     fy = np.fft.fftfreq(shape[-1]) # we use the whole thing
+
     # Fix array
     P = lead_unflatten(P, shape, nflat=nflat)
     # print('initial:', P.shape)
@@ -959,6 +1069,7 @@ def spectrum2d(dx, dy, z, nperseg, wintype='boxcar',
     P = unpermute(P, taxis, -1) # put taxis back
     P.max()
     # print('final:', P.shape)
+
     # Convert frequency to physical units
     # Scale so variance of windows (sum of power spectrum) equals variance of this
     # scale = z.var(axis=axis, keepdims=True)/P.sum(axis=axis, keepdims=True)
@@ -1004,13 +1115,6 @@ def xspectrum(x, y, nperseg=72, wintype='boxcar', centerphase=np.pi, axis=-1,
                 return_onesided=True, scaling='spectrum',
                 nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
     return freq, Coh, p
-
-def spectrum2():
-    """
-    Compute the 2-dimensional Fourier decomposition, and produce power estimates
-    with windowing as above.
-    """
-    raise NotImplementedError()
 
 def autospectrum():
     """

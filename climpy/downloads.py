@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
+# Imports
 import xarray as xr
 import numpy as np
-try:
-    import ecmwfapi as ecmwf
-except ModuleNotFoundError:
-    print('Warning: ECMWF API unavailable.')
+
 #-------------------------------------------------------------------------------
 # ERA-interim downloads
 #-------------------------------------------------------------------------------
@@ -25,12 +23,17 @@ def eraint(params, stream, levtype,
         }
     with the key found on your user/profile page on the ecmwf website.
 
-    Time range arguments:
-    years/yearrange -- list of range of years
-    months/monthrange -- list or range of months
-    daterange -- range of dates/datetimes
+    Time range params
+    -----------------
+    years/yearrange :
+        list of range of years
+    months/monthrange :
+        list or range of months
+    daterange :
+        range of dates/datetimes
 
-    Other input arguments:
+    Other params
+    ------------
     params: can be either of:
         list/tuple of variable string names
         individual variable string
@@ -58,17 +61,18 @@ def eraint(params, stream, levtype,
     box: can be either of:
         string name for particular region, e.g. "europe" (see documentation)
         the West/South/East/North boundaries (so lower-left corner, upper-right corner), as a length-4 list/tuple
-    filename: name of file output
+    filename:
+        name of file output
     """
-    #--------------------------------------------------------------------------#
     # Data stream
+    import ecmwfapi as ecmwf # only do so inside function
     stream = { # oper is original, moda is monthly mean of daily means
             'synoptic':  'oper',
             'monthly':   'moda'
             }.get(stream)
     if stream is None:
         raise ValueError('Must choose from "oper" for synoptic fields, "moda" for monthly means of daily means.')
-    #--------------------------------------------------------------------------#
+
     # Variable id conversion (see: https://rda.ucar.edu/datasets/ds627.0/docs/era_interim_grib_table.html)
     if isinstance(params, str):
         params = (params,)
@@ -98,7 +102,7 @@ def eraint(params, stream, levtype,
     if None in params:
         raise ValueError('MARS id for variable is unknown (might need to be added to this script).')
     params = '/'.join(params)
-    #--------------------------------------------------------------------------#
+
     # Time selection as various RANGES or LISTS
     # Priority; just use daterange as datetime or date objects
     if daterange is not None:
@@ -112,7 +116,7 @@ def eraint(params, stream, levtype,
             dates = '/'.join('%04d%02d00' % (y0 + (m0+n-1)//12, (m0+n-1)%12 + 1) for n in range(N))
         else:
             dates = '/to/'.join(d.strftime('%Y%m%d') for d in daterange) # MARS will get calendar days in range
-    #--------------------------------------------------------------------------#
+
     # Alternative; list the years/months desired, and if synoptic, get all calendar days within
     else:
         # First, years
@@ -152,7 +156,7 @@ def eraint(params, stream, levtype,
                 '/'.join('%04d%02d%02d' % (y,m,i+1) for i in range(calendar.monthrange(y,m)[1]))
                 for m in months)
                 for y in years)
-    #--------------------------------------------------------------------------#
+
     # Level selection as RANGE or LIST
     # Update this list if you modify script for ERA5, etc.
     levchoices = {
@@ -179,7 +183,7 @@ def eraint(params, stream, levtype,
             else:
                 levs = levchoices[(levchoices>=levrange[0]) & (levchoices<=levrange[1])].flat
         levs = '/'.join(str(l) for l in levs)
-    #--------------------------------------------------------------------------#
+
     # Other parameters
     # Resolution
     res = '%.5f/%.5f' % (res,res) # same in latitude/longitude required, for now
@@ -191,7 +195,7 @@ def eraint(params, stream, levtype,
     except TypeError:
         hours = (hours,)
     hours = '/'.join(str(h).zfill(2) for h in hours) # zfill padds 0s on left
-    #--------------------------------------------------------------------------#
+
     # Server instructions
     # Not really sure what happens in some situations: list so far:
     # 1) evidently if you provide with variable string-name instead of numeric ID,
@@ -225,12 +229,8 @@ def eraint(params, stream, levtype,
     if box is not None: retrieve.update(area=box)
     if stream!='moda': retrieve.update(hour=hour)
     print('Final MARS request: %s' % retrieve)
-    #--------------------------------------------------------------------------#
     # Retrieve DATA with settings
     server = ecmwf.ECMWFDataServer()
     server.retrieve(retrieve)
     return
 
-#-------------------------------------------------------------------------------
-# Possible other downloads below
-#-------------------------------------------------------------------------------

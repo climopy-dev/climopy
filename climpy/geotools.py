@@ -7,7 +7,8 @@ import numpy as np
 from . import const
 
 # Helper class
-class GridProperties():
+# TODO: Obsolete? This was dumb, was just trying to learn about classes
+class GridDes(object):
     """
     For storing latitude/longitude grid properties. Assumes global grid, and
     borders halfway between each grid center.
@@ -39,31 +40,29 @@ class GridProperties():
         self.phic, self.phib, self.dphi = self.latc*np.pi/180, self.latb*np.pi/180, self.dlat*np.pi/180
         self.thetac, self.thetab, self.dtheta = self.lonc*np.pi/180, self.lonb*np.pi/180, self.dlon*np.pi/180
 
-        # Area weights (function of latitude only)
-        # Includes the latitude correction
-        # Close approximation to area; cosine is extremely accurate
-        # Also make lon by lat, so broadcasting rules can apply
+        # Area weights (function of latitude only). Close approximation to area,
+        # since cosine is extremely accurate. Also make lon by lat, so
+        # broadcasting rules can apply.
         self.weights = self.dphi[None,:]*self.dtheta[:,None]*np.cos(self.phic[None,:])
         self.areas = self.dphi[None,:]*self.dtheta[:,None]*np.cos(self.phic[None,:])*(const.a**2)
         # areas = dphi*dtheta*np.cos(phic)*(const.a**2)[None,:]
 
-    def __repr__(self): # what happens when viewing in interactive session
-        # if __str__ not set (the print() result), will use __repr__
-        n = 3
-        return \
-        f"Lat centers (latc): {', '.join(f'{self.latc[i]: 7.2f}' for i in range(n))}, ... {self.latc[-1]: .2f}\n"\
-        f"Lat borders (latb): {', '.join(f'{self.latb[i]: 7.2f}' for i in range(n))}, ... {self.latb[-1]: .2f}\n"\
-        f"Lat widths  (dlat): {', '.join(f'{self.dlat[i]: 7.2f}' for i in range(n))}, ... {self.dlat[-1]: .2f}\n"\
-        f"Lon centers (lonc): {', '.join(f'{self.lonc[i]: 7.2f}' for i in range(n))}, ... {self.lonc[-1]: .2f}\n"\
-        f"Lon borders (lonb): {', '.join(f'{self.lonb[i]: 7.2f}' for i in range(n))}, ... {self.lonb[-1]: .2f}\n"\
-        f"Lon widths  (dlon): {', '.join(f'{self.dlon[i]: 7.2f}' for i in range(n))}, ... {self.dlon[-1]: .2f}\n"\
-        "For radians replace 'lat' with 'phi', 'lon' with 'theta'.\n"\
-        "For grid cell areas see 'areas'."
+    def __repr__(self, n=3): # what happens when viewing in interactive session
+        return f'''
+latc: {', '.join(f'{self.latc[i]: 7.2f}' for i in range(n))} ... {self.latc[-1]: .2f}
+latb: {', '.join(f'{self.latb[i]: 7.2f}' for i in range(n))} ... {self.latb[-1]: .2f}
+dlat: {', '.join(f'{self.dlat[i]: 7.2f}' for i in range(n))} ... {self.dlat[-1]: .2f}
+lonc: {', '.join(f'{self.lonc[i]: 7.2f}' for i in range(n))} ... {self.lonc[-1]: .2f}
+lonb: {', '.join(f'{self.lonb[i]: 7.2f}' for i in range(n))} ... {self.lonb[-1]: .2f}
+dlon: {', '.join(f'{self.dlon[i]: 7.2f}' for i in range(n))} ... {self.dlon[-1]: .2f}
+  Replace 'lat' with 'phi', 'lon' with 'theta' for radians.
+  See 'areas' for grid cell geographic areas.
+'''
 
 def geopad(lon, lat, data, nlon=1, nlat=0):
     """
-    Returns array padded circularly along lons, and
-    over the earth pole, for finite difference methods.
+    Returns array padded circularly along lons, and over the earth pole,
+    for finite difference methods.
     """
     # Get padded array
     if nlon>0:
@@ -92,21 +91,29 @@ def geomean(lon, lat, data, box=(None,None,None,None),
     Since array is masked, this is super easy... just use the masked array
     implementation of the mean, and it will adjust weights accordingly.
 
-    lon: grid longitude centers
-    lat: grid latitude centers
-    mode: weight by land/sea coverage, or not at all
-    landfracs: to be used by mode, above
-    data: should be lon by lat by (extra dims); will preserve dimensionality.
-    box: mean-taking region; note if edges don't fall on graticule, will just subsample
+    Parameters
+    ----------
+    lon :
+        grid longitude centers
+    lat :
+        grid latitude centers
+    landfracs :
+        to be used by mode, above
+    data :
+        should be lon by lat by (extra dims); will preserve dimensionality.
+    box :
+        mean-taking region; note if edges don't fall on graticule, will just subsample
         the grid cells that do -- haven't bothered to account for partial coverage, because
         it would be pain in the butt and not that useful.
     weights: extra, custom weights to apply to data -- could be land/ocean fractions, for example.
 
+    Notes
+    -----
     Data should be loaded with myfuncs.ncutils.ncload, and provide this function
     with metadata in 'm' structure.
     """
     # Get cell areas
-    a = Properties(lon, lat).areas
+    a = GridDes(lon, lat).areas
 
     # Get zone for average
     delta = lat[1]-lat[0]
@@ -151,14 +158,19 @@ def haversine(lon1, lat1, lon2, lat2):
     Calculate the great circle distance between two points
     on the earth (specified in decimal degrees)
 
-    Input:
-    lon1, lat1, lon2, lat2 (positional): ndarrays of longitude and latitude in degrees
-    * Each **pair** should have identical shape
-    * If both pairs are non-scalar, they must **also** be identically shaped
-    * If one pair is scalar, distances are calculated between the scalar pair
-        and each element of the non-scalar pari.
-    Output:
-    d: ndarray of distances in km
+    Parameters
+    ----------
+    lon1, lat1, lon2, lat2 : ndarrays
+        ndarrays of longitude and latitude in degrees
+        * Each **pair** should have identical shape
+        * If both pairs are non-scalar, they must **also** be identically shaped
+        * If one pair is scalar, distances are calculated between the scalar pair
+          and each element of the non-scalar pari.
+
+    Returns
+    -------
+    d : ndarray
+        distances in km
     """
     # Earth radius, in km
     R = const.a*1e-3
@@ -176,17 +188,25 @@ def haversine(lon1, lat1, lon2, lat2):
 
 def laplacian(lon, lat, data, accuracy=4):
     """
-    Get Laplacian over geographic grid.
-    Input is longitude, latitude, and data in any units.
-    Equation: del^2 =
-        (1/a^2*cos^2(phi)) * (d/dtheta)^2
-        + (1/a^2*cos(phi))   * (d/dphi)(cos(phi)*d/dphi)
-    This is the geographic coordinate version.
+    Get Laplacian in spherical coordinates.
+
+    Input
+    -----
+    lon, lat : ndarrays
+        longitude and latitude
+    data : ndarray
+        the data
+
+    Equation
+    --------
+    del^2 = (1/a^2*cos^2(phi)) * (d/dtheta)^2
+          + (1/a^2*cos(phi))   * (d/dphi)(cos(phi)*d/dphi)
     """
     # Setup
     npad = accuracy//2 # need +/-1 for O(h^2) approx, +/-2 for O(h^4), etc.
     data = geopad(lon, lat, data, nlon=npad, nlat=npad)[2] # pad lons/lats
     phi, theta = lat*np.pi/180, lon*np.pi/180 # from north pole
+
     # Execute
     h_phi, h_theta = abs(phi[2]-phi[1]), abs(theta[2]-theta[1]) # avoids weird edge cases
     phi = phi[None,...]

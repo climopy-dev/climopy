@@ -3,24 +3,13 @@
 Includes various finite difference schemes.
 """
 import numpy as np
+from functools import wraps
 from .arraytools import *
 
-# def derivl(h, y, axis=0, accuracy=2, keepedges=True):
-#     """
-#     Differentiation using left-assignment.
-#     Will keep edges by default (this is supposed to be quick and easy method).
-#     Should forget this and just use centered differencing instead.
-#     """
-#     # Simple Euler scheme
-#     # y = np.rollaxis(y, axis, y.ndim)
-#     y = permute(y, axis)
-#     diff = (y[...,1:]-y[...,:-1])/h
-#     if keepedges:
-#         diff = np.concat((diff, diff[...,-1:]), axis=-1) # repeat it
-#     # return np.rollaxis(diff, y.ndim-1, axis)
-#     return unpermute(diff, axis)
-
-def geth(h):
+#------------------------------------------------------------------------------#
+# Functions
+#------------------------------------------------------------------------------#
+def _step(h):
     """
     Determine scalar step h.
     """
@@ -45,26 +34,15 @@ def deriv(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=F
     """
     First order finite differencing. Can be accurate to h^2, h^4, or h^6.
     Reduces axis length by "accuracy" amount, except for zero version (special).
+
+    Notes
+    -----
     See: https://en.wikipedia.org/wiki/Finite_difference_coefficient
-        * Check out that fancy recursion!
-        * Uses progressively lower-accuracy methods for edges to preserve shape.
+    * Check out that fancy recursion!
+    * Uses progressively lower-accuracy methods for edges to preserve shape.
     """
-    # Stuff for unequally-spaced data
-    # try: x[0]
-    # except TypeError:
-    #     if x.ndim>1: # if want x interpreted as vector
-    #         xaxis = axis
-    #     else:
-    #         xaxis = 0
-    # else:
-    #     x = np.tile(np.array([x]), y.shape[axis])
-    # if x.shape[xaxis] != y.shape[axis]: # allow broadcasting rules to be used along other axes
-    #     raise ValueError('x and y dimensions do not match along derivative axis.')
-    # y = permute(y, axis)
-    # x = permute(x, xaxis)
     # Simple Euler scheme
-    # y = np.rollaxis(y, axis, y.ndim)
-    h = geth(h)
+    h = _step(h)
     ldiff, rdiff = (), ()
     if keepedges:
         keepleft = keepright = True
@@ -97,27 +75,27 @@ def deriv(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=F
         diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     else:
         raise ValueError('Invalid accuracy; for now, choose form O(h^2), O(h^4), or O(h^6).')
-    # return np.rollaxis(diff, y.ndim-1, axis)
     return unpermute(diff, axis)
 
+@wraps(deriv)
 def deriv1(*args, **kwargs):
-    """
-    Defined for name consistency.
-    """
     return deriv(*args, **kwargs)
 
 def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False):
     """
     Second order finite differencing. Can be accurate to h^2, h^4, or h^6.
+    Reduces axis length by the 'accuracy' param, except for the zero version.
+
+    Notes
+    -----
     See: https://en.wikipedia.org/wiki/Finite_difference_coefficient
-        * Here, since there is no comparable midpoint-2nd derivative, need to
-          just pad endpoints with the adjacent derivatives.
-        * Again, check out that fancy recursion!
-    Reduces axis length by "accuracy" amount, except for zero version (special).
+    * Here, since there is no comparable midpoint-2nd derivative, need to
+      just pad endpoints with the adjacent derivatives.
+    * Again, check out that fancy recursion!
     """
     # Simple Euler scheme
     # y = np.rollaxis(y, axis, y.ndim)
-    h = geth(h)
+    h = _step(h)
     ldiff, rdiff = (), ()
     if keepedges:
         keepleft = keepright = True
@@ -154,12 +132,19 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
 def deriv_uneven(x, y, axis=0, keepedges=False):
     """
     Central numerical differentiation, uneven/even spacing.
-    Equation: (((x1-x0)/(x2-x1))(y2-y1) + ((x2-x1)/(x1-x0))(y1-y0)) / (x2-x0)
-        * reduces to standard (y2-y0)/(x2-x0) for even spcing, and for uneven
-          weights the slope closer to center point more heavily
-        * want weighted average of forward/backward Euler, with weights 1 minus
-          percentage of total x2-x0 interval
     Reduces axis length by 2.
+
+    Equation
+    --------
+    dy/dx = (((x1-x0)/(x2-x1))(y2-y1)
+           + ((x2-x1)/(x1-x0))(y1-y0)) / (x2-x0)
+
+    Notes
+    -----
+    * Reduces to standard (y2-y0)/(x2-x0) for even spcing, and for uneven
+      weights the slope closer to center point more heavily
+    * Want weighted average of forward/backward Euler, with weights 1 minus
+      percentage of total x2-x0 interval
     """
     # Preliminary stuff
     x, y = np.array(x), np.array(y) # precaution
