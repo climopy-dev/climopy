@@ -949,6 +949,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     # Initial stuff
     N = y1.shape[axis] # window count
     if cyclic:
+        wintype = 'boxcar'
         nperseg = N
     nperseg = 2*(nperseg // 2) # enforce even window size
     r = N % nperseg
@@ -1134,15 +1135,15 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # Helper function
     # Gets 2D Fourier decomp, reorders negative frequencies on non-cyclic
     # axis so frequencies there are monotonically ascending.
+    win = window(wintype, nperseg)
     def freqs(x, pm):
-        x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
+        x = win*signal.detrend(x, type=detrend, axis=0) # remove trend or mean
         x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
         F = np.fft.rfft2(x, axes=(0,1)) # last axis specified should get a *real* transform
         F = F[:,1:] # remove the zero-frequency value
         return np.concatenate((F[pm:,:], F[1:pm+1,:]), axis=0)
 
     # The window *centers* for time windowing
-    win = window(wintype, nperseg)
     loc = np.arange(pm, N - pm + 0.1, pm).astype(int) # jump by half window length
     if len(loc)==0:
         raise ValueError('Window length too big.')
