@@ -205,15 +205,21 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
     """
     Calculates a best-fit red noise autocorrelation spectrum.
     Goes up to nlag-timestep autocorrelation.
+
     Parameters
     ----------
-        data: the input data (this function computes necessary correlation coeffs).
-    Output:
-        spectrum: the autocorrelation spectrum out to nlag lags.
-    Optional:
-        * If 'series' is True, return the red noise spectrum full series.
-        * If 'series' is False, return just the *timescale* associated with the red noise spectrum.
-        * If 'lag1' is True, just return the lag-1 version.
+    data :
+        the input data (this function computes necessary correlation coeffs).
+    series : bool
+        return the red noise fit spectrum (True), or just the
+        associted e-folding time scale (False)?
+    lag1 : bool
+        if True, just return the lag-1 best-fit
+
+    Returns
+    -------
+    spectrum :
+        the autocorrelation spectrum out to nlag lags.
     """
     # Initial stuff
     if nlag is None:
@@ -248,20 +254,29 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
 def autocorr(data, nlag=None, lag=None, verbose=False, axis=0, _normalize=True):
     """
     Gets the autocorrelation spectrum at successive lags.
+
     Parameters
     ----------
-        data: the input data.
-    Output:
-        autocorrs: the autocorrelations as a function of lag.
-    Optional:
-        nlag: get correlation at multiple lags ('n' is number after the 0-lag).
-        lag: get correlation at just this lag.
-        _normalize: used for autocovar wrapper. generally user shouldn't touch this.
-    Notes:
-      * Uses following estimator: ((n-k)*sigma^2)^-1 * sum_i^(n-k)[X_t - mu][X_t+k - mu]
-        See: https://en.wikipedia.org/wiki/Autocorrelation#Estimation
-      * By default, includes lag-zero values; if user just wants single lag
-        will, however, throw out those values.
+    data :
+        the input data.
+    nlag :
+        get correlation at multiple lags ('n' is number after the 0-lag).
+    lag :
+        get correlation at just this lag.
+    _normalize :
+        used for autocovar wrapper. generally user shouldn't touch this.
+
+    Returns
+    -------
+    autocorrs :
+        the autocorrelations as a function of lag.
+
+    Notes
+    -----
+    * Uses following estimator: ((n-k)*sigma^2)^-1 * sum_i^(n-k)[X_t - mu][X_t+k - mu]
+    See: https://en.wikipedia.org/wiki/Autocorrelation#Estimation
+    * By default, includes lag-zero values; if user just wants single lag
+    will, however, throw out those values.
     """
     # Preparation, and stdev/means
     data = np.array(data)
@@ -953,6 +968,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
         nperseg = N
     nperseg = 2*(nperseg // 2) # enforce even window size
     r = N % nperseg
+    print('Remainder:', r)
     if r!=0:
         s = [slice(None) for i in range(y1.ndim)]
         s[axis] = slice(None,-r)
@@ -1092,9 +1108,11 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         average phase relationship
     """
     # Checks
-    caxis, taxis = axes
+    taxis, caxis = axes
     if len(z1.shape)<2:
         raise ValueError('Need at least rank 2 array.')
+    if z2 is not None and not all(x==y for x,y in zip(z1.shape, z2.shape)):
+        raise ValueError(f'Shapes of x {x.shape} and y {y.shape} must match.')
     print(f'Cyclic dimension in position {caxis}, length {z1.shape[caxis]}.')
     print(f'Data to be windowed in position {taxis}, length {z1.shape[taxis]}, window length {nperseg}.')
     if caxis<0:
@@ -1114,30 +1132,36 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         print(f'Warning: Trimmed {r} out of {l} points to accommodate length-{nperseg} window.')
         # raise ValueError(f'Window width {nperseg} does not divide axis length {z1.shape[axis]}.')
 
-    # Permute
+    # Helper function
     # Will put the *non-cyclic* axis on position 1, *cyclic* axis on position 2
     # Mirrors convention for row-major geophysical data array storage, time
     # by pressure by lat by lon (the cyclic one).
     offset = int(taxis<caxis) # TODO: does this work, or is stuff messed up?
-    z1 = permute(z1, taxis, -1) # put on -1, then will be moved to -2
-    z1 = permute(z1, caxis - offset, -1) # put on -1
     nflat = z1.ndim - 2 # we overwrite z1, so must save this value!
-    z1, shape = lead_flatten(z1, nflat) # flatten remaining dimensions
-    # Shapes and whatnot
+    def reshape(x):
+        x = permute(x, taxis, -1) # put on -1, then will be moved to -2
+        x = permute(x, caxis - offset, -1) # put on -1
+        x, shape = lead_flatten(x, nflat) # flatten remaining dimensions
+        return x, shape
+
+    # Permute
+    z1, shape = reshape(z1)
     extra = z1.shape[0]
+    if z2 is not None:
+        z2, _ = reshape(z2)
+    # For output data
     N = z1.shape[1] # non-cyclic dimension
     M = z1.shape[2] # cyclic dimension
     pm = nperseg//2
-    # For output data
     shape[-2] = 2*pm # just store the real component
     shape[-1] = M//2
 
     # Helper function
     # Gets 2D Fourier decomp, reorders negative frequencies on non-cyclic
     # axis so frequencies there are monotonically ascending.
-    win = window(wintype, nperseg)
+    win = window(wintype, nperseg) # for time domain
     def freqs(x, pm):
-        x = win*signal.detrend(x, type=detrend, axis=0) # remove trend or mean
+        x = win[:,None]*signal.detrend(x, type=detrend, axis=0) # remove trend or mean
         x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
         F = np.fft.rfft2(x, axes=(0,1)) # last axis specified should get a *real* transform
         F = F[:,1:] # remove the zero-frequency value
@@ -1148,12 +1172,18 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     if len(loc)==0:
         raise ValueError('Window length too big.')
     # Get the spectra
-    Pz1 = np.empty((loc.size, extra, *shape[-2:])) # power
+    Pz1 = np.nan*np.empty((loc.size, extra, *shape[-2:])) # power
     if z2 is not None:
         CO = Pz1.copy()
         Q = Pz1.copy()
         Pz2 = Pz1.copy()
     for j in range(extra):
+        # Missing values handling
+        # TODO: Apply this to 1D version
+        if np.any(~np.isfinite(z1[j,:,:])) or (z2 is not None and np.any(~np.isfinite(z2[j,:,:]))):
+            print('Warning: Skipping array with missing values.')
+            continue
+        # 2D transform for each window on non-cyclic dimension
         for i,l in enumerate(loc):
             if z2 is None:
                 # Reorder negative frequencies; use Nyquist
@@ -1179,11 +1209,15 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # Helper function
     # Reshapes final result, and scales powers so we can take dimensional
     # average without needing to divide by 2
-    def reshape(x):
+    def unshape(x):
         x[:,:,:-1] /= 2
+        # print('start', x.shape)
         x = lead_unflatten(x, shape, nflat)
-        x = unpermute(x, caxis - offset, -2) # put caxis back, accounting for if taxis moves to left
-        x = unpermute(x, taxis, -1) # put taxis back
+        # print('next', x.shape)
+        x = unpermute(x, caxis - offset) # put caxis back, accounting for if taxis moves to left
+        # print('next', x.shape)
+        x = unpermute(x, taxis) # put taxis back
+        # print('final', x.shape)
         return x
 
     # Get window averages, reshape, and other stuff
@@ -1194,7 +1228,7 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         # Return
         Pz1 = Pz1.mean(axis=0)
         Pz1[:,:,:-1] /= 2
-        Pz1 = reshape(Pz1)
+        Pz1 = unshape(Pz1)
         return fx/dx, fy/dy, Pz1
     else:
         # Averages
@@ -1211,19 +1245,22 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
             Phi[Phi >= center + np.pi] -= 2*np.pi
             Phi[Phi <  center - np.pi] += 2*np.pi
             # Reshape and return
-            Coh = reshape(Coh)
-            Phi = reshape(Phi)
+            Coh = unshape(Coh)
+            Phi = unshape(Phi)
             return fx/dx, fy/dy, Coh, Phi
         else:
             # Reshape
-            CO  = reshape(CO)
-            Q   = reshape(Q)
-            Pz1 = reshape(Pz1)
-            Pz2 = reshape(Pz2)
+            CO  = unshape(CO)
+            Q   = unshape(Q)
+            Pz1 = unshape(Pz1)
+            Pz2 = unshape(Pz2)
             return fx/dx, fy/dy, CO, Q, Pz1, Pz2
 
-def autospectrum():
+def autopower():
     """
+    This will turn into a wrapper around power1d, that generates co-spectral
+    statistics and whatnot at ***successive lags***.
+
     Uses scipy.signal.welch windowing method to generate an estimate of the
     *lagged* spectrum. Can also optionally do this with two variables.
     """
