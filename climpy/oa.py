@@ -1022,6 +1022,8 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
                     Fy1 = np.fft.rfft(wy1)[1:]
                     Fy2 = np.fft.rfft(wy2)[1:]
                     # Powers
+                    # TODO: Check this? Had issues with cross-spectrum
+                    # version.
                     Py1[j,i,:] = np.abs(Fy1)**2
                     Py2[j,i,:] = np.abs(Fy2)**2
                     CO[j,i,:]  = Fy1.real*Fy2.real + Fy1.imag*Fy2.imag
@@ -1093,9 +1095,9 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         co-power spectrum
     Q:
         quadrature power spectrum
-    Py1:
+    Pz1:
         power spectrum for y1
-    Py2:
+    Pz2:
         power spectrum for y2
 
     Returns (cross transform, coherence == True)
@@ -1160,14 +1162,25 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # Gets 2D Fourier decomp, reorders negative frequencies on non-cyclic
     # axis so frequencies there are monotonically ascending.
     win = window(wintype, nperseg) # for time domain
-    # print('Window:')
-    # print(win)
     def freqs(x, pm):
         x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
         x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
-        F = np.fft.rfft2(win[:,None]*x, axes=(0,1)) # last axis specified should get a *real* transform
-        F = F[:,1:] # remove the zero-frequency value
-        return np.concatenate((F[pm:,:], F[1:pm+1,:]), axis=0)
+        # The 2D approach
+        X = np.fft.rfft2(win[:,None]*x, axes=(0,1)) # last axis specified should get a *real* transform
+        X = X[:,1:] # remove the zero-frequency value
+        return np.concatenate((X[pm:,:], X[1:pm+1,:]), axis=0)
+        # Manual approach
+        # Follows Libby's recipe, where instead real is cosine and imag is
+        # sine. Note only need to divide by 2 when conjugates are included
+        # NOTE: This was virtually identical, as suspected
+        # xi = np.fft.rfft(x, axis=1)[:,1:]
+        # xi = win[:,None]*xi # got a bunch of sines and cosines
+        # C = np.fft.rfft(xi.real, axis=0)[1:,:]
+        # S = np.fft.rfft(xi.imag, axis=0)[1:,:] # then
+        # return np.concatenate((
+        #     (C.real + S.imag + 1j*(C.imag - S.real))[::-1,:], # frequency increasing in absolute magnitude along axis
+        #      C.real - S.imag + 1j*(-C.imag - S.real),
+        #     ), axis=0)
 
     # The window *centers* for time windowing
     loc = np.arange(pm, N - pm + 0.1, pm).astype(int) # jump by half window length
@@ -1197,8 +1210,16 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
                 Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
                 Fz2 = freqs(z2[j,l-pm:l+pm,:], pm)
                 # Powers
-                CO[j,i,:,:]  = Fz1.real*Fz2.real + Fz1.imag*Fz2.imag
-                Q[j,i,:,:]   = Fz1.real*Fz1.imag - Fz2.real*Fz1.imag
+                # NOTE: Think these were all completely wrong? Cross-spectrum
+                # is different, need different math. See Libby's notes
+                # CO[j,i,:,:]  = Fz1.real*Fz2.real + Fz1.imag*Fz2.imag
+                # Q[j,i,:,:]   = Fz1.real*Fz1.imag - Fz2.real*Fz1.imag
+                # Pz1[j,i,:,:] = np.abs(Fz1)**2
+                # Pz2[j,i,:,:] = np.abs(Fz2)**2
+                Phi1 = np.arctan2(Fz1.imag, Fz1.real) # analagous to Libby's notes, for complex space
+                Phi2 = np.arctan2(Fz2.imag, Fz2.real)
+                CO[j,i,:,:]  = np.abs(Fz1)*np.abs(Fz2)*np.cos(Phi1 - Phi2)
+                Q[j,i,:,:]   = np.abs(Fz1)*np.abs(Fz2)*np.sin(Phi1 - Phi2)
                 Pz1[j,i,:,:] = np.abs(Fz1)**2
                 Pz2[j,i,:,:] = np.abs(Fz2)**2
 
@@ -1213,13 +1234,9 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # average without needing to divide by 2
     def unshape(x):
         x[:,:,:-1] /= 2
-        # print('start', x.shape)
         x = lead_unflatten(x, shape, nflat)
-        # print('next', x.shape)
         x = unpermute(x, caxis - offset) # put caxis back, accounting for if taxis moves to left
-        # print('next', x.shape)
         x = unpermute(x, taxis) # put taxis back
-        # print('final', x.shape)
         return x
 
     # Get window averages, reshape, and other stuff
@@ -1242,6 +1259,9 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
             array[:,:,:-1] /= 2
         if coherence: # return coherence and phase instead
             # Coherence and stuff
+            # NOTE: This Phi relationship is still valid. Check Libby's
+            # notes; divide here Q by CO and the Ws cancel out, end up
+            # with average phase difference indeed.
             Coh = (CO**2 + Q**2)/(Pz1*Pz2)
             Phi = np.arctan2(Q, CO) # phase
             Phi[Phi >= center + np.pi] -= 2*np.pi

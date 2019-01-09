@@ -102,7 +102,7 @@ def lead_unflatten(data, shape, nflat=None):
         raise ValueError(f'Number of leading elements {data.shape[0]} does not match leading shape {shape[nflat:]}.')
     if not all(s1==s2 for s1,s2 in zip(data.shape[1:], shape[nflat:])):
         raise ValueError(f'Trailing dimensions on data, {data.shape[1:]}, do not match trailing dimensions on new shape, {shape[nflat:]}.')
-    return np.reshape(data, shape, order='F')
+    return np.reshape(data, shape, order='C')
 
 def permute(data, source=-1, destination=-1):
     """
