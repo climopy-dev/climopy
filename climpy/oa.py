@@ -1002,7 +1002,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
         if len(loc)==0:
             raise ValueError('Window length too big.')
         # Ouput arrays
-        Py1 = np.empty((loc.size, extra, pm)) # power
+        Py1 = np.empty((extra, loc.size, pm)) # power
         if y2 is not None:
             CO = Py1.copy()
             Q = Py1.copy()
@@ -1014,7 +1014,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
                     # Simple
                     wy = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
                     Fy1 = np.fft.rfft(wy)[1:]
-                    Py1[i,j,:] = np.abs(Fy1)**2
+                    Py1[j,i,:] = np.abs(Fy1)**2
                 else:
                     # Frequencies
                     wy1 = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
@@ -1022,10 +1022,10 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
                     Fy1 = np.fft.rfft(wy1)[1:]
                     Fy2 = np.fft.rfft(wy2)[1:]
                     # Powers
-                    Py1[i,j,:] = np.abs(Fy1)**2
-                    Py2[i,j,:] = np.abs(Fy2)**2
-                    CO[i,j,:]  = Fy1.real*Fy2.real + Fy1.imag*Fy2.imag
-                    Q[i,j,:]   = Fy1.real*Fy1.imag - Fy2.real*Fy1.imag
+                    Py1[j,i,:] = np.abs(Fy1)**2
+                    Py2[j,i,:] = np.abs(Fy2)**2
+                    CO[j,i,:]  = Fy1.real*Fy2.real + Fy1.imag*Fy2.imag
+                    Q[j,i,:]   = Fy1.real*Fy1.imag - Fy2.real*Fy1.imag
 
     # Helper function
     def reshape(x):
@@ -1040,16 +1040,16 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     f = np.fft.rfftfreq(nperseg)[1:] # frequencies
     if y2 is None:
         # Average windows
-        Py1 = Py1.mean(axis=0)
+        Py1 = Py1.mean(axis=1)
         Py1[:,:-1] /= 2
         Py1 = reshape(Py1)
         return f/dx, Py1
     else:
         # Averages
-        CO  = CO.mean(axis=0)
-        Q   = Q.mean(axis=0)
-        Py1 = Py1.mean(axis=0)
-        Py2 = Py2.mean(axis=0)
+        CO  = CO.mean(axis=1)
+        Q   = Q.mean(axis=1)
+        Py1 = Py1.mean(axis=1)
+        Py2 = Py2.mean(axis=1)
         for array in (Py1, Py2, CO, Q):
             array[:,:-1] /= 2
         if coherence: # return coherence and phase instead
@@ -1072,7 +1072,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
 def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         nperseg=100, wintype='boxcar',
         axes=(-2,-1), # first position is *cyclic* (perform simple real transform), second is *not* (windowed)
-        manual=False, detrend='linear', scaling='spectrum'):
+        manual=False, detrend='constant', scaling='spectrum'):
     """
     Performs 2-d spectral decomposition, with windowing along only *one* dimension,
     in style of Randel and Held 1991. Therefore assumption is we have *cyclic*
@@ -1160,10 +1160,12 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # Gets 2D Fourier decomp, reorders negative frequencies on non-cyclic
     # axis so frequencies there are monotonically ascending.
     win = window(wintype, nperseg) # for time domain
+    # print('Window:')
+    # print(win)
     def freqs(x, pm):
-        x = win[:,None]*signal.detrend(x, type=detrend, axis=0) # remove trend or mean
+        x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
         x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
-        F = np.fft.rfft2(x, axes=(0,1)) # last axis specified should get a *real* transform
+        F = np.fft.rfft2(win[:,None]*x, axes=(0,1)) # last axis specified should get a *real* transform
         F = F[:,1:] # remove the zero-frequency value
         return np.concatenate((F[pm:,:], F[1:pm+1,:]), axis=0)
 
@@ -1172,7 +1174,7 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     if len(loc)==0:
         raise ValueError('Window length too big.')
     # Get the spectra
-    Pz1 = np.nan*np.empty((loc.size, extra, *shape[-2:])) # power
+    Pz1 = np.nan*np.empty((extra, loc.size, *shape[-2:])) # power
     if z2 is not None:
         CO = Pz1.copy()
         Q = Pz1.copy()
@@ -1189,16 +1191,16 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
                 # Reorder negative frequencies; use Nyquist
                 Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
                 # Power
-                Pz1[i,j,:,:] = np.abs(Fz1)**2
+                Pz1[j,i,:,:] = np.abs(Fz1)**2
             else:
                 # Frequencies
                 Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
                 Fz2 = freqs(z2[j,l-pm:l+pm,:], pm)
                 # Powers
-                CO[i,j,:,:]  = Fz1.real*Fz2.real + Fz1.imag*Fz2.imag
-                Q[i,j,:,:]   = Fz1.real*Fz1.imag - Fz2.real*Fz1.imag
-                Pz1[i,j,:,:] = np.abs(Fz1)**2
-                Pz2[i,j,:,:] = np.abs(Fz2)**2
+                CO[j,i,:,:]  = Fz1.real*Fz2.real + Fz1.imag*Fz2.imag
+                Q[j,i,:,:]   = Fz1.real*Fz1.imag - Fz2.real*Fz1.imag
+                Pz1[j,i,:,:] = np.abs(Fz1)**2
+                Pz2[j,i,:,:] = np.abs(Fz2)**2
 
     # Frequencies
     # Make sure Nyquist frequency is appropriately signed on either side of array
@@ -1226,16 +1228,16 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # the covariance.
     if z2 is None:
         # Return
-        Pz1 = Pz1.mean(axis=0)
+        Pz1 = Pz1.mean(axis=1)
         Pz1[:,:,:-1] /= 2
         Pz1 = unshape(Pz1)
         return fx/dx, fy/dy, Pz1
     else:
         # Averages
-        CO  = CO.mean(axis=0)
-        Q   = Q.mean(axis=0)
-        Pz1 = Pz1.mean(axis=0)
-        Pz2 = Pz2.mean(axis=0)
+        CO  = CO.mean(axis=1)
+        Q   = Q.mean(axis=1)
+        Pz1 = Pz1.mean(axis=1)
+        Pz2 = Pz2.mean(axis=1)
         for array in (Pz1, Pz2, CO, Q):
             array[:,:,:-1] /= 2
         if coherence: # return coherence and phase instead
