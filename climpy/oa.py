@@ -887,7 +887,7 @@ def window(wintype, n, normalize=False):
 
 def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
         nperseg=100, wintype='boxcar', center=np.pi, axis=-1,
-        manual=False, detrend='linear', scaling='spectrum'):
+        detrend='linear', scaling='spectrum'):
     """
     Gets the spectral decomposition for particular windowing technique.
     Uses simple numpy fft.
@@ -967,54 +967,53 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     #    this is analagous to a Planck curve with intensity per wavenumber
     #  * show the power (so units are just data units squared); this is
     #    usually what we want
-    if not manual and y2 is None:
-        wintype = window(wintype, nperseg) # has better error messages
-        f, P = signal.csd(y1, y1, window=wintype,
-                return_onesided=True, scaling=scaling,
-                nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
+    # if not manual and y2 is None:
+    wintype = window(wintype, nperseg) # has better error messages
+    f, P = signal.csd(y1, y1, window=wintype,
+            return_onesided=True, scaling=scaling,
+            nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
 
     # Manual approach
     # Have checked these and results are identical
-    else:
-        # Get copsectrum, quadrature spectrum, and powers for each window
-        y1, shape = lead_flatten(permute(y1, axis)) # shape is shape of *original* data
-        extra = y1.shape[0]
-        pm = nperseg//2
-        shape[-1] = pm # new shape
-        # List of *center* indices for windows
-        win = window(wintype, nperseg)
-        loc = np.arange(pm, N-pm+pm//2, pm) # jump by half window length
-        if len(loc)==0:
-            raise ValueError('Window length too big.')
-        # Ouput arrays
-        Py1 = np.empty((extra, loc.size, pm)) # power
-        if y2 is not None:
-            CO = Py1.copy()
-            Q = Py1.copy()
-            Py2 = Py1.copy()
-        for j in range(extra):
-            # Loop through windows
-            if np.any(~np.isfinite(y1[j,:])) or (y2 is not None and np.any(~np.isfinite(y2[j,:]))):
-                print('Warning: Skipping array with missing values.')
-                continue
-            for i,l in enumerate(loc):
-                if y2 is None:
-                    # Remember to double the size of power, because only
-                    # have half the coefficients (rfft not fft)
-                    wy = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
-                    Fy1 = np.fft.rfft(wy, norm='ortho')[1:]/wy.size
-                    Py1[j,i,:] = 2*np.abs(Fy1)**2
-                else:
-                    # Frequencies
-                    wy1 = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
-                    wy2 = win*signal.detrend(y2[j,l-pm:l+pm], type=detrend)
-                    Fy1 = np.fft.rfft(wy1, norm='ortho')[1:]/wy1.size
-                    Fy2 = np.fft.rfft(wy2, norm='ortho')[1:]/wy2.size
-                    # Powers
-                    Py1[j,i,:] = 2*np.abs(Fy1)**2
-                    Py2[j,i,:] = 2*np.abs(Fy2)**2
-                    CO[j,i,:]  = 2*(Fy1.real*Fy2.real + Fy1.imag*Fy2.imag)
-                    Q[j,i,:]   = 2*(Fy1.real*Fy1.imag - Fy2.real*Fy1.imag)
+    # Get copsectrum, quadrature spectrum, and powers for each window
+    y1, shape = lead_flatten(permute(y1, axis)) # shape is shape of *original* data
+    extra = y1.shape[0]
+    pm = nperseg//2
+    shape[-1] = pm # new shape
+    # List of *center* indices for windows
+    win = window(wintype, nperseg)
+    loc = np.arange(pm, N-pm+pm//2, pm) # jump by half window length
+    if len(loc)==0:
+        raise ValueError('Window length too big.')
+    # Ouput arrays
+    Py1 = np.empty((extra, loc.size, pm)) # power
+    if y2 is not None:
+        CO = Py1.copy()
+        Q = Py1.copy()
+        Py2 = Py1.copy()
+    for j in range(extra):
+        # Loop through windows
+        if np.any(~np.isfinite(y1[j,:])) or (y2 is not None and np.any(~np.isfinite(y2[j,:]))):
+            print('Warning: Skipping array with missing values.')
+            continue
+        for i,l in enumerate(loc):
+            if y2 is None:
+                # Remember to double the size of power, because only
+                # have half the coefficients (rfft not fft)
+                wy = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
+                Fy1 = np.fft.rfft(wy, norm='ortho')[1:]/wy.size
+                Py1[j,i,:] = 2*np.abs(Fy1)**2
+            else:
+                # Frequencies
+                wy1 = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
+                wy2 = win*signal.detrend(y2[j,l-pm:l+pm], type=detrend)
+                Fy1 = np.fft.rfft(wy1, norm='ortho')[1:]/wy1.size
+                Fy2 = np.fft.rfft(wy2, norm='ortho')[1:]/wy2.size
+                # Powers
+                Py1[j,i,:] = 2*np.abs(Fy1)**2
+                Py2[j,i,:] = 2*np.abs(Fy2)**2
+                CO[j,i,:]  = 2*(Fy1.real*Fy2.real + Fy1.imag*Fy2.imag)
+                Q[j,i,:]   = 2*(Fy1.real*Fy1.imag - Fy2.real*Fy1.imag)
 
     # Helper function
     def unshape(x):
