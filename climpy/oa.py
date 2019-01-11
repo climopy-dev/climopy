@@ -968,10 +968,9 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     #  * show the power (so units are just data units squared); this is
     #    usually what we want
     # if not manual and y2 is None:
-    wintype = window(wintype, nperseg) # has better error messages
-    f, P = signal.csd(y1, y1, window=wintype,
-            return_onesided=True, scaling=scaling,
-            nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
+    # f, P = signal.csd(y1, y1, window=wintype,
+    #         return_onesided=True, scaling=scaling,
+    #         nperseg=nperseg, noverlap=nperseg//2, detrend=detrend, axis=axis)
 
     # Manual approach
     # Have checked these and results are identical
