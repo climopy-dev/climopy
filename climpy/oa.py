@@ -475,33 +475,6 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
     # And return everything! Beautiful!
     return evals, nstar, projs, pcs
 
-    # Data should be time by location
-    # # Standardize
-    # Z = (Z-Z.mean(0))/Z.std(0)
-    # # Fractions
-    # frac = np.abs(L)/L.sum()
-    # # And re-project; now *rows* are anomalies associated with 1std of each PC of original time series
-    # Xun[np.isnan(Xun)] = Z[np.isnan(Z)] = 0 # replace with zero, so matrix multiplication will work
-    # Doutput = (Z.T@Xun)/Xun.shape[0] # use the new shape
-    # D = np.full(old_shape,np.nan)
-    # D[:,goodfilt] = Doutput
-    # print('EOFs calculated.')
-    # # Autocorrelations
-    # out = (D, Z)
-    # if return_frac:
-    #     rho = np.zeros((X.shape[1],))
-    #     for i in range(X.shape[1]):
-    #         if i%10000 == 0: print(i)
-    #         rho[i] = np.corrcoef(X[:-1,i],X[1:,i])[1,0]
-    #     rho_ave = (rho*w).sum()/w.sum()
-    #     Nstar = X.shape[0]*((1-rho_ave)/(1+rho_ave))
-    #     delta_frac = (L*np.sqrt(2/Nstar))/L.sum()
-    #     print('Spatial mean autocorrelation: %.5f' % rho_ave)
-    #     out = out + (frac, delta_frac)
-    # if return_filt:
-    #     out = out + (goodfilt,)
-    # return out
-
 def eot(data, neof=5):
     """
     EOTs, used in some other research contexts.
@@ -683,7 +656,6 @@ def filter(x, b, a=1, n=1, axis=-1,
             y = y[:,n_left:]
         else:
             y = y[:,n_2sides+n_left:-n_2sides]
-        # shape[axis] = shape[axis] - 2*n_2sides - n_left # use if not padding 
         y_left  = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
         y_right = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
         y = np.concatenate((y_left, y, y_right), axis=-1)
@@ -922,44 +894,57 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
 
     Parameters
     ----------
-    y1:
+    y1 :
         the data
-    y2:
+    y2 :
         the data, if you want cross-spectral power
-    dx:
+    dx :
         timestep in physical units (used for scaling the frequency-coordinates)
-    cyclic:
+    cyclic :
         whether data is cyclic along axis; in this case the nperseg
         will be overridden
 
     Returns (single transform)
     -------
-    f:
+    f :
         wavenumbers, in <x units>**-1
-    P:
+    P :
         power spectrum, in units <data units>**2
 
     Returns (cross transform, coherence == False)
     -------
-    f:
+    f :
         wavenumbers, in <x units>**-1
-    P:
+    P :
         co-power spectrum
-    Q:
+    Q :
         quadrature power spectrum
-    Py1:
+    Py1 :
         power spectrum for y1
-    Py2:
+    Py2 :
         power spectrum for y2
 
     Returns (cross transform, coherence == True)
     -------
-    f:
+    f :
         wavenumbers, in <x units>**-1
-    Coh:
+    Coh :
         coherence squared
-    Phi:
+    Phi :
         average phase relationship
+
+    Notes
+    -----
+    The scaling conventions, and definitions of coefficients, change between
+    references and packages! Libby's notes defines variance equals one half
+    the sum of right-hand square coefficients, but numpy package defines
+    variance as sum of square of all coefficients (or twice the right-hand
+    coefficients). Also complex DFT convention in general seems to require
+    normalizing by 1/N after FFT.
+
+    See:
+      * https://stackoverflow.com/a/19976162/4970632
+      * https://stackoverflow.com/a/15148195/4970632
     """
     # Initial stuff
     N = y1.shape[axis] # window count
@@ -1009,32 +994,33 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
             Py2 = Py1.copy()
         for j in range(extra):
             # Loop through windows
+            if np.any(~np.isfinite(y1[j,:])) or (y2 is not None and np.any(~np.isfinite(y2[j,:]))):
+                print('Warning: Skipping array with missing values.')
+                continue
             for i,l in enumerate(loc):
                 if y2 is None:
-                    # Simple
+                    # Remember to double the size of power, because only
+                    # have half the coefficients (rfft not fft)
                     wy = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
-                    Fy1 = np.fft.rfft(wy)[1:]
-                    Py1[j,i,:] = np.abs(Fy1)**2
+                    Fy1 = np.fft.rfft(wy, norm='ortho')[1:]/wy.size
+                    Py1[j,i,:] = 2*np.abs(Fy1)**2
                 else:
                     # Frequencies
                     wy1 = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
                     wy2 = win*signal.detrend(y2[j,l-pm:l+pm], type=detrend)
-                    Fy1 = np.fft.rfft(wy1)[1:]
-                    Fy2 = np.fft.rfft(wy2)[1:]
+                    Fy1 = np.fft.rfft(wy1, norm='ortho')[1:]/wy1.size
+                    Fy2 = np.fft.rfft(wy2, norm='ortho')[1:]/wy2.size
                     # Powers
-                    # TODO: Check this? Had issues with cross-spectrum
-                    # version.
-                    Py1[j,i,:] = np.abs(Fy1)**2
-                    Py2[j,i,:] = np.abs(Fy2)**2
-                    CO[j,i,:]  = Fy1.real*Fy2.real + Fy1.imag*Fy2.imag
-                    Q[j,i,:]   = Fy1.real*Fy1.imag - Fy2.real*Fy1.imag
+                    Py1[j,i,:] = 2*np.abs(Fy1)**2
+                    Py2[j,i,:] = 2*np.abs(Fy2)**2
+                    CO[j,i,:]  = 2*(Fy1.real*Fy2.real + Fy1.imag*Fy2.imag)
+                    Q[j,i,:]   = 2*(Fy1.real*Fy1.imag - Fy2.real*Fy1.imag)
 
     # Helper function
-    def reshape(x):
+    def unshape(x):
         x = lead_unflatten(x, shape)
         x = unpermute(x, axis)
         return x
-
     # Get window averages, reshape, and other stuff
     # NOTE: For the 'real' transform, all values but Nyquist must
     # be divided by two, so that an 'average' of the power equals
@@ -1043,8 +1029,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     if y2 is None:
         # Average windows
         Py1 = Py1.mean(axis=1)
-        Py1[:,:-1] /= 2
-        Py1 = reshape(Py1)
+        Py1 = unshape(Py1)
         return f/dx, Py1
     else:
         # Averages
@@ -1052,23 +1037,21 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
         Q   = Q.mean(axis=1)
         Py1 = Py1.mean(axis=1)
         Py2 = Py2.mean(axis=1)
-        for array in (Py1, Py2, CO, Q):
-            array[:,:-1] /= 2
         if coherence: # return coherence and phase instead
             # Coherence and stuff
             Coh = (CO**2 + Q**2)/(Py1*Py2)
             Phi = np.arctan2(Q, CO) # phase
             Phi[Phi >= center + np.pi] -= 2*np.pi
             Phi[Phi <  center - np.pi] += 2*np.pi
-            Coh = reshape(Coh)
-            Phi = reshape(Phi)
+            Coh = unshape(Coh)
+            Phi = unshape(Phi)
             return f/dx, Coh, Phi
         else:
             # Reshape and return
-            CO  = reshape(CO)
-            Q   = reshape(Q)
-            Py1 = reshape(Py1)
-            Py2 = reshape(Py2)
+            CO  = unshape(CO)
+            Q   = unshape(Q)
+            Py1 = unshape(Py1)
+            Py2 = unshape(Py2)
             return f/dx, CO, Q, Py1, Py2
 
 def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
@@ -1082,31 +1065,31 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
 
     Returns (single transform)
     -------
-    f:
+    f :
         wavenumbers, in <x units>**-1
-    P:
+    P :
         power spectrum, in units <data units>**2
 
     Returns (cross transform, coherence == False)
     -------
-    f:
+    f :
         wavenumbers, in <x units>**-1
-    P:
+    P :
         co-power spectrum
-    Q:
+    Q :
         quadrature power spectrum
-    Pz1:
+    Pz1 :
         power spectrum for y1
-    Pz2:
+    Pz2 :
         power spectrum for y2
 
     Returns (cross transform, coherence == True)
     -------
-    f:
+    f :
         wavenumbers, in <x units>**-1
-    Coh:
+    Coh :
         coherence squared
-    Phi:
+    Phi :
         average phase relationship
     """
     # Checks
@@ -1116,7 +1099,7 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     if z2 is not None and not all(x==y for x,y in zip(z1.shape, z2.shape)):
         raise ValueError(f'Shapes of x {x.shape} and y {y.shape} must match.')
     print(f'Cyclic dimension in position {caxis}, length {z1.shape[caxis]}.')
-    print(f'Data to be windowed in position {taxis}, length {z1.shape[taxis]}, window length {nperseg}.')
+    print(f'Window dimension {taxis}, length {z1.shape[taxis]}, window length {nperseg}.')
     if caxis<0:
         caxis = z1.ndim-caxis
     if taxis<0:
@@ -1163,20 +1146,25 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # axis so frequencies there are monotonically ascending.
     win = window(wintype, nperseg) # for time domain
     def freqs(x, pm):
+        # Detrend
         x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
         x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
         # The 2D approach
+        # NOTE: Read documentation regarding normalization. Default leaves
+        # forward transform unnormalized, reverse normalized by 1/n; the ortho
+        # option normalizes both by 1/sqrt(n).
+        # https://docs.scipy.org/doc/numpy-1.15.1/reference/routines.fft.html#module-numpy.fft
         X = np.fft.rfft2(win[:,None]*x, axes=(0,1)) # last axis specified should get a *real* transform
         X = X[:,1:] # remove the zero-frequency value
+        X = X/(x.shape[0]*x.shape[1]) # complex FFT has to be normalized by sample size
         return np.concatenate((X[pm:,:], X[1:pm+1,:]), axis=0)
-        # Manual approach
+        # Manual approach, virtually identical
         # Follows Libby's recipe, where instead real is cosine and imag is
-        # sine. Note only need to divide by 2 when conjugates are included
-        # NOTE: This was virtually identical, as suspected
-        # xi = np.fft.rfft(x, axis=1)[:,1:]
+        # sine. Note only need to divide by 2 when conjugates are included.
+        # xi = np.fft.rfft(x, axis=1)[:,1:]/x.shape[1]
         # xi = win[:,None]*xi # got a bunch of sines and cosines
-        # C = np.fft.rfft(xi.real, axis=0)[1:,:]
-        # S = np.fft.rfft(xi.imag, axis=0)[1:,:] # then
+        # C = np.fft.rfft(xi.real, axis=0)[1:,:]/x.shape[0]
+        # S = np.fft.rfft(xi.imag, axis=0)[1:,:]/x.shape[0]
         # return np.concatenate((
         #     (C.real + S.imag + 1j*(C.imag - S.real))[::-1,:], # frequency increasing in absolute magnitude along axis
         #      C.real - S.imag + 1j*(-C.imag - S.real),
@@ -1194,51 +1182,43 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         Pz2 = Pz1.copy()
     for j in range(extra):
         # Missing values handling
-        # TODO: Apply this to 1D version
         if np.any(~np.isfinite(z1[j,:,:])) or (z2 is not None and np.any(~np.isfinite(z2[j,:,:]))):
             print('Warning: Skipping array with missing values.')
             continue
         # 2D transform for each window on non-cyclic dimension
         for i,l in enumerate(loc):
             if z2 is None:
-                # Reorder negative frequencies; use Nyquist
+                # Note since we got the rfft (not fft) in one direction, only
+                # have half the coefficients (they are symmetric); means for
+                # correct variance, have to double the power.
                 Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
-                # Power
-                Pz1[j,i,:,:] = np.abs(Fz1)**2
+                Pz1[j,i,:,:] = 2*np.abs(Fz1)**2
             else:
                 # Frequencies
                 Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
                 Fz2 = freqs(z2[j,l-pm:l+pm,:], pm)
                 # Powers
-                # NOTE: Think these were all completely wrong? Cross-spectrum
-                # is different, need different math. See Libby's notes
-                # CO[j,i,:,:]  = Fz1.real*Fz2.real + Fz1.imag*Fz2.imag
-                # Q[j,i,:,:]   = Fz1.real*Fz1.imag - Fz2.real*Fz1.imag
-                # Pz1[j,i,:,:] = np.abs(Fz1)**2
-                # Pz2[j,i,:,:] = np.abs(Fz2)**2
                 Phi1 = np.arctan2(Fz1.imag, Fz1.real) # analagous to Libby's notes, for complex space
                 Phi2 = np.arctan2(Fz2.imag, Fz2.real)
-                CO[j,i,:,:]  = np.abs(Fz1)*np.abs(Fz2)*np.cos(Phi1 - Phi2)
-                Q[j,i,:,:]   = np.abs(Fz1)*np.abs(Fz2)*np.sin(Phi1 - Phi2)
-                Pz1[j,i,:,:] = np.abs(Fz1)**2
-                Pz2[j,i,:,:] = np.abs(Fz2)**2
+                CO[j,i,:,:]  = 2*np.abs(Fz1)*np.abs(Fz2)*np.cos(Phi1 - Phi2)
+                Q[j,i,:,:]   = 2*np.abs(Fz1)*np.abs(Fz2)*np.sin(Phi1 - Phi2)
+                Pz1[j,i,:,:] = 2*np.abs(Fz1)**2
+                Pz2[j,i,:,:] = 2*np.abs(Fz2)**2
 
     # Frequencies
     # Make sure Nyquist frequency is appropriately signed on either side of array
     fx = np.fft.fftfreq(2*pm) # just the positive-direction Fourier coefs
     fx = np.concatenate((-np.abs(fx[pm:pm+1]), fx[pm+1:], fx[1:pm], np.abs(fx[pm:pm+1])), axis=0)
-    fy = np.fft.rfftfreq(M)[1:]/2 # for some reason is off by factor of 2
+    fy = np.fft.rfftfreq(M)[1:]
 
     # Helper function
     # Reshapes final result, and scales powers so we can take dimensional
     # average without needing to divide by 2
     def unshape(x):
-        x[:,:,:-1] /= 2
         x = lead_unflatten(x, shape, nflat)
         x = unpermute(x, caxis - offset) # put caxis back, accounting for if taxis moves to left
         x = unpermute(x, taxis) # put taxis back
         return x
-
     # Get window averages, reshape, and other stuff
     # NOTE: For the 'real' transform, all values but Nyquist must
     # be divided by two, so that an 'average' of the power equals
@@ -1246,7 +1226,6 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     if z2 is None:
         # Return
         Pz1 = Pz1.mean(axis=1)
-        Pz1[:,:,:-1] /= 2
         Pz1 = unshape(Pz1)
         return fx/dx, fy/dy, Pz1
     else:
@@ -1255,8 +1234,6 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         Q   = Q.mean(axis=1)
         Pz1 = Pz1.mean(axis=1)
         Pz2 = Pz2.mean(axis=1)
-        for array in (Pz1, Pz2, CO, Q):
-            array[:,:,:-1] /= 2
         if coherence: # return coherence and phase instead
             # Coherence and stuff
             # NOTE: This Phi relationship is still valid. Check Libby's
