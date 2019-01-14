@@ -84,7 +84,7 @@ def rednoise(ntime, a, samples=1, mean=0, stdev=1, nested=False):
     # aseries = b*np.array([a**(ntime-i) for i in range(1,ntime+1)])
     # for i in range(samples):
     #     eps = np.random.normal(loc=0, scale=1, size=ntime)
-    #     vals = eps[:,None]@aseries[None,:] # matrix for doing math on
+    #     vals = eps[:,None] @ aseries[None,:] # matrix for doing math on
     #     data[1:,i] = [np.trace(vals,ntime-i) for i in range(1,ntime+1)]
 
     # Return
@@ -409,22 +409,22 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
         # TODO: Fix the weight projection below
         rho = np.corrcoef(x.T[:,1:], x.T[:,:-1])[0,1] # must be (space x time)
         rho_ave = (rho*weights).sum()/weights.sum()
-        nstar[i,:,0,0] = m*((1-rho_ave)/(1+rho_ave)) # simple degrees of freedom estimation
+        nstar[i,:,0,0] = m*((1 - rho_ave)/(1 + rho_ave)) # simple degrees of freedom estimation
         # Get EOFs using covariance matrix on *shortest* dimension
         if x.shape[0] > x.shape[1]:
             # Get *temporal* covariance matrix since time dimension larger
             eigrange = [n-neof, n-1] # eigenvalues to get
-            l, v = linalg.eigh((xw.T@xw)/m, eigvals=eigrange, eigvals_only=False)
-            z = xw@v # i.e. multiply (time x space) by (space x neof), get (time x neof)
-            z = (z-z.mean(axis=0))/z.std(axis=0) # standardize pcs
-            p = x.T@z/m # i.e. multiply (space x time) by (time x neof), get (space x neof)
+            l, v = linalg.eigh((xw.T @ xw)/m, eigvals=eigrange, eigvals_only=False)
+            z = xw @ v # i.e. multiply (time x space) by (space x neof), get (time x neof)
+            z = (z - z.mean(axis=0))/z.std(axis=0) # standardize pcs
+            p = x.T @ z/m # i.e. multiply (space x time) by (time x neof), get (space x neof)
         else:
             # Get *spatial* dispersion matrix since space dimension longer
             # This time 'eigenvectors' are actually the pcs
             eigrange = [m-neof, m-1] # eigenvalues to get
-            l, z = linalg.eigh((xw@x.T)/n, eigvals=eigrange, eigvals_only=False)
-            z = (z-z.mean(axis=0))/z.std(axis=0) # standardize pcs
-            p = x.T@z/m # i.e. multiply (space x time) by (time by neof), get (space x neof)
+            l, z = linalg.eigh((xw @ x.T)/n, eigvals=eigrange, eigvals_only=False)
+            z = (z - z.mean(axis=0))/z.std(axis=0) # standardize pcs
+            p = (x.T @ z)/m # i.e. multiply (space x time) by (time by neof), get (space x neof)
         # Store in big arrays
         pcs[i,:,:,0] = z.T[::-1,:] # neof by time
         projs[i,:,0,:] = p.T[::-1,:] # neof by space
