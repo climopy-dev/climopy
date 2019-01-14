@@ -803,7 +803,7 @@ def lanczos(dx, width, cutoff, response=True):
     n = (width/dx)//1 # convert window width from 'time units' to 'time steps'
     n = (n - 1)//2 + 1
     # n = width//2
-    print(f'order-{n*2 - 1:.0f} Lanczos window')
+    print(f'Order-{n*2 - 1:.0f} Lanczos window')
     tau = np.arange(1,n+1) # lag time
     C0 = 2*alpha # integral of cutoff-response function is alpha*pi/pi
     Ck = np.sin(2*np.pi*alpha*tau)/(np.pi*tau)
@@ -857,7 +857,7 @@ def butterworth(dx, order, cutoff, btype='low'):
         cutoff = 1.0/cutoff # to Hz, or cycles/unit
         cutoff = cutoff*(2*dx) # to cycles/(2 timesteps), must be relative to nyquist
         # cutoff = (1/cutoff)*(2/(1/dx)) # python takes this in frequency units!
-    print(f'order-{N:.0f} Butterworth filter')
+    print(f'Order-{N:.0f} Butterworth filter')
     # Apply filter
     b, a = signal.butter(N-1, cutoff, btype=btype, analog=analog, output='ba')
     return b, a
@@ -867,7 +867,9 @@ def butterworth(dx, order, cutoff, btype='low'):
 #------------------------------------------------------------------------------#
 def window(wintype, n, normalize=False):
     """
-    Retrieves weighting function window, identical to get_window().
+    Retrieves weighting function window, identical to get_window(). Note
+    the raw window weights must be normalized, or will screw up the power
+    of your FFT coefficients.
 
     For windows that require extra parameters, window
     must be a tuple of window-name, parameter.
@@ -880,14 +882,16 @@ def window(wintype, n, normalize=False):
     if wintype=='gaussian':
         raise ValueError('Gaussian window needs 2-tuple of (name,stdev).')
     # Get window
+    # NOTE: Window will be normalized to have maximum of 1. Windowing decreases
+    # total power of resulting transform; to get it back, divide FFT by sum
+    # of window coefficients instead of length of the FFT'd dimension.
     win = signal.get_window(wintype, n)
-    if normalize:
-        win = win/win.sum() # default normalizes so *maximum (usually central) value is 1*
     return win
 
 def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
-        nperseg=100, wintype='boxcar', center=np.pi, axis=-1,
-        detrend='linear', scaling='spectrum'):
+        nperseg=100, wintype='boxcar',
+        center=np.pi, axis=-1,
+        detrend='constant', scaling='spectrum'):
     """
     Gets the spectral decomposition for particular windowing technique.
     Uses simple numpy fft.
@@ -945,6 +949,28 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     See:
       * https://stackoverflow.com/a/19976162/4970632
       * https://stackoverflow.com/a/15148195/4970632
+
+    Note that windowing reduces the power amplitudes, and results in loss
+    of information! With 'boxcar' window, summing the components gives you
+    the exact variance. Another issue is the necessary amplitude 'correction'
+    factor varies depending on frequency and the signal analysed.
+
+    Better perhaps to follow example of Randel and Held and smooth in
+    frequency space with a Gaussian filter (running average with window
+    summing to 1; should not reduce power).
+
+    Example
+    -------
+    # Power reduction depends on signal
+    for y in (np.sin(np.arange(0,8*np.pi-0.01,np.pi/25)),
+        np.random.rand(200)):
+        yvar = ((y-y.mean())**2).mean()
+        Y = (np.abs(np.fft.fft(y)[1:]/y.size)**2).sum()
+        Yw = (np.abs(np.fft.fft(y*w)[1:]/y.size)**2).sum()
+        print('test')
+        print(Yw/yvar)
+        print(Yw*(y.size/w.sum())/yvar)
+        print(Y/yvar)
     """
     # Initial stuff
     N = y1.shape[axis] # window count
@@ -953,7 +979,6 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
         nperseg = N
     nperseg = 2*(nperseg // 2) # enforce even window size
     r = N % nperseg
-    print('Remainder:', r)
     if r!=0:
         s = [slice(None) for i in range(y1.ndim)]
         s[axis] = slice(None,-r)
@@ -1000,19 +1025,22 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
                 # Remember to double the size of power, because only
                 # have half the coefficients (rfft not fft)
                 wy = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
-                Fy1 = np.fft.rfft(wy, norm='ortho')[1:]/wy.size
-                Py1[j,i,:] = 2*np.abs(Fy1)**2
+                Fy1 = np.fft.rfft(wy)[1:]/win.sum()
+                Py1[j,i,:] = np.abs(Fy1)**2
+                Py1[j,i,:-1] *= 2
             else:
                 # Frequencies
                 wy1 = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
                 wy2 = win*signal.detrend(y2[j,l-pm:l+pm], type=detrend)
-                Fy1 = np.fft.rfft(wy1, norm='ortho')[1:]/wy1.size
-                Fy2 = np.fft.rfft(wy2, norm='ortho')[1:]/wy2.size
+                Fy1 = np.fft.rfft(wy1)[1:]/win.sum()
+                Fy2 = np.fft.rfft(wy2)[1:]/win.sum()
                 # Powers
-                Py1[j,i,:] = 2*np.abs(Fy1)**2
-                Py2[j,i,:] = 2*np.abs(Fy2)**2
-                CO[j,i,:]  = 2*(Fy1.real*Fy2.real + Fy1.imag*Fy2.imag)
-                Q[j,i,:]   = 2*(Fy1.real*Fy1.imag - Fy2.real*Fy1.imag)
+                Py1[j,i,:] = np.abs(Fy1)**2
+                Py2[j,i,:] = np.abs(Fy2)**2
+                CO[j,i,:]  = (Fy1.real*Fy2.real + Fy1.imag*Fy2.imag)
+                Q[j,i,:]   = (Fy1.real*Fy2.imag - Fy2.real*Fy1.imag)
+                for array in (Py1,Py2,CO,Q):
+                    array[j,i,:-1] *= 2 # scale all but Nyquist frequency
 
     # Helper function
     def unshape(x):
@@ -1054,7 +1082,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
 
 def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         nperseg=100, wintype='boxcar',
-        axes=(-2,-1), # first position is *cyclic* (perform simple real transform), second is *not* (windowed)
+        center=np.pi, axes=(-2,-1), # first position is *cyclic* (perform simple real transform), second is *not* (windowed)
         manual=False, detrend='constant', scaling='spectrum'):
     """
     Performs 2-d spectral decomposition, with windowing along only *one* dimension,
@@ -1089,15 +1117,19 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         coherence squared
     Phi :
         average phase relationship
+
+    Notes
+    -----
+    See notes for the 1D version.
     """
     # Checks
     taxis, caxis = axes
     if len(z1.shape)<2:
         raise ValueError('Need at least rank 2 array.')
-    if z2 is not None and not all(x==y for x,y in zip(z1.shape, z2.shape)):
+    if z2 is not None and not z1.shape==z2.shape:
         raise ValueError(f'Shapes of x {x.shape} and y {y.shape} must match.')
-    print(f'Cyclic dimension in position {caxis}, length {z1.shape[caxis]}.')
-    print(f'Window dimension {taxis}, length {z1.shape[taxis]}, window length {nperseg}.')
+    print(f'Cyclic dimension ({caxis}): Length {z1.shape[caxis]}.')
+    print(f'Windowed dimension ({taxis}): Length {z1.shape[taxis]}, window length {nperseg}.')
     if caxis<0:
         caxis = z1.ndim-caxis
     if taxis<0:
@@ -1143,10 +1175,12 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # Gets 2D Fourier decomp, reorders negative frequencies on non-cyclic
     # axis so frequencies there are monotonically ascending.
     win = window(wintype, nperseg) # for time domain
+    wsum = (win**2).sum()
     def freqs(x, pm):
         # Detrend
-        x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
-        x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
+        # Or don't, since we shave the constant part anyway?
+        # x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
+        # x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
         # The 2D approach
         # NOTE: Read documentation regarding normalization. Default leaves
         # forward transform unnormalized, reverse normalized by 1/n; the ortho
@@ -1155,6 +1189,8 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         X = np.fft.rfft2(win[:,None]*x, axes=(0,1)) # last axis specified should get a *real* transform
         X = X[:,1:] # remove the zero-frequency value
         X = X/(x.shape[0]*x.shape[1]) # complex FFT has to be normalized by sample size
+        # print(w.sum()/x.shape[0])
+        # print((w**2).sum()/x.shape[0])
         return np.concatenate((X[pm:,:], X[1:pm+1,:]), axis=0)
         # Manual approach, virtually identical
         # Follows Libby's recipe, where instead real is cosine and imag is
@@ -1190,7 +1226,8 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
                 # have half the coefficients (they are symmetric); means for
                 # correct variance, have to double the power.
                 Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
-                Pz1[j,i,:,:] = 2*np.abs(Fz1)**2
+                Pz1[j,i,:,:] = np.abs(Fz1)**2
+                Pz1[j,i,:,:-1] *= 2
             else:
                 # Frequencies
                 Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
@@ -1198,10 +1235,12 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
                 # Powers
                 Phi1 = np.arctan2(Fz1.imag, Fz1.real) # analagous to Libby's notes, for complex space
                 Phi2 = np.arctan2(Fz2.imag, Fz2.real)
-                CO[j,i,:,:]  = 2*np.abs(Fz1)*np.abs(Fz2)*np.cos(Phi1 - Phi2)
-                Q[j,i,:,:]   = 2*np.abs(Fz1)*np.abs(Fz2)*np.sin(Phi1 - Phi2)
-                Pz1[j,i,:,:] = 2*np.abs(Fz1)**2
-                Pz2[j,i,:,:] = 2*np.abs(Fz2)**2
+                CO[j,i,:,:]  = np.abs(Fz1)*np.abs(Fz2)*np.cos(Phi1 - Phi2)
+                Q[j,i,:,:]   = np.abs(Fz1)*np.abs(Fz2)*np.sin(Phi1 - Phi2)
+                Pz1[j,i,:,:] = np.abs(Fz1)**2
+                Pz2[j,i,:,:] = np.abs(Fz2)**2
+                for array in (CO,Q,Pz1,Pz2):
+                    array[j,i,:,:-1] *= 2
 
     # Frequencies
     # Make sure Nyquist frequency is appropriately signed on either side of array
@@ -1228,6 +1267,7 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         return fx/dx, fy/dy, Pz1
     else:
         # Averages
+        print(Pz1.shape)
         CO  = CO.mean(axis=1)
         Q   = Q.mean(axis=1)
         Pz1 = Pz1.mean(axis=1)
