@@ -325,17 +325,20 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
     Calculates the temporal EOFs, using the scipy algorithm for Hermetian (or
     real symmetric) matrices. This version allows calculating just 'n'
     most important ones, so should be faster.
+
     Parameters
     ----------
-        data:
+        data :
             data of arbitrary shape
-    Kwargs:
-        neof:
+        neof :
             number of eigenvalues we want
-        record:
+        record :
             axis used as 'record' dimension -- should only be 1
-        space:
+        space :
             axes used as 'space' dimension -- can be many
+        weights :
+            area/mass weights; must be broadcastable on multiplication with 'data'
+            weights will be normalized prior to application
     """
     # First query array shapes and stuff
     m_dims = np.atleast_1d(record)
@@ -360,6 +363,7 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
     if weights is None:
         weights = 1
     weights = np.atleast_1d(weights) # want numpy array
+    weights = weights/weights.mean() # so does not affect amplitude
     try:
         if m>n: # more sampling than space dimensions
             data  = data*np.sqrt(weights)
@@ -367,7 +371,7 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
         else: # more space than sampling dimensions
             dataw = data*weights
     except ValueError:
-        raise ValueError(f'Dimensionality of weights {weights.shape} incompatible with dimensionality of space dimensions {data.shape[-2:]}!')
+        raise ValueError(f'Dimensionality of weights {weights.shape} incompatible with dimensionality of space dimensions {data.shape}!')
 
     # Turn matrix into *record* by *space*, or 'M' by 'N'
     # 1) Move record dimension to right
