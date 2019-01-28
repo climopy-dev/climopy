@@ -44,13 +44,22 @@ def gaussian(N=1000, mean=0, stdev=None, sigma=1):
 #------------------------------------------------------------------------------
 # Artificial data
 #------------------------------------------------------------------------------
-def rednoise(ntime, a, samples=1, mean=0, stdev=1, nested=False):
+def rednoise(a, ntime, samples=1, mean=0, stdev=1, nested=False):
     """
     Creates artificial red noise time series, i.e. a weighted sum
     of random perturbations.
 
     Equation is: x(t) = a*x(t-dt) + b*eps(t)
     where a is the lag-1 autocorrelation and b is a scaling term.
+
+    Parameters
+    ---------
+    a : scalar
+        autocorrelation
+    ntime : integer
+        number of timesteps
+    samples : integer or iterable of integers
+        shape of output array; final result will be ntime by this shape
 
     Notes
     -----
@@ -210,11 +219,13 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
     ----------
     data :
         the input data (this function computes necessary correlation coeffs).
+    nlag : integer
+        number of lags to use for fit
+    lag1 : bool
+        if True, just return the lag-1 best-fit
     series : bool
         return the red noise fit spectrum (True), or just the
         associted e-folding time scale (False)?
-    lag1 : bool
-        if True, just return the lag-1 best-fit
 
     Returns
     -------
@@ -229,8 +240,9 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
     #     raise ValueError(f"Got {len(time)} time values, but {data.shape[-1]} timesteps for data.")
     # First get the autocorrelation spectrum, and flatten leading dimensions
     # Dimensions will need to be flat because we gotta loop through each 'time series' and get curve fits.
+    # TODO: Add units support, i.e. a 'dx'
     # time = time[:nlag+1] # for later
-    autocorrs = autocorr(data, nlag, axis=-1, verbose=verbose)
+    _, autocorrs = corr(data, nlag=nlag, axis=-1, verbose=verbose)
     # Next iterate over the flattened dimensions, and perform successive curve fits
     ndim = data.shape[-1] if series else 1
     output = np.empty((autocorrs.shape[0], ndim))
@@ -251,20 +263,24 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
 #------------------------------------------------------------------------------#
 # Correlation analysis
 #------------------------------------------------------------------------------#
-def autocorr(data, nlag=None, lag=None, verbose=False, axis=0, _normalize=True):
+def corr(data1, data2=None, dx=1, nlag=None, lag=None,
+         verbose=False, axis=0, _normalize=True):
     """
-    Gets the autocorrelation spectrum at successive lags.
+    Gets the correlation spectrum at successive lags. For autocorrelation,
+    pass only a single ndarray.
 
     Parameters
     ----------
-    data :
-        the input data.
+    data1 :
+        The input data.
+    data2 : (optional)
+        The input data with which we compare data
     nlag :
-        get correlation at multiple lags ('n' is number after the 0-lag).
+        Get correlation at multiple lags ('n' is number after the 0-lag).
     lag :
-        get correlation at just this lag.
+        Get correlation at just this lag.
     _normalize :
-        used for autocovar wrapper. generally user shouldn't touch this.
+        Used for autocovar wrapper. generally user shouldn't touch this.
 
     Returns
     -------
@@ -279,10 +295,18 @@ def autocorr(data, nlag=None, lag=None, verbose=False, axis=0, _normalize=True):
     will, however, throw out those values.
     """
     # Preparation, and stdev/means
-    data = np.array(data)
-    naxis = data.shape[axis] # length
+    data1 = np.array(data1)
+    if data2 is None:
+        autocorr = True
+        data2 = data1.copy()
+    else:
+        autocorr = False
+        data2 = np.array(data2)
+        if data1.shape != data2.shape:
+            raise ValueError(f'Data 1 shape {data1.shape} and Data 2 shape {data2.shape} do not match.')
+    naxis = data1.shape[axis] # length
     if (nlag is None and lag is None) or (nlag is not None and lag is not None):
-        raise ValueError(f"Must specify *either* a lag (\"lag=x\") or range of lags (\"nlag=y\").")
+        raise ValueError(f"Must specify *either* a lag <lag> or range of lags <nlags>.")
     if nlag is not None and nlag>=naxis/2:
         raise ValueError(f"Lag {nlag} must be greater than axis length {naxis}.")
     if verbose:
@@ -290,37 +314,66 @@ def autocorr(data, nlag=None, lag=None, verbose=False, axis=0, _normalize=True):
             print(f"Calculating lag-{lag} autocorrelation.")
         else:
             print(f"Calculating autocorrelation spectrum up to lag {nlag} for axis length {naxis}.")
-    data = permute(data, axis)
-    mean = data.mean(axis=-1, keepdims=True) # keepdims for broadcasting in (data minus mean)
+    # Standardize maybe
+    var1 = var2 = 1
+    data1 = permute(data1, axis)
+    data2 = permute(data2, axis)
+    mean1 = data1.mean(axis=-1, keepdims=True) # keepdims for broadcasting in (data1 minus mean)
+    mean2 = data2.mean(axis=-1, keepdims=True)
     if _normalize:
-        var = data.var(axis=-1, keepdims=False) # this is divided by the summation term, so should have annihilated axis
+        std1 = data1.std(axis=-1, keepdims=False) # this is divided by the summation term, so should have annihilated axis
+        std2 = data2.std(axis=-1, keepdims=False)
     else:
-        var = 1 # dummy
+        std1 = std2 = 1 # use for covariance
+
     # Trivial autocorrelation done, just fill with ones
     if nlag is None and lag==0:
-        autocorrs = np.ones((*data.shape[:-1],1))
-    # Calculate on specific lag
+        # autocorrs = np.ones((*data1.shape[:-1], 1))
+        return unpermute(np.sum((data1 - mean1)*(data2 - mean2)) / (naxis*std1*std2), axis)
+    # Autocorrelation on specific lag
     elif nlag is None:
-        autocorrs = np.sum((data[...,:-lag]-mean)*(data[...,lag:]-mean),axis=-1)/((naxis-lag)*var)
-        autocorrs = autocorrs[...,None] # add dimension back in
-    # Up to n timestep-lags after 0-correlation
+        lag = np.round(lag*dx).astype(int)
+        return unpermute(np.sum((data1[...,:-lag] - mean1)*(data2[...,lag:] - mean2), axis=-1, keepdims=True)
+            / ((naxis - lag)*std1*std2), axis)
+    # Autocorrelation up to n timestep-lags after 0-correlation
     else:
-        autocorrs = np.empty((*data.shape[:-1], nlag+1)) # will include the zero-lag autocorrelation
-        autocorrs[...,0] = 1 # lag-0 autocorrelation
-        for i,lag in enumerate(range(1,nlag+1)):
-            autocorrs[...,i+1] = np.sum((data[...,:-lag]-mean)*(data[...,lag:]-mean),axis=-1)/((naxis-lag)*var)
-    return unpermute(autocorrs, axis)
+        # First figure out lags
+        # Negative lag means data2 leads data1 (e.g. z corr m, left-hand side
+        # is m leads z).
+        nlag = np.round(nlag/dx).astype(int) # e.g. 20 day lag, at synoptic timesteps
+        if not autocorr:
+            # print('Getting autocorr-sided correlation.')
+            n = nlag*2 + 1 # the center point, and both sides
+            lags = range(-nlag, nlag+1)
+        else:
+            # print('Getting one-sided correlation.')
+            n = nlag + 1
+            lags = range(0, nlag+1)
+        # Get correlation
+        autocorrs = np.empty((*data1.shape[:-1], n)) # will include the zero-lag autocorrelation
+        for i,lag in enumerate(lags):
+            if lag==0:
+                prod = (data1 - mean1)*(data2 - mean2)
+            elif lag<0: # input 1 *trails* input 2
+                prod = (data1[...,-lag:] - mean1)*(data2[...,:lag] - mean2)
+            else:
+                prod = (data1[...,:-lag] - mean1)*(data2[...,lag:] - mean2)
+            autocorrs[...,i] = prod.sum(axis=-1) / ((naxis - lag)*std1*std2)
+        return np.array(lags)*dx, unpermute(autocorrs, axis)
 
-def autocovar(*args, **kwargs):
+def covar(*args, **kwargs):
     """
     As above, but gets the covariance.
     """
-    return autocorr(*args, **kwargs, _normalize=False)
+    return corr(*args, **kwargs, _normalize=False)
 
 #------------------------------------------------------------------------------#
 # Empirical orthogonal functions and related decomps
 #------------------------------------------------------------------------------#
-def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=False):
+def eof(data, neof=5, record=-2, space=-1,
+        percent=True,
+        weights=None,
+        debug=False, normalize=False):
     """
     Calculates the temporal EOFs, using the scipy algorithm for Hermetian (or
     real symmetric) matrices. This version allows calculating just 'n'
@@ -329,16 +382,19 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
     Parameters
     ----------
         data :
-            data of arbitrary shape
+            Data of arbitrary shape.
         neof :
-            number of eigenvalues we want
+            Number of eigenvalues we want.
+        percent : bool
+            Whether to return raw eigenvalue(s), or *percent* of variance
+            explained by eigenvalue(s).
         record :
-            axis used as 'record' dimension -- should only be 1
+            Axis used as 'record' dimension -- should only be 1.
         space :
-            axes used as 'space' dimension -- can be many
+            Axes used as 'space' dimension -- can be many.
         weights :
-            area/mass weights; must be broadcastable on multiplication with 'data'
-            weights will be normalized prior to application
+            Area/mass weights; must be broadcastable on multiplication with 'data'
+            weights will be normalized prior to application.
     """
     # First query array shapes and stuff
     m_dims = np.atleast_1d(record)
@@ -358,14 +414,14 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
     if normalize:
         data = data / data.stdev(axis=m_dims[0], keepdims=True) # optionally standardize, usually not wanted for annular mode stuff
     # Next apply weights
-    m = np.prod([data.shape[i] for i in n_dims])
-    n = np.prod([data.shape[i] for i in m_dims])
+    m = np.prod([data.shape[i] for i in n_dims]) # number samples/timesteps
+    n = np.prod([data.shape[i] for i in m_dims]) # number space locations
     if weights is None:
         weights = 1
     weights = np.atleast_1d(weights) # want numpy array
     weights = weights/weights.mean() # so does not affect amplitude
     try:
-        if m>n: # more sampling than space dimensions
+        if m > n: # more sampling than space dimensions
             data  = data*np.sqrt(weights)
             dataw = data
         else: # more space than sampling dimensions
@@ -402,7 +458,7 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
     pcs   = np.empty((nextra, neof, m, 1))
     projs = np.empty((nextra, neof, 1, n))
     evals = np.empty((nextra, neof, 1, 1))
-    nstar = np.empty((nextra, neof, 1, 1))
+    nstar = np.empty((nextra, 1,    1, 1))
 
     # Get EOFs and PCs and stuff
     for i in range(data.shape[0]):
@@ -413,26 +469,31 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
         # TODO: Fix the weight projection below
         rho = np.corrcoef(x.T[:,1:], x.T[:,:-1])[0,1] # must be (space x time)
         rho_ave = (rho*weights).sum()/weights.sum()
-        nstar[i,:,0,0] = m*((1 - rho_ave)/(1 + rho_ave)) # simple degrees of freedom estimation
+        nstar[i,0,0,0] = m*((1 - rho_ave)/(1 + rho_ave)) # simple degrees of freedom estimation
         # Get EOFs using covariance matrix on *shortest* dimension
         if x.shape[0] > x.shape[1]:
             # Get *temporal* covariance matrix since time dimension larger
             eigrange = [n-neof, n-1] # eigenvalues to get
-            l, v = linalg.eigh((xw.T @ xw)/m, eigvals=eigrange, eigvals_only=False)
-            z = xw @ v # i.e. multiply (time x space) by (space x neof), get (time x neof)
-            z = (z - z.mean(axis=0))/z.std(axis=0) # standardize pcs
+            covar = (xw.T @ xw)/m
+            l, v = linalg.eigh(covar, eigvals=eigrange, eigvals_only=False) # returns eigenvectors in *columns*
+            Z = xw @ v # i.e. multiply (time x space) by (space x neof), get (time x neof)
+            z = (Z - Z.mean(axis=0))/Z.std(axis=0) # standardize pcs
             p = x.T @ z/m # i.e. multiply (space x time) by (time x neof), get (space x neof)
         else:
             # Get *spatial* dispersion matrix since space dimension longer
             # This time 'eigenvectors' are actually the pcs
             eigrange = [m-neof, m-1] # eigenvalues to get
-            l, z = linalg.eigh((xw @ x.T)/n, eigvals=eigrange, eigvals_only=False)
-            z = (z - z.mean(axis=0))/z.std(axis=0) # standardize pcs
+            covar = (xw @ x.T)/n
+            l, Z = linalg.eigh(covar, eigvals=eigrange, eigvals_only=False)
+            z = (Z - Z.mean(axis=0))/Z.std(axis=0) # standardize pcs
             p = (x.T @ z)/m # i.e. multiply (space x time) by (time by neof), get (space x neof)
         # Store in big arrays
         pcs[i,:,:,0] = z.T[::-1,:] # neof by time
         projs[i,:,0,:] = p.T[::-1,:] # neof by space
-        evals[i,:,0,0] = l[::-1] # neof
+        if percent:
+            evals[i,:,0,0] = 100.0*l[::-1]/np.trace(covar) # percent explained
+        else:
+            evals[i,:,0,0] = l[::-1] # neof
         # # Sort
         # idx = L.argsort()[::-1]
         # L, Z = L[idx], Z[:,idx]
@@ -443,14 +504,14 @@ def eof(data, record=-2, space=-1, weights=None, neof=5, debug=False, normalize=
     pcs   = lead_unflatten(pcs,   [*shape_lead, neof, m, 1], nlead)
     projs = lead_unflatten(projs, [*shape_lead, neof, 1, n], nlead)
     evals = lead_unflatten(evals, [*shape_lead, neof, 1, 1], nlead)
-    nstar = lead_unflatten(nstar, [*shape_lead, neof, 1, 1], nlead)
+    nstar = lead_unflatten(nstar, [*shape_lead, 1,    1, 1], nlead)
     # The 'trail's were *spatial* dimensions, which were allowed to be more than 1D
     ntrail = len(shape_trail)
     flat_trail = [1]*len(shape_trail)
     pcs   = trail_unflatten(pcs,   [*shape_lead, neof, m, *flat_trail],  ntrail)
     projs = trail_unflatten(projs, [*shape_lead, neof, 1, *shape_trail], ntrail)
     evals = trail_unflatten(evals, [*shape_lead, neof, 1, *flat_trail],  ntrail)
-    nstar = trail_unflatten(nstar, [*shape_lead, neof, 1, *flat_trail],  ntrail)
+    nstar = trail_unflatten(nstar, [*shape_lead, 1,    1, *flat_trail],  ntrail)
     # Permute 'eof' dimension onto the start (note we had to put it between
     # extraneous dimensions and time/space dimensions so we could perform
     # the above unflatten moves)
@@ -561,6 +622,7 @@ def rolling(x, w, axis=-1, btype='lowpass',
         w = 1/nw
     else:
         # Arbitrary windowing function
+        # TODO: Add windowing functions!
         nw = len(w)
     # Manipulate array
     shape = x.shape[:-1] + (x.shape[-1]-(nw-1), nw)
@@ -593,8 +655,7 @@ def running(*args, **kwargs):
     """
     return rolling(*args, **kwargs)
 
-def filter(x, b, a=1, n=1, axis=-1,
-              fix=True, fixvalue=np.nan):
+def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, fixvalue=np.nan):
     """
     Apply scipy.signal.lfilter to data. By default this does *not* pad
     ends of data. May keep it this way.
@@ -659,10 +720,12 @@ def filter(x, b, a=1, n=1, axis=-1,
         if n_2sides==0:
             y = y[:,n_left:]
         else:
-            y = y[:,n_2sides+n_left:-n_2sides]
-        y_left  = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
-        y_right = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
-        y = np.concatenate((y_left, y, y_right), axis=-1)
+            y = y[:,(n_2sides + n_left):(-n_2sides)]
+        # Optionally pad with a 'fill value' (usually NaN)
+        if pad:
+            y_left  = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
+            y_right = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
+            y = np.concatenate((y_left, y, y_right), axis=-1)
     # Return
     y = unpermute(lead_unflatten(y, shape), axis)
     return y
@@ -763,7 +826,7 @@ def highpower(x):
     freqs = fftfreqs[...,f]
     return freqs, y # frequencies and the high-power filter
 
-def lanczos(dx, width, cutoff, response=True):
+def lanczos(dx, width, cutoff):
     """
     Returns *coefficients* for Lanczos high-pass filter with
     desired wavelength specified.
@@ -771,13 +834,13 @@ def lanczos(dx, width, cutoff, response=True):
 
     Parameters
     ----------
-    width :
-        length of filter in physical units
-    cutoff :
-        cutoff wavelength in physical units
     dx :
          units of your x-dimension (so that cutoff can be translated
          from physical units to 'timestep' units)
+    width :
+        length of filter in time steps
+    cutoff :
+        cutoff wavelength in physical units
 
     Returns
     -------
@@ -804,10 +867,11 @@ def lanczos(dx, width, cutoff, response=True):
     """
     # Coefficients and initial stuff
     alpha = 1.0/(cutoff/dx) # convert alpha to wavenumber (new units are 'inverse timesteps')
-    n = (width/dx)//1 # convert window width from 'time units' to 'time steps'
+    # n = (width/dx)//1 # convert window width from 'time units' to 'time steps'
+    n = width
     n = (n - 1)//2 + 1
     # n = width//2
-    print(f'order-{n*2 - 1:.0f} Lanczos window')
+    print(f'Order-{n*2 - 1:.0f} Lanczos window')
     tau = np.arange(1,n+1) # lag time
     C0 = 2*alpha # integral of cutoff-response function is alpha*pi/pi
     Ck = np.sin(2*np.pi*alpha*tau)/(np.pi*tau)
@@ -831,7 +895,7 @@ def butterworth(dx, order, cutoff, btype='low'):
       order :
         order of the filter
       cutoff :
-        cutoff frequency in 'x' units
+        cutoff frequency in 'x' units (i.e. *wavelengths*)
 
     Returns
     -------
@@ -860,9 +924,11 @@ def butterworth(dx, order, cutoff, btype='low'):
     else:
         cutoff = 1.0/cutoff # to Hz, or cycles/unit
         cutoff = cutoff*(2*dx) # to cycles/(2 timesteps), must be relative to nyquist
+    if cutoff > 1:
+        raise ValueError('Cuttoff frequency must be in [0, 1]. Remember you pass a cutoff *wavelength* to this function, not a frequency.')
         # cutoff = (1/cutoff)*(2/(1/dx)) # python takes this in frequency units!
-    print(f'order-{N:.0f} Butterworth filter')
     # Apply filter
+    # print(f'Order-{N:.0f} Butterworth filter')
     b, a = signal.butter(N-1, cutoff, btype=btype, analog=analog, output='ba')
     return b, a
 
@@ -871,7 +937,9 @@ def butterworth(dx, order, cutoff, btype='low'):
 #------------------------------------------------------------------------------#
 def window(wintype, n, normalize=False):
     """
-    Retrieves weighting function window, identical to get_window().
+    Retrieves weighting function window, identical to get_window(). Note
+    the raw window weights must be normalized, or will screw up the power
+    of your FFT coefficients.
 
     For windows that require extra parameters, window
     must be a tuple of window-name, parameter.
@@ -884,14 +952,16 @@ def window(wintype, n, normalize=False):
     if wintype=='gaussian':
         raise ValueError('Gaussian window needs 2-tuple of (name,stdev).')
     # Get window
+    # NOTE: Window will be normalized to have maximum of 1. Windowing decreases
+    # total power of resulting transform; to get it back, divide FFT by sum
+    # of window coefficients instead of length of the FFT'd dimension.
     win = signal.get_window(wintype, n)
-    if normalize:
-        win = win/win.sum() # default normalizes so *maximum (usually central) value is 1*
     return win
 
 def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
-        nperseg=100, wintype='boxcar', center=np.pi, axis=-1,
-        detrend='linear', scaling='spectrum'):
+        nperseg=100, wintype='boxcar',
+        center=np.pi, axis=-1,
+        detrend='constant', scaling='spectrum'):
     """
     Gets the spectral decomposition for particular windowing technique.
     Uses simple numpy fft.
@@ -949,6 +1019,28 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     See:
       * https://stackoverflow.com/a/19976162/4970632
       * https://stackoverflow.com/a/15148195/4970632
+
+    Note that windowing reduces the power amplitudes, and results in loss
+    of information! With 'boxcar' window, summing the components gives you
+    the exact variance. Another issue is the necessary amplitude 'correction'
+    factor varies depending on frequency and the signal analysed.
+
+    Better perhaps to follow example of Randel and Held and smooth in
+    frequency space with a Gaussian filter (running average with window
+    summing to 1; should not reduce power).
+
+    Example
+    -------
+    # Power reduction depends on signal
+    for y in (np.sin(np.arange(0,8*np.pi-0.01,np.pi/25)),
+        np.random.rand(200)):
+        yvar = ((y-y.mean())**2).mean()
+        Y = (np.abs(np.fft.fft(y)[1:]/y.size)**2).sum()
+        Yw = (np.abs(np.fft.fft(y*w)[1:]/y.size)**2).sum()
+        print('test')
+        print(Yw/yvar)
+        print(Yw*(y.size/w.sum())/yvar)
+        print(Y/yvar)
     """
     # Initial stuff
     N = y1.shape[axis] # window count
@@ -957,11 +1049,11 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
         nperseg = N
     nperseg = 2*(nperseg // 2) # enforce even window size
     r = N % nperseg
-    print('Remainder:', r)
     if r!=0:
         s = [slice(None) for i in range(y1.ndim)]
         s[axis] = slice(None,-r)
         y1 = y1[tuple(s)] # slice it up
+        N = y1.shape[axis] # update after trim
         print(f'Warning: Trimmed {r} out of {N} points to accommodate length-{nperseg} window.')
 
     # Just use scipy csd
@@ -1003,20 +1095,24 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
             if y2 is None:
                 # Remember to double the size of power, because only
                 # have half the coefficients (rfft not fft)
+                # print(win.size, pm, y1[j,l-pm:l+pm].size)
                 wy = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
-                Fy1 = np.fft.rfft(wy, norm='ortho')[1:]/wy.size
-                Py1[j,i,:] = 2*np.abs(Fy1)**2
+                Fy1 = np.fft.rfft(wy)[1:]/win.sum()
+                Py1[j,i,:] = np.abs(Fy1)**2
+                Py1[j,i,:-1] *= 2
             else:
                 # Frequencies
                 wy1 = win*signal.detrend(y1[j,l-pm:l+pm], type=detrend)
                 wy2 = win*signal.detrend(y2[j,l-pm:l+pm], type=detrend)
-                Fy1 = np.fft.rfft(wy1, norm='ortho')[1:]/wy1.size
-                Fy2 = np.fft.rfft(wy2, norm='ortho')[1:]/wy2.size
+                Fy1 = np.fft.rfft(wy1)[1:]/win.sum()
+                Fy2 = np.fft.rfft(wy2)[1:]/win.sum()
                 # Powers
-                Py1[j,i,:] = 2*np.abs(Fy1)**2
-                Py2[j,i,:] = 2*np.abs(Fy2)**2
-                CO[j,i,:]  = 2*(Fy1.real*Fy2.real + Fy1.imag*Fy2.imag)
-                Q[j,i,:]   = 2*(Fy1.real*Fy1.imag - Fy2.real*Fy1.imag)
+                Py1[j,i,:] = np.abs(Fy1)**2
+                Py2[j,i,:] = np.abs(Fy2)**2
+                CO[j,i,:]  = (Fy1.real*Fy2.real + Fy1.imag*Fy2.imag)
+                Q[j,i,:]   = (Fy1.real*Fy2.imag - Fy2.real*Fy1.imag)
+                for array in (Py1,Py2,CO,Q):
+                    array[j,i,:-1] *= 2 # scale all but Nyquist frequency
 
     # Helper function
     def unshape(x):
@@ -1058,7 +1154,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
 
 def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         nperseg=100, wintype='boxcar',
-        axes=(-2,-1), # first position is *cyclic* (perform simple real transform), second is *not* (windowed)
+        center=np.pi, axes=(-2,-1), # first position is *cyclic* (perform simple real transform), second is *not* (windowed)
         manual=False, detrend='constant', scaling='spectrum'):
     """
     Performs 2-d spectral decomposition, with windowing along only *one* dimension,
@@ -1093,15 +1189,19 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         coherence squared
     Phi :
         average phase relationship
+
+    Notes
+    -----
+    See notes for the 1D version.
     """
     # Checks
     taxis, caxis = axes
     if len(z1.shape)<2:
         raise ValueError('Need at least rank 2 array.')
-    if z2 is not None and not all(x==y for x,y in zip(z1.shape, z2.shape)):
+    if z2 is not None and not z1.shape==z2.shape:
         raise ValueError(f'Shapes of x {x.shape} and y {y.shape} must match.')
-    print(f'Cyclic dimension in position {caxis}, length {z1.shape[caxis]}.')
-    print(f'Window dimension {taxis}, length {z1.shape[taxis]}, window length {nperseg}.')
+    print(f'Cyclic dimension ({caxis}): Length {z1.shape[caxis]}.')
+    print(f'Windowed dimension ({taxis}): Length {z1.shape[taxis]}, window length {nperseg}.')
     if caxis<0:
         caxis = z1.ndim-caxis
     if taxis<0:
@@ -1147,10 +1247,12 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # Gets 2D Fourier decomp, reorders negative frequencies on non-cyclic
     # axis so frequencies there are monotonically ascending.
     win = window(wintype, nperseg) # for time domain
+    wsum = (win**2).sum()
     def freqs(x, pm):
         # Detrend
-        x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
-        x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
+        # Or don't, since we shave the constant part anyway?
+        # x = signal.detrend(x, type='constant', axis=1) # remove mean for cyclic one
+        # x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
         # The 2D approach
         # NOTE: Read documentation regarding normalization. Default leaves
         # forward transform unnormalized, reverse normalized by 1/n; the ortho
@@ -1159,6 +1261,8 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         X = np.fft.rfft2(win[:,None]*x, axes=(0,1)) # last axis specified should get a *real* transform
         X = X[:,1:] # remove the zero-frequency value
         X = X/(x.shape[0]*x.shape[1]) # complex FFT has to be normalized by sample size
+        # print(w.sum()/x.shape[0])
+        # print((w**2).sum()/x.shape[0])
         return np.concatenate((X[pm:,:], X[1:pm+1,:]), axis=0)
         # Manual approach, virtually identical
         # Follows Libby's recipe, where instead real is cosine and imag is
@@ -1194,7 +1298,8 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
                 # have half the coefficients (they are symmetric); means for
                 # correct variance, have to double the power.
                 Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
-                Pz1[j,i,:,:] = 2*np.abs(Fz1)**2
+                Pz1[j,i,:,:] = np.abs(Fz1)**2
+                Pz1[j,i,:,:-1] *= 2
             else:
                 # Frequencies
                 Fz1 = freqs(z1[j,l-pm:l+pm,:], pm)
@@ -1202,10 +1307,12 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
                 # Powers
                 Phi1 = np.arctan2(Fz1.imag, Fz1.real) # analagous to Libby's notes, for complex space
                 Phi2 = np.arctan2(Fz2.imag, Fz2.real)
-                CO[j,i,:,:]  = 2*np.abs(Fz1)*np.abs(Fz2)*np.cos(Phi1 - Phi2)
-                Q[j,i,:,:]   = 2*np.abs(Fz1)*np.abs(Fz2)*np.sin(Phi1 - Phi2)
-                Pz1[j,i,:,:] = 2*np.abs(Fz1)**2
-                Pz2[j,i,:,:] = 2*np.abs(Fz2)**2
+                CO[j,i,:,:]  = np.abs(Fz1)*np.abs(Fz2)*np.cos(Phi1 - Phi2)
+                Q[j,i,:,:]   = np.abs(Fz1)*np.abs(Fz2)*np.sin(Phi1 - Phi2)
+                Pz1[j,i,:,:] = np.abs(Fz1)**2
+                Pz2[j,i,:,:] = np.abs(Fz2)**2
+                for array in (CO,Q,Pz1,Pz2):
+                    array[j,i,:,:-1] *= 2
 
     # Frequencies
     # Make sure Nyquist frequency is appropriately signed on either side of array
@@ -1232,6 +1339,7 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         return fx/dx, fy/dy, Pz1
     else:
         # Averages
+        print(Pz1.shape)
         CO  = CO.mean(axis=1)
         Q   = Q.mean(axis=1)
         Pz1 = Pz1.mean(axis=1)
