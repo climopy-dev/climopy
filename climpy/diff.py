@@ -147,7 +147,11 @@ def deriv_uneven(x, y, axis=0, keepedges=False):
       percentage of total x2-x0 interval
     """
     # Preliminary stuff
-    x, y = np.array(x), np.array(y) # precaution
+    y = np.array(y)
+    if not np.iterable(x):
+        x = np.linspace(0, x*y.shape[axis]-1, y.shape[axis])
+    else:
+        x = np.array(x)
     xaxis = (axis if x.ndim>1 else 0) # if want x interpreted as vector
     if x.shape[xaxis] != y.shape[axis]: # allow broadcasting rules to be used along other axes
         raise ValueError('x and y dimensions do not match along derivative axis.')
