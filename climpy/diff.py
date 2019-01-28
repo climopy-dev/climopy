@@ -2,6 +2,8 @@
 """
 Includes various finite difference schemes.
 """
+# TODO: Add integration schemes! Will be simple to implement, they are just
+# cumsums.
 import numpy as np
 from functools import wraps
 from .arraytools import *
@@ -17,6 +19,7 @@ def _step(h):
     if len(h)==1:
         return h[0]
     else:
+        print('Warning: Using difference between first 2 points for step size.')
         return h[1]-h[0]
 
 def integrate(x, y, y0=0, axis=0):
@@ -46,6 +49,25 @@ def deriv(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=F
     ldiff, rdiff = (), ()
     if keepedges:
         keepleft = keepright = True
+
+    # Checks
+    n = y.shape[axis]
+    if n<2:
+        raise ValueError('Need at least 2 points on derivative axis.')
+    elif n<3:
+        if accuracy>0:
+            print(f'Warning: Setting accuracy to 0 for derivative on length-{n} axis.')
+            accuracy = 0
+    elif n<5:
+        if accuracy>2:
+            print(f'Warning: Setting accuracy to 2 for derivative on length-{n} axis.')
+            accuracy = 0
+    elif n<7:
+        if accuracy>4:
+            print(f'Warning: Setting accuracy to 4 for derivative on length-{n} axis.')
+            accuracy = 0
+
+    # Derivative
     y = np.array(y) # for safety
     y = permute(y, axis)
     if accuracy==0:
@@ -99,6 +121,25 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
     ldiff, rdiff = (), ()
     if keepedges:
         keepleft = keepright = True
+
+    # Checks
+    n = y.shape[axis]
+    if n<2:
+        raise ValueError('Need at least 2 points on derivative axis.')
+    elif n<3:
+        if accuracy>0:
+            print(f'Warning: Setting accuracy to 0 for derivative on length-{n} axis.')
+            accuracy = 0
+    elif n<5:
+        if accuracy>2:
+            print(f'Warning: Setting accuracy to 2 for derivative on length-{n} axis.')
+            accuracy = 0
+    elif n<7:
+        if accuracy>4:
+            print(f'Warning: Setting accuracy to 4 for derivative on length-{n} axis.')
+            accuracy = 0
+
+    # Derivative
     y = np.array(y) # for safety
     y = permute(y, axis)
     if accuracy==2:
@@ -147,17 +188,32 @@ def deriv_uneven(x, y, axis=0, keepedges=False):
       percentage of total x2-x0 interval
     """
     # Preliminary stuff
-    x, y = np.array(x), np.array(y) # precaution
+    x = np.atleast_1d(x)
+    y = np.array(y)
     xaxis = (axis if x.ndim>1 else 0) # if want x interpreted as vector
+    if x.size==1: # is just the step size
+        x = np.linspace(0, x[0]*y.shape[axis]-1, y.shape[axis])
     if x.shape[xaxis] != y.shape[axis]: # allow broadcasting rules to be used along other axes
-        raise ValueError('x and y dimensions do not match along derivative axis.')
-    x, y = permute(x, xaxis), permute(y, axis)
+        raise ValueError(f'x ({x.shape[xaxis]}) and y ({axis}) dimensions do not match along derivative axis.')
+
+    # Checks
+    n = y.shape[axis]
+    if n<2:
+        raise ValueError('Need at least 2 points on derivative axis.')
+    elif n<3: # can only do a simple difference
+        print('Warning: Taking difference between points as derivative.')
+        diff = (y[...,1:] - y[...,:-1])/(x[...,1:] - x[...,:-1])
+        return unpermute(diff, axis)
+
     # Formulation from stackoverflow, shown to be equivalent to the
     # one referenced below, but use x's instead of h's, and don't separte out terms
     # Original from this link: http://www.m-hikari.com/ijma/ijma-password-2009/ijma-password17-20-2009/bhadauriaIJMA17-20-2009.pdf
+    x, y = permute(x, xaxis), permute(y, axis)
     x0, x1, x2 = x[...,:-2], x[...,1:-1], x[...,2:]
     y0, y1, y2 = y[...,:-2], y[...,1:-1], y[...,2:]
     h1, h2 = x1-x0, x2-x1 # the x-steps
+
+    # Get
     # f = (x2 - x1)/(x2 - x0)
     # diff = (1-f)*(y2 - y1)/(x2 - x1) + f*(y1 - y0)/(x1 - x0) # version 1
     # print(h1.shape, h2.shape, y0.shape, y1.shape, y2.shape)
