@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+Wrappers on python APIs for downloading reanalysis data.
+"""
 # Imports
 import xarray as xr
 import numpy as np
@@ -15,7 +18,8 @@ def eraint(params, stream, levtype,
         levrange=None, levs=None,
         hours=(0,6,12,18), hour=None,
         res=1.0, box=None,
-        filename='eraint.nc'):
+        filename='eraint.nc'
+        ):
     """
     Retrieves ERA-Interim DATA using the provided API. User MUST have, in home
     directory, a file named '.ecmwfapirc'; see API documentation, but should look like:
