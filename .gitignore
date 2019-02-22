@@ -8,6 +8,11 @@
 ###############
 data
 
+# Docs data #
+#############
+_*
+api
+
 # Other stuff #
 ###############
 trash
