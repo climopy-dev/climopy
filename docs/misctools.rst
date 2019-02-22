@@ -2,7 +2,8 @@ Miscellaneous tools
 -----------------------
 
 .. automodule:: climpy.misctools
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. automodsumm:: climpy.misctools
+   :toctree: api
+   :skip: lead_flatten, lead_unflatten, permute, trail_flatten, trail_unflatten, unpermute
 

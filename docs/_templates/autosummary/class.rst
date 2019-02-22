@@ -56,7 +56,6 @@
    {% endblock %}
 
 .. .. include:: {{fullname}}.examples
-   disabled this because don't have example files
 
 .. raw:: html
 

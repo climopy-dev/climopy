@@ -50,6 +50,10 @@ def standardize():
     """
     Standardize dimension names on xarray datasets, cyclic re-ordering,
     interpolation to poles, and more.
+
+    Warning
+    -------
+    Not yet implemented.
     """
     raise NotImplementedError
 
@@ -83,8 +87,7 @@ def geopad(lon, lat, data, nlon=1, nlat=0):
 
 def geomean(lon, lat, data,
         box=(None,None,None,None),
-        landfracs=None, mode=None, weights=1,
-        keepdims=False):
+        weights=1, keepdims=False):
     """
     Takes area mean of data time series; zone and F are 2d, but data is 3d.
     Since array is masked, this is super easy... just use the masked array
@@ -92,24 +95,29 @@ def geomean(lon, lat, data,
 
     Parameters
     ----------
-    lon :
-        grid longitude centers
-    lat :
-        grid latitude centers
-    landfracs :
-        to be used by mode, above
-    data :
-        should be lon by lat by (extra dims); will preserve dimensionality.
-    box :
-        mean-taking region; note if edges don't fall on graticule, will just subsample
-        the grid cells that do -- haven't bothered to account for partial coverage, because
-        it would be pain in the butt and not that useful.
-    weights: extra, custom weights to apply to data -- could be land/ocean fractions, for example.
+    lon : array-like
+        Grid longitude centers.
+    lat : array-like
+        Grid latitude centers.
+    data : array-like
+        Should be lon by lat by (extra dims); will preserve dimensionality.
+    box : length-4 list of float, optional
+        Region for averaging. Note if edges don't fall on graticule, will
+        just subsample the grid cells that do -- haven't bothered to
+        account for partial coverage, because it would be pain in the butt
+        and not that useful.
+    weights : array-like, optional
+        Extra, custom weights to apply to data -- could be land/ocean
+        fractions, for example.
 
     Notes
     -----
     Data should be loaded with myfuncs.ncutils.ncload, and provide this function
     with metadata in 'm' structure.
+
+    Todo
+    ----
+    Allow applying land/ocean mask as part of module functionality.
     """
     # TODO: Make default lat by lon.
     # Get cell areas

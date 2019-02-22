@@ -57,15 +57,38 @@ extensions = [
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon', # for NumPy style docstrings, instead of reStructred Text
     'sphinx.ext.autosummary',
-    'sphinxcontrib.bibtex',
     'IPython.sphinxext.ipython_directive',
     'IPython.sphinxext.ipython_console_highlighting',
+    'sphinxcontrib.bibtex', # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html
     'sphinx_automodapi.automodapi', # see: https://sphinx-automodapi.readthedocs.io/en/latest/
 ]
 
 # Generate stub pages whenever ::autosummary directive encountered
 # This way don't have to call sphinx-autogen manually
 autosummary_generate = True
+
+# Use automodapi tool, created by astropy people
+# See: https://sphinx-automodapi.readthedocs.io/en/latest/automodapi.html#overview
+# Normally have to *enumerate* function names manually. This will document
+# them automatically. Just be careful, if you use from x import *, to exclude
+# them in the automodapi:: directive
+# Also modify so 
+automodapi_toctreedirnm = 'api' # create much better URL for the page
+automodsumm_inherited_members = False
+# automod_templ_classes = """
+# Classes
+# {clshds}
+# .. automodsumm:: {modname}
+#     :classes-only:
+#     {clsfuncoptions}
+# """
+# automod_templ_funcs = """
+# Functions
+# {funchds}
+# .. automodsumm:: {modname}
+#     :functions-only:
+#     {clsfuncoptions}
+# """
 
 # Turn off code and image links for embedded mpl plots
 # plot_html_show_source_link = False
@@ -88,7 +111,7 @@ intersphinx_mapping = {
 
 # If true, the current module name will be prepended to all description
 # unit titles (such as .. function::).
-add_module_names = True
+add_module_names = False # confusing, because I use submodules for *organization*
 
 # Napoleon options
 # See: http://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html

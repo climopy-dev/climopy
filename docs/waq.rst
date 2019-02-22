@@ -2,7 +2,7 @@ Wave activity quantification
 ----------------------------
 
 .. automodule:: climpy.waq
-    :members:
-    :undoc-members:
-    :show-inheritance:
 
+.. automodsumm:: climpy.waq
+   :toctree: api
+   :skip: lead_flatten, lead_unflatten, permute, trail_flatten, trail_unflatten, unpermute, dataclass

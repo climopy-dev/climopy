@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""
-Tools for objective analysis-related tasks.
-Most functions should work with arbitrary array shapes.
+r"""
+Tools for objective analysis-related tasks. Many of these are adapted
+from examples and course notes provided by `Elizabeth Barnes
+<http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`_
+and `Dennis Hartmann <https://atmos.washington.edu/~dennis/552_Notes_ftp.html>`_.
 
 Notes
 -----
-Convention throughout module (consistent with common conventions
+The convention throughout this module (consistent with conventions
 in atmospheric science) is to use *linear* wave properties, i.e. the
-wavelength in <units> per 2pi rad, and wavenumber 2pi rad per <units>.
+wavelength in [units] per :math:`2\pi` radians, and wavenumber
+:math:`2\pi` radians per [units].
 """
 import os
 import numpy as np
@@ -17,6 +20,7 @@ import scipy.linalg as linalg
 import scipy.optimize as optimize
 from . import const # as its own module
 from .arraytools import *
+# from . import arraytools as tools
 
 #------------------------------------------------------------------------------
 # Algebra
@@ -557,13 +561,21 @@ def eof(data, neof=5, record=-2, space=-1,
 def eot(data, neof=5):
     """
     EOTs, whatever they are.
+
+    Warning
+    -------
+    Not yet implemented.
     """
     raise NotImplementedError
 
 def reof(data, neof=5):
     """
-    Rotated EOFs, e.g. according to Varimax.
-    The EOFs will be rotated according only to the first N signals.
+    Rotated EOFs, e.g. according to the "varimax" method. The EOFs will
+    be rotated according only to the first `neof` EOFs.
+
+    Warning
+    -------
+    Not yet implemented.
     """
     raise NotImplementedError
 
@@ -1412,8 +1424,12 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
 
 def autopower():
     """
-    Will turn into a wrapper around `power1d`, that generates co-spectral
+    Wrapper around `power1d`, that generates co-spectral
     statistics and whatnot at **successive lags**.
+
+    Warning
+    -------
+    Not yet implemented.
     """
     # Uses scipy.signal.welch windowing method to generate an estimate of the
     # *lagged* spectrum. Can also optionally do this with two variables.
@@ -1421,8 +1437,12 @@ def autopower():
 
 def autopower2d():
     """
-    Will turn into a wrapper around `power2d`, that generates co-spectral
+    Wrapper around `power2d`, that generates co-spectral
     statistics and whatnot at **successive lags**.
+
+    Warning
+    -------
+    Not yet implemented.
     """
     raise NotImplementedError
 

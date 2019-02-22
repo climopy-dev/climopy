@@ -6,7 +6,6 @@
 .. auto{{ objtype }}:: {{ objname }}
 
 .. .. include:: {{fullname}}.examples
-   disabled this because files don't exist
 
 .. raw:: html
 

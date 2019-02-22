@@ -2,7 +2,7 @@ Finite differencing
 -------------------
 
 .. automodule:: climpy.diff
-    :members:
-    :undoc-members:
-    :show-inheritance:
 
+.. automodsumm:: climpy.diff
+   :toctree: api
+   :skip: lead_flatten, lead_unflatten, permute, trail_flatten, trail_unflatten, unpermute

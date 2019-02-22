@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Module for performing Nakamura et al. finite-amplitude WAQ analysis.
+Module for performing `Noboru Nakamura's <https://geosci.uchicago.edu/people/noboru-nakamura/>`_
+finite-amplitude wave activity quantification. Incorporates code developed
+by `Clare Huang <https://github.com/csyhuang/hn2016_falwa/>`_.
 
 Warnings
 --------
@@ -8,21 +10,18 @@ This module is very old and needs work!
 
 Todo
 ----
-Incorporate xarray Datasets into this.
+Incorporate xarray Datasets into this. Incorporate Noboru's grad
+student's Github code.
 """
 # Imports
-import os
 import numpy as np
-import xarray as xr
-import scipy.signal as signal
-import scipy.stats as stats
-import time as T # have some big algorithms here; want to guage how long they take
 from .arraytools import *
 from . import const
 
 #------------------------------------------------------------------------------#
 # Grid description, useful for WAQ analysis
 #------------------------------------------------------------------------------#
+# @dataclass # consider for python3.7?
 class GridDes(object):
     """
     For storing latitude/longitude grid properties. Assumes global grid, and
@@ -194,7 +193,7 @@ def waq(lon, lat, q, sigma=None, omega=None,
     integrated), and `skip` is interval of sorted `q` you choose. See
     :cite:`nakamura_finite-amplitude_2010` for details.
 
-    .. bibliography:: refs.bib
+    .. bibliography:: ../refs.bib
     """
     # Grid considerations
     if nh:

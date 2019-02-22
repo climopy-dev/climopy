@@ -3,7 +3,7 @@
 Includes miscellaneous useful functions.
 """
 import numpy as np
-from itertools import zip_longest
+import itertools
 from .arraytools import *
 
 # Trigonometric functions in degrees
@@ -70,11 +70,13 @@ def month(dt):
 ################################################################################
 def zip(*iterables):
     """
-    Special kind of zip that fails when iterators not same length. See: https://stackoverflow.com/a/32954700/4970632.
-    For purpose of ``object()`` see: https://stackoverflow.com/a/28306434/4970632
+    Special kind of zip that fails when iterators not same length;
+    see `this post <https://stackoverflow.com/a/32954700/4970632>`_.
+    For purpose of ``sentinel`` see `this post
+    <https://stackoverflow.com/a/28306434/4970632>`_.
     """
     sentinel = object() # filler object; point is, will always be unique!
-    for combo in zip_longest(*iterables, fillvalue=sentinel):
+    for combo in itertools.zip_longest(*iterables, fillvalue=sentinel):
         # if sentinel in combo:
         if any(sentinel is c for c in combo):
             print(combo)
