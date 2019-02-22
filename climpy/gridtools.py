@@ -2,63 +2,60 @@
 """
 Various geographic utilities. Includes calculus on spherical geometry
 and some other stuff. Padding arrays and whatnot.
+
+Todo
+----
+Update this for pairing with xarray! Can add useful tools, e.g. shifting
+longitudes and stuff, with a "standardize" function.
 """
+# Imports
 import numpy as np
 from . import const
+# TODO: SST project scripts will fail because nc() removed. Must be updated.
+# # Enforce longitude ordering convention
+# # Not always necessary, but this is safe/fast; might as well standardize
+# values = data.lon.values-720 # equal mod 360
+# while True: # loop only adds 360s to longitudes
+#     filter_ = values<lonmin
+#     if filter_.sum()==0: # once finished, write new longitudes and roll
+#         roll = values.argmin()
+#         data = data.roll(lon=-roll)
+#         data['lon'] = np.roll(values, -roll)
+#         break
+#     values[filter_] += 360
+#
+# # Make latitudes monotonic (note extracting values way way faster)
+# try: data.lat.values[1]
+# except IndexError:
+#     pass
+# else:
+#     if data.lat.values[0]>data.lat.values[1]:
+#         data = data.isel(lat=slice(None,None,-1))
+# # Fix precision of time units. Some notes:
+# # 1) Sometimes get weird useless round-off error; convert to days, then
+# #    restore to numpy datetime64[ns] because xarray seems to require it
+# # 2) Ran into mysterious problem where dataset could be loaded, but then
+# #    could not be saved because one of the datetimes wasn't serializable...
+# #    this was in normal data, the CCSM4 CMIP5 results, made no sense; range
+# #    was 1850-2006
+# if 'time' in data.indexes:
+#     data['time'] = data.time.values.astype('datetime64[D]').astype('datetime64[ns]')
 
-# Helper class
-# TODO: Obsolete? This was dumb, was just trying to learn about classes
-class GridDes(object):
+#------------------------------------------------------------------------------#
+# Standardize Dataset/DataArray
+# Idea is should work similar to CDO; detect data with X/Y/Z/T dimensions
+# by checking attributes, or with user specification
+#------------------------------------------------------------------------------#
+def standardize():
     """
-    For storing latitude/longitude grid properties. Assumes global grid, and
-    borders halfway between each grid center.
+    Standardize dimension names on xarray datasets, cyclic re-ordering,
+    interpolation to poles, and more.
     """
-    def __init__(self, lon, lat):
-        # First, guess cell widths and edges
-        lon, lat = lon.astype(np.float32), lat.astype(np.float32)
-        dlon1, dlon2 = lon[1]-lon[0], lon[-1]-lon[-2]
-        dlat1, dlat2 = lat[1]-lat[0], lat[-1]-lat[-2]
-        self.latb = np.concatenate((lat[:1]-dlat1/2, (lat[1:]+lat[:-1])/2, lat[-1:]+dlat2/2))
-        self.lonb = np.concatenate((lon[:1]-dlon1/2, (lon[1:]+lon[:-1])/2, lon[-1:]+dlon2/2))
-        self.latc, self.lonc = lat.copy(), lon.copy()
+    raise NotImplementedError
 
-        # Use corrections for dumb grids with 'centers' at poles
-        if lat[0]==-90:
-            self.latc[0], self.latb[0] = -90 + dlat1/4, -90
-        if lat[-1]==90:
-            self.latc[-1], self.latb[-1] = 90 - dlat2/4, 90
-
-        # Corrected grid widths (cells half as tall near pole)
-        self.dlon = self.lonb[1:]-self.lonb[:-1]
-        self.dlat = self.latb[1:]-self.latb[:-1]
-        if lat[0]==-90:
-            self.dlat[0] /= 2
-        if lat[-1]==90:
-            self.dlat[-1] /= 2
-
-        # Radians
-        self.phic, self.phib, self.dphi = self.latc*np.pi/180, self.latb*np.pi/180, self.dlat*np.pi/180
-        self.thetac, self.thetab, self.dtheta = self.lonc*np.pi/180, self.lonb*np.pi/180, self.dlon*np.pi/180
-
-        # Area weights (function of latitude only). Close approximation to area,
-        # since cosine is extremely accurate. Also make lon by lat, so
-        # broadcasting rules can apply.
-        self.weights = self.dphi[None,:]*self.dtheta[:,None]*np.cos(self.phic[None,:])
-        self.areas = self.dphi[None,:]*self.dtheta[:,None]*np.cos(self.phic[None,:])*(const.a**2)
-        # areas = dphi*dtheta*np.cos(phic)*(const.a**2)[None,:]
-
-    def __repr__(self, n=3): # what happens when viewing in interactive session
-        return f'''
-latc: {', '.join(f'{self.latc[i]: 7.2f}' for i in range(n))} ... {self.latc[-1]: .2f}
-latb: {', '.join(f'{self.latb[i]: 7.2f}' for i in range(n))} ... {self.latb[-1]: .2f}
-dlat: {', '.join(f'{self.dlat[i]: 7.2f}' for i in range(n))} ... {self.dlat[-1]: .2f}
-lonc: {', '.join(f'{self.lonc[i]: 7.2f}' for i in range(n))} ... {self.lonc[-1]: .2f}
-lonb: {', '.join(f'{self.lonb[i]: 7.2f}' for i in range(n))} ... {self.lonb[-1]: .2f}
-dlon: {', '.join(f'{self.dlon[i]: 7.2f}' for i in range(n))} ... {self.dlon[-1]: .2f}
-  Replace 'lat' with 'phi', 'lon' with 'theta' for radians.
-  See 'areas' for grid cell geographic areas.
-'''
-
+#------------------------------------------------------------------------------#
+# Basic geographic stuff
+#------------------------------------------------------------------------------#
 def geopad(lon, lat, data, nlon=1, nlat=0):
     """
     Returns array padded circularly along lons, and over the earth pole,
@@ -66,9 +63,9 @@ def geopad(lon, lat, data, nlon=1, nlat=0):
     """
     # Get padded array
     if nlon>0:
-        pad = ((nlon,nlon),) + (data.ndim-1)*((0,0),)
+        pad  = ((nlon,nlon),) + (data.ndim-1)*((0,0),)
         data = np.pad(data, pad, mode='wrap')
-        lon = np.pad(lon, nlon, mode='wrap') # should be vector
+        lon  = np.pad(lon, nlon, mode='wrap') # should be vector
     if nlat>0:
         if (data.shape[0] % 2)==1:
             raise ValueError('Data must have even number of longitudes, if you wish to pad over the poles.')
@@ -84,8 +81,10 @@ def geopad(lon, lat, data, nlon=1, nlat=0):
             # much simpler for lat; but want monotonic ascent, so allow these to be >90, <-90
     return lon, lat, data
 
-def geomean(lon, lat, data, box=(None,None,None,None),
-        landfracs=None, mode=None, weights=1, keepdims=False):
+def geomean(lon, lat, data,
+        box=(None,None,None,None),
+        landfracs=None, mode=None, weights=1,
+        keepdims=False):
     """
     Takes area mean of data time series; zone and F are 2d, but data is 3d.
     Since array is masked, this is super easy... just use the masked array
@@ -112,8 +111,9 @@ def geomean(lon, lat, data, box=(None,None,None,None),
     Data should be loaded with myfuncs.ncutils.ncload, and provide this function
     with metadata in 'm' structure.
     """
+    # TODO: Make default lat by lon.
     # Get cell areas
-    a = GridDes(lon, lat).areas
+    a = np.cos(lat*np.pi/180)[:,None]
 
     # Get zone for average
     delta = lat[1]-lat[0]
@@ -143,7 +143,8 @@ def geomean(lon, lat, data, box=(None,None,None,None),
         data = data.filled(np.nan)
     isvalid = np.isfinite(data) # boolean function extremely fast
     data[~isvalid] = 0 # scalar assignment extremely fast
-    try: ave = np.average(data, weights=weights*isvalid, axis=(0,1))
+    try:
+        ave = np.average(data, weights=weights*isvalid, axis=(0,1))
     except ZeroDivisionError:
         ave = np.nan # weights sum to zero
 
@@ -161,16 +162,14 @@ def haversine(lon1, lat1, lon2, lat2):
     Parameters
     ----------
     lon1, lat1, lon2, lat2 : ndarrays
-        ndarrays of longitude and latitude in degrees
-        * Each **pair** should have identical shape
-        * If both pairs are non-scalar, they must **also** be identically shaped
-        * If one pair is scalar, distances are calculated between the scalar pair
-          and each element of the non-scalar pari.
+        Arrays of longitude and latitude in degrees. If one pair is scalar,
+        distances are calculated between the scalar pair and each element of
+        the non-scalar pair. Otherwise, pair shapes must be identical.
 
     Returns
     -------
     d : ndarray
-        distances in km
+        Distances in km.
     """
     # Earth radius, in km
     R = const.a*1e-3
@@ -181,26 +180,38 @@ def haversine(lon1, lat1, lon2, lat2):
     dlat = lat2 - lat1
 
     # Haversine, in km
-    km = 2.*R*np.arcsin(np.sqrt(
-        np.sin(dlat/2.)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(dlon/2.)**2
+    km = 2*R*np.arcsin(np.sqrt(
+        np.sin(dlat/2)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(dlon/2)**2
         ))
     return km
 
-def laplacian(lon, lat, data, accuracy=4):
+#------------------------------------------------------------------------------#
+# Spherical coordinate mathematics
+#------------------------------------------------------------------------------#
+def gradient():
     """
+    Gradient in spherical coordinates.
+    """
+    raise NotImplementedError
+
+def laplacian(lon, lat, data, accuracy=4):
+    r"""
     Get Laplacian in spherical coordinates.
 
-    Input
-    -----
-    lon, lat : ndarrays
-        longitude and latitude
+    Parameters
+    ----------
+    lon, lat : ndarray
+        The longitude and latitude.
     data : ndarray
-        the data
+        The data.
 
-    Equation
-    --------
-    del^2 = (1/a^2*cos^2(phi)) * (d/dtheta)^2
-          + (1/a^2*cos(phi))   * (d/dphi)(cos(phi)*d/dphi)
+    Notes
+    -----
+    The solved equation is as follows:
+    .. math::
+
+        \nabla^2 = \frac{\cos^2(\phi)}{a^2}\frac{\partial^2}{\partial^2\theta}
+          + \frac{\cos(\phi)}{a^2}\frac{\partial}{\partial\phi}\frac{\cos\phi\partial}{\partial\phi}
     """
     # Setup
     npad = accuracy//2 # need +/-1 for O(h^2) approx, +/-2 for O(h^4), etc.

@@ -1,151 +1,66 @@
 #!/usr/bin/env python3
-#------------------------------------------------------------------------------#
+"""
+Module for performing Nakamura et al. finite-amplitude WAQ analysis.
+
+Warnings
+--------
+This module is very old and needs work!
+
+Todo
+----
+Incorporate xarray Datasets into this.
+"""
 # Imports
-#------------------------------------------------------------------------------#
 import os
 import numpy as np
 import xarray as xr
 import scipy.signal as signal
 import scipy.stats as stats
 import time as T # have some big algorithms here; want to guage how long they take
-from ..arraytools import *
-from .. import geotools
-from .. import const
+from .arraytools import *
+from . import const
 
-def pt(lev, T, axis=2):
+#------------------------------------------------------------------------------#
+# Grid description, useful for WAQ analysis
+#------------------------------------------------------------------------------#
+class GridDes(object):
     """
-    Get potential temperature from T; by default, assume the height dimension
-    is axis=2. Axis is for the instance where we have non-vector T input.
-    Each level should be in mb/hpa.
+    For storing latitude/longitude grid properties. Assumes global grid, and
+    borders halfway between each grid center.
     """
-    if T.ndim!=1: # vector
-        axis = axis % T.ndim # modify if, for example, axis=-1
-        for i in range(axis):
-            lev = lev[None,...]
-        for i in range(T.ndim-1-axis):
-            lev = lev[...,None]
-    return T*(const.p0/lev)**const.kappa # ...each p here should be in mb/hPa
+    def __init__(self, lon, lat):
+        # First, guess cell widths and edges
+        lon, lat = lon.astype(np.float32), lat.astype(np.float32)
+        dlon1, dlon2 = lon[1]-lon[0], lon[-1]-lon[-2]
+        dlat1, dlat2 = lat[1]-lat[0], lat[-1]-lat[-2]
+        self.latb = np.concatenate((lat[:1]-dlat1/2, (lat[1:]+lat[:-1])/2, lat[-1:]+dlat2/2))
+        self.lonb = np.concatenate((lon[:1]-dlon1/2, (lon[1:]+lon[:-1])/2, lon[-1:]+dlon2/2))
+        self.latc, self.lonc = lat.copy(), lon.copy()
 
-def absvo(lat, Zeta):
-    """
-    Gets absolute vorticity from latitude and vorticity.
-    """
-    # Get Coriolis force
-    f = 2*const.Omega*np.sin(lat*np.pi/180)[None,:,None]
-    for i in range(3, Zeta.ndim): f = f[...,None] # add extra dimensions
+        # Use corrections for dumb grids with 'centers' at poles
+        if lat[0]==-90:
+            self.latc[0], self.latb[0] = -90 + dlat1/4, -90
+        if lat[-1]==90:
+            self.latc[-1], self.latb[-1] = 90 - dlat2/4, 90
 
-    # Final answer; account for levels lost in finite difference
-    return (Zeta + f)
+        # Corrected grid widths (cells half as tall near pole)
+        self.dlon = self.lonb[1:]-self.lonb[:-1]
+        self.dlat = self.latb[1:]-self.latb[:-1]
+        if lat[0]==-90:
+            self.dlat[0] /= 2
+        if lat[-1]==90:
+            self.dlat[-1] /= 2
 
-def pv(lat, theta, P, Zeta, uneven=True):
-    """
-    Gets Ertel's PV on theta-surface, from the pressure level info and
-    vorticity. Note theta should be in K.
-    Returns:
-      * absolute vorticity, the numerator
-      * mass factor sigma, the denominator
-    To get PV yourself, just divide them, but might need components.
-    Already provided by ERA-Interim.
-    """
-    # Get dp/dtheta
-    if uneven:
-        sigma = -(1/const.g)*deriv_uneven(theta, P, axis=2) # use our differentiation method; reduces size along axis=2 by 2
-    else:
-        sigma = -(1/const.g)*diff(theta, P, axis=2)
+        # Radians
+        self.phic, self.phib, self.dphi = self.latc*np.pi/180, self.latb*np.pi/180, self.dlat*np.pi/180
+        self.thetac, self.thetab, self.dtheta = self.lonc*np.pi/180, self.lonb*np.pi/180, self.dlon*np.pi/180
 
-    # Get Coriolis force
-    f = 2*const.Omega*np.sin(lat*np.pi/180)[None,:,None]
-    for i in range(3, P.ndim): f = f[...,None] # add extra dimensions
-
-    # Final answer; account for levels lost in finite difference
-    s = slice(1,-1) if uneven else slice(1,None)
-    return (Zeta + f)[:,:,s,...], sigma
-
-def qgpv(lon, lat, lev, TT, Phi,
-        uneven=True, forward=True, fill=True, latmin=5, latmax=85):
-    """
-    Get QGPV in pseudo-height coordinates (cf. Nakamura and Solomon, 2010: Eq (2))
-        * Input T is in K, geopotential Phi in m2/s2, pressure in mb/hPa.
-        * Input uneven (bool) says if we use uneven vs. even finite differencing in height.
-        * Input forward (bool) says whether we use forward or backward Euler, if not doing uneven method
-        * Input fill (bool) says whether we fill points near poles/equator with NaN.
-        If the former, input geopotential heights in m;
-        If the latter, input geopotential (NOT heights, actual geopotential)
-    Equation: qg = f + zeta + (f/rho0)(d/dz)(rho0*(theta-thetabar)/(d/dz)thetabar)
-    Reduces height dimension length by 4, preserves lon/lat dimensions by wrapping.
-    Returns adjusted metadata.
-
-    * Note that, with Z = -Hln(p/p0), have dZ = -H(p0/p)(dp/p0) = -Hd(ln(p)) simply
-    log-derivative in height, so the (d/dz)'s in the right-hand term cancel.
-    """
-    # Dimensions, and preparations
-    Z = -const.H*np.log(lev/const.p0)
-    if not all(Tsh==psh for Tsh,psh in zip(TT.shape, Phi.shape)):
-        raise ValueError('Temperature and vorticity parameter have different shapes.')
-    if lev.size<=3:
-        raise ValueError('Need at least three levels to take vertical derivative.')
-
-    # The simple 1-D params
-    f = 2*const.Omega*np.sin(lat*np.pi/180)[None,:,None] # goes into full qgpv formula
-    rho0 = np.exp(-Z/const.H)[None,None,:] # actually is propto, but constants next to exp cancel out below
-    for i in range(3, TT.ndim): # add in extra dimensions
-        f, rho0 = f[...,None], rho0[...,None]
-
-    # Calculate theta
-    theta = pt(lev, TT) # simple as that
-
-    # Start clock
-    t = T.clock()
-
-    # The theta-params
-    print('Calculating global mean potential temperatures.')
-    thetabar = geomean(lon, lat, theta, keepdims=True) # keep dims for broadcasting later
-    t, tb = T.clock(), t # reassign t to tb "t before", get new time
-    print('Global mean theta: %s seconds' % (t-tb))
-    f_deriv = deriv_uneven if uneven else diff
-    dthetabar_dz = f_deriv(Z, thetabar, axis=2) # use our differentiation method; reduces size along axis=2 by 2
-    t, tb = T.clock(), t
-    print('Vertical gradient global mean theta: %s seconds' % (t-tb))
-
-    # The giant "stretching" term
-    # First, the slice
-    if uneven:
-        slice_outer, slice_inner = slice(2,-2), slice(1,-1) # used deriv_uneven above
-    elif forward:
-        slice_outer, slice_inner = slice(None,-2), slice(None,-1) # used diff above above
-    else:
-        slice_outer, slice_inner = slice(2,None), slice(1,None)
-    # And calculate
-    h = (f/rho0)[:,:,slice_outer,...] * deriv_uneven(Z[slice_inner], (rho0*(theta-thetabar))[:,:,slice_inner,...]/dthetabar_dz, axis=2)
-        # try simple differentiation instead
-    t, tb = T.clock(), t
-    print('Stretching term: %s seconds' % (t-tb))
-
-    # Geostrophic relative vorticity
-    # From deriv_uneven above
-    if uneven:
-        zetag = (1/f)*laplacian(lon, lat, Phi[:,:,2:-2,...], accuracy=2)
-    # Diff above
-    elif forward:
-        zetag = (1/f)*laplacian(lon, lat, Phi[:,:,:-2,...], accuracy=2)
-    else:
-        zetag = (1/f)*laplacian(lon, lat, Phi[:,:,2:,...], accuracy=2)
-    t, tb = T.clock(), t
-    print('Geostrophic vorticity: %s seconds' % (t-tb))
-
-    # Adjust for the middle ones, and return
-    # if nanfill: q[:,i,...] = np.nan
-    # else: q[:,i,...] = q[:,i,...].mean(axis=0, keepdims=True) # will broadcast
-    q = f + zetag + h
-    # q = h
-    # q = f + zetag
-    if fill:
-        for i,l in enumerate(lat): # ...makes sense to use central latitude
-            if (np.abs(l)<=latmin) or (np.abs(l)>=latmax): q[:,i,...] = q[:,i,...].mean(axis=0,keepdims=True)
-    # Return, finally
-    return q
-
-
+        # Area weights (function of latitude only). Close approximation to area,
+        # since cosine is extremely accurate. Also make lon by lat, so
+        # broadcasting rules can apply.
+        self.weights = self.dphi[None,:]*self.dtheta[:,None]*np.cos(self.phic[None,:])
+        self.areas = self.dphi[None,:]*self.dtheta[:,None]*np.cos(self.phic[None,:])*(const.a**2)
+        # areas = dphi*dtheta*np.cos(phic)*(const.a**2)[None,:]
 
 #------------------------------------------------------------------------------
 # Wave activity stuff
@@ -155,18 +70,18 @@ def eqlat(lon, lat, q, skip=10, sigma=None, fix=False): #n=1001, skip=10):
     Get series of equivalent latitudes corresponding to PV levels evenly
     sampled from distribution of sorted PVs. Solves the equation:
 
+    .. math::
+
         Area == integral_(-pi/2)^x a^2*2*pi*cos(phi) dphi
 
     which is the area occupied by PV zonalized below a given contour.
 
-    Returns:
-        * band, the equivalent latitude
-        * qband, its associated Q threshold
-        * w, grid weights (for future use)
+    Returns: band, the equivalent latitude; qband, its associated Q threshold;
+    w, grid weights (for future use).
     """
     # Initial stuff
     # Delivers grid areas, as function of latitude
-    areas = geotools.GridProperties(lon, lat).areas
+    areas = GridDes(lon, lat).areas
 
     # Flatten
     q, shape = lead_flatten(q, 2) # gives current q, and former shape
@@ -209,18 +124,14 @@ def eqlat(lon, lat, q, skip=10, sigma=None, fix=False): #n=1001, skip=10):
 def waqlocal(lon, lat, q,
         nh=True, skip=10):
     """
-    Get local wave activity measure.
-    Input:
-        * lon, grid longitudes
-        * lat, grid latitudes
-        * q, the PV stuff
-        * skip, the interval of sorted q you choose (passed to eqlat)
+    Get local wave activity measure. Input `skip` is
+    the interval of sorted q you choose (passed to eqlat).
     """
     # Grid considerations
     if nh:
         lat, q = -np.flipud(lat), -np.flip(q, axis=1)
             # negated q, so monotonically increasing "northward"
-    grid = geotools.GridProperties(lon, lat)
+    grid = GridDes(lon, lat)
     areas, dphi, phib = grid.areas, grid.dphi, grid.phib
     integral = const.a*phib[None,:]
 
@@ -279,15 +190,11 @@ def waqlocal(lon, lat, q,
 def waq(lon, lat, q, sigma=None, omega=None,
         nh=True, skip=10): #, ignore=None): #N=1001, ignore=None):
     """
-    Get finite-amplitude wave activity.
-    Input:
-      * lon, grid longitudes
-      * lat, grid latitudes
-      * q, the PV quantity
-      * sigma (optional), the instability
-      * omega (optional), the quantity being integrated; note the isentropic mass equation
-      * skip, the interval of sorted q you choose (passed to eqlat)
-      * nh (bool)
+    Get finite-amplitude wave activity. Input `omega` is (quantity being
+    integrated), and `skip` is interval of sorted `q` you choose. See
+    :cite:`nakamura_finite-amplitude_2010` for details.
+
+    .. bibliography:: refs.bib
     """
     # Grid considerations
     if nh:
@@ -295,7 +202,7 @@ def waq(lon, lat, q, sigma=None, omega=None,
         if omega is not None: omega = -np.flip(omega, axis=1)
         if sigma is not None: sigma = np.flipd(sigma, axis=1)
         # negated q/omega, so monotonically increasing "northward"
-    grid = geotools.GridProperties(lon, lat)
+    grid = GridDes(lon, lat)
     areas, dphi, phib = grid.areas, grid.dphi, grid.phib
 
     # Flatten (eqlat can do this, but not necessary here)
@@ -362,6 +269,7 @@ def waq(lon, lat, q, sigma=None, omega=None,
             waq[0,:,k] = np.interp(grid.latc, bands[0,~nanfilt,k], waq_k[~nanfilt])
 
     # Return
-    if nh: waq = np.flip(waq, axis=1)
+    if nh:
+        waq = np.flip(waq, axis=1)
     return lead_unflatten(waq, shape)
 

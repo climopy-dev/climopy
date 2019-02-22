@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Includes various finite difference schemes.
+Various finite difference schemes.
 """
 # TODO: Add integration schemes! Will be simple to implement, they are just
 # cumsums.
@@ -111,6 +111,7 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
     Notes
     -----
     See: https://en.wikipedia.org/wiki/Finite_difference_coefficient
+
     * Here, since there is no comparable midpoint-2nd derivative, need to
       just pad endpoints with the adjacent derivatives.
     * Again, check out that fancy recursion!
@@ -170,20 +171,27 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
     # return np.rollaxis(diff, y.ndim-1, axis)
     return unpermute(diff, axis)
 
-def deriv_uneven(x, y, axis=0, keepedges=False):
+def deriv_uneven(*args, **kwargs):
     """
+    Alias for `deriv1_uneven`.
+    """
+    return deriv_uneven(*args, **kwargs)
+
+def deriv1_uneven(x, y, axis=0, keepedges=False):
+    r"""
     Central numerical differentiation, uneven/even spacing.
     Reduces axis length by 2.
 
-    Equation
-    --------
-    dy/dx = (((x1-x0)/(x2-x1))(y2-y1)
-           + ((x2-x1)/(x1-x0))(y1-y0)) / (x2-x0)
-
     Notes
     -----
-    * Reduces to standard (y2-y0)/(x2-x0) for even spcing, and for uneven
-      weights the slope closer to center point more heavily
+    Equation is as follows:
+
+    .. math::
+        \frac{dy}{dx} = \dfrac{\frac{x_1 - x_0}{x_2 - x_1}(y_2 - y_1)
+                        - \frac{x_2 - x_1}{x_1 - x_0}(y_1 - y_0)}{x_2 - x_0}
+
+    * Weights the slope closer to center point more heavily.
+    * Reduces to standard :math:`(y_2-y_0)/(x_2-x_0)` for even spacing,
     * Want weighted average of forward/backward Euler, with weights 1 minus
       percentage of total x2-x0 interval
     """
@@ -229,15 +237,10 @@ def deriv_uneven(x, y, axis=0, keepedges=False):
         diff = np.concatenate((bdiff, diff, ediff), axis=-1)
     return unpermute(diff, axis)
 
-def deriv1_uneven(*args, **kwargs):
-    """
-    Defined for name consistency.
-    """
-    return deriv_uneven(*args, **kwargs)
-
 def deriv2_uneven(x, y, axis=0, keepedges=False): # alternative
     """
-    Second derivative adapted from Euler's method using the same technique as above.
+    Second derivative adapted from Euler's method as in `deriv_uneven`.
+    Formulation is found `here <https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/>`_.
     """
     # Preliminary stuff
     x, y = np.array(x), np.array(y) # precaution
@@ -260,7 +263,8 @@ def deriv2_uneven(x, y, axis=0, keepedges=False): # alternative
 
 def deriv3_uneven(x, y, axis=0, keepedges=False): # alternative
     """
-    Second derivative adapted from Euler's method using the same technique as above.
+    Third derivative adapted from Euler's method as in `deriv_uneven`.
+    Formulation is found `here <https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/>`_.
     """
     # Preliminary stuff
     x, y = np.array(x), np.array(y) # precaution

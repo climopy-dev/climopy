@@ -11,10 +11,10 @@ def trail_flatten(data, nflat=None):
     Parameters
     ----------
     data : array
-        input data
+        Input data.
     nflat : int or None
-        number of dimensions flattened -- default is to
-        choose rank-1 i.e. enough to flatten into a rank 2 array
+        Number of dimensions flattened -- default is to
+        choose rank-1, i.e. enough to flatten into a rank 2 array.
 
     Notes
     -----
@@ -39,12 +39,12 @@ def trail_unflatten(data, shape, nflat=None):
     Parameters
     ----------
     data : array
-        the input data
-    shape : iterable of ints
-        desired shape of reconstructed array.
+        Input data.
+    shape : list of int
+        Desired shape of reconstructed array.
     nflat : int or None
-        number of dimensions unflattened -- default is to
-        choose rank-1 i.e. enough to flatten into a rank 2 array
+        Number of dimensions unflattened -- default is to
+        choose rank-1, i.e. enough to restore from a rank 2 array.
     """
     if nflat is None:
         nflat = len(shape)-1 # all but last dimension
@@ -64,10 +64,10 @@ def lead_flatten(data, nflat=None):
     Parameters
     ----------
     data : array
-        input data
+        Input data.
     nflat : int or None
-        number of dimensions flattened -- default is to
-        choose rank-1 i.e. enough to flatten into a rank 2 array
+        Number of dimensions flattened -- default is to
+        choose rank-1, i.e. enough to flatten into a rank 2 array.
     """
     shape = list(data.shape)
     if nflat is None:
@@ -85,13 +85,13 @@ def lead_unflatten(data, shape, nflat=None):
 
     Parameters
     ----------
-    data : array
-        input data
-    shape : iterable of ints
-        desired shape of reconstructed array.
+    data : array-like
+        Input data.
+    shape : list of int
+        Desired shape of reconstructed array.
     nflat : int or None
-        number of dimensions unflattened -- default is to
-        choose rank-1 i.e. enough to restore from a rank 2 array
+        Number of dimensions unflattened -- default is to
+        choose rank-1, i.e. enough to restore from a rank 2 array.
     """
     if nflat is None:
         nflat = len(shape) - 1 # all but last dimension
@@ -110,15 +110,17 @@ def permute(data, source=-1, destination=-1):
 
     Arguments
     ---------
-    source : int
-        dimension to be permuted
-    destination : int
-        destination for that dimension
+    data : array-like
+        Input data.
+    source : int, optional
+        Dimension to be permuted.
+    destination : int, optional
+        Destination for that dimension.
 
     Notes
     -----
-    This is now a simple wrapper around np.moveaxis.
-    This used to use np.rollaxis but it sucks as acknowledged by maintainers:
+    This is now a simple wrapper around np.moveaxis. This used to use
+    ``np.rollaxis``, but it sucks, as acknowledged by maintainers:
     https://github.com/numpy/numpy/issues/9473
     """
     data = np.moveaxis(data, source, destination)
@@ -128,10 +130,12 @@ def unpermute(data, source=-1, destination=-1):
     """
     Arguments
     ---------
-    source : int
-        dimension that was previously moved
-    destination : int
-        destination for that moved dimension
+    data : array-like
+        Input data.
+    source : int, optional
+        Dimension that was previously moved.
+    destination : int, optional
+        Destination for that moved dimension.
     """
     data = np.moveaxis(data, destination, source)
     return data

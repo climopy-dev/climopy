@@ -11,6 +11,7 @@ Welcome to ClimPy's documentation!
    :caption: Contents:
 
    includeme
+   modules
 
 
 

@@ -2,7 +2,10 @@
 """
 Tools for objective analysis-related tasks.
 Most functions should work with arbitrary array shapes.
-Note: Convention throughout module (consistent with common conventions
+
+Notes
+-----
+Convention throughout module (consistent with common conventions
 in atmospheric science) is to use *linear* wave properties, i.e. the
 wavelength in <units> per 2pi rad, and wavenumber 2pi rad per <units>.
 """
@@ -54,12 +57,13 @@ def rednoise(a, ntime, samples=1, mean=0, stdev=1, nested=False):
 
     Parameters
     ---------
-    a : scalar
-        autocorrelation
-    ntime : integer
-        number of timesteps
-    samples : integer or iterable of integers
-        shape of output array; final result will be ntime by this shape
+    a : float
+        The autocorrelation.
+    ntime : int
+        Number of timesteps.
+    samples : int or list of int, optional
+        Draw ``np.prod(samples)``. Final result will have
+        shape `ntime` x `samples`.
 
     Notes
     -----
@@ -109,22 +113,25 @@ def waves(x, wavenums=None, wavelens=None, phase=None):
 
     Parameters
     ----------
-    x : scalar or iterable
-        * if scalar, 'x' is np.arange(0,x)
-        * if iterable, can be n-dimensional, and will calculate sine from coordinates on every dimension
-    wavelens :
-        wavelengths for sine function (use either this or wavenums)
-    wavenums :
-        wavenumbers for sine function (use either this or wavelens)
+    x : array-like
+        If scalar, *x* is ``np.arange(0,x)``. If iterable, can be
+        n-dimensional, and will calculate sine from coordinates on
+        every dimension.
+    wavelens : float
+        Wavelengths for sine function. Required if `wavenums` is ``None``.
+    wavenums : float
+        Wavenumbers for sine function. Required if `wavelens` is ``None``.
+    phase : float, optional
+        Array of phase offsets.
 
     Returns
     -------
-    data :
-        data composed of waves.
+    data : ndarray
+        Data composed of sine waves.
 
     Notes
     -----
-    'x' will always be normalized so that wavelength is with reference to
+    *x* will always be normalized so that wavelength is with reference to
     first step. This make sense because when working with filters, almost
     always need to use units corresponding to axis.
     """
@@ -138,6 +145,7 @@ def waves(x, wavenums=None, wavelens=None, phase=None):
     if not hasattr(x, '__iter__'):
         x = np.arange(x)
     data = np.zeros(x.shape) # user can make N-D array
+
     # Get waves
     if phase is None:
         phis = np.random.uniform(0,2*np.pi,len(wavenums))
@@ -156,23 +164,24 @@ def linefit(*args, axis=-1, build=False, stderr=False):
 
     Parameters
     ----------
-    y :
-        assumed 'x' is 0 to len(y)-1
-    x, y :
-        arbitrary 'x', must monotonically increase
-    axis :
+    x : array-like, optional
+        *x* coordinates; default is ``np.arange(0, len(y))``.
+    y : array-like
+        *y* coordinates.
+    axis : int, optional
         regression axis
-    build :
-        whether to replace regression axis with scalar slope, or
+    build : bool, optional
+        Whether to replace regression axis with scalar slope, or
         reconstructed best-fit line.
-    stderr :
-        if not doing 'build', whether to add standard error on
+    stderr : bool, optional
+        If not doing 'build', whether to add standard error on
         the slope in index 1 of regressoin axis.
 
     Returns
     -------
-    y : regression params on axis 'axis', with offset at index 0,
-        slope at index 1.
+    y : ndarray
+        Regression params on axis `axis`. The intercept is on index ``0``,
+        slope on index ``1``.
     """
     # Perform regression
     # Polyfit can perform regressions on data with series in columns,
@@ -217,20 +226,25 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
 
     Parameters
     ----------
-    data :
-        the input data (this function computes necessary correlation coeffs).
-    nlag : integer
-        number of lags to use for fit
-    lag1 : bool
-        if True, just return the lag-1 best-fit
-    series : bool
-        return the red noise fit spectrum (True), or just the
-        associted e-folding time scale (False)?
+    data : array-like
+        The input data.
+    nlag : int, optional
+        Number of lags to use for least-squares fit to red noise spectrum.
+        Ignored if `lag1` is ``True``.
+    lag1 : bool, optional
+        If ``True``, estimate red noise spectrum from the lag-1
+        autocorrelation.
+    series : bool, optional
+        Return the *e*-folding timescale associated with the red noise
+        spectrum (``False``, default), or the red noise spectrum itself
+        (``True``)?
 
     Returns
     -------
-    spectrum :
-        the autocorrelation spectrum out to nlag lags.
+    timescale : ndarray
+        Present when `series` is ``False``. The *e*-folding timescales.
+    spectrum : ndarray
+        Present when `series` is ``True``. The autocorrelation spectrum.
     """
     # Initial stuff
     if nlag is None:
@@ -257,42 +271,42 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
             output[i,:] = np.exp(-np.arange(ndim)/p[0]) # return the best-fit red noise spectrum
         else:
             output[i,0] = p[0] # add just the timescale
-    # shape = (*data.shape[:-1], ndim) # not sure what this was for
     return unpermute(lead_unflatten(output, shape), axis)
 
 #------------------------------------------------------------------------------#
 # Correlation analysis
 #------------------------------------------------------------------------------#
 def corr(data1, data2=None, dx=1, nlag=None, lag=None,
-         verbose=False, axis=0, _normalize=True):
+         verbose=False, axis=0):
     """
     Gets the correlation spectrum at successive lags. For autocorrelation,
     pass only a single ndarray.
 
     Parameters
     ----------
-    data1 :
-        The input data.
-    data2 : (optional)
-        The input data with which we compare data
-    nlag :
-        Get correlation at multiple lags ('n' is number after the 0-lag).
-    lag :
-        Get correlation at just this lag.
-    _normalize :
-        Used for autocovar wrapper. generally user shouldn't touch this.
+    data1 : array-like
+        Input data.
+    data2 : array-like, optional
+        Second input data, if cross-correlation is desired. Must have same
+        shape as `data1`.
+    nlag : int, optional
+        Return lag correlation up to `nlag` timesteps.
+    lag : int, optional
+        Return correlation at the single lag `lag`.
 
     Returns
     -------
-    autocorrs :
-        the autocorrelations as a function of lag.
+    lags : ndarray
+        The lags.
+    autocorrs : ndarray
+        The correlation as a function of lag.
 
     Notes
     -----
     * Uses following estimator: ((n-k)*sigma^2)^-1 * sum_i^(n-k)[X_t - mu][X_t+k - mu]
-    See: https://en.wikipedia.org/wiki/Autocorrelation#Estimation
+      See: https://en.wikipedia.org/wiki/Autocorrelation#Estimation
     * By default, includes lag-zero values; if user just wants single lag
-    will, however, throw out those values.
+      will, however, throw out those values.
     """
     # Preparation, and stdev/means
     data1 = np.array(data1)
@@ -327,8 +341,8 @@ def corr(data1, data2=None, dx=1, nlag=None, lag=None,
         std1 = std2 = 1 # use for covariance
 
     # Trivial autocorrelation done, just fill with ones
+    # corrs = np.ones((*data1.shape[:-1], 1))
     if nlag is None and lag==0:
-        # autocorrs = np.ones((*data1.shape[:-1], 1))
         return unpermute(np.sum((data1 - mean1)*(data2 - mean2)) / (naxis*std1*std2), axis)
     # Autocorrelation on specific lag
     elif nlag is None:
@@ -350,7 +364,7 @@ def corr(data1, data2=None, dx=1, nlag=None, lag=None,
             n = nlag + 1
             lags = range(0, nlag+1)
         # Get correlation
-        autocorrs = np.empty((*data1.shape[:-1], n)) # will include the zero-lag autocorrelation
+        corrs = np.empty((*data1.shape[:-1], n)) # will include the zero-lag autocorrelation
         for i,lag in enumerate(lags):
             if lag==0:
                 prod = (data1 - mean1)*(data2 - mean2)
@@ -358,12 +372,12 @@ def corr(data1, data2=None, dx=1, nlag=None, lag=None,
                 prod = (data1[...,-lag:] - mean1)*(data2[...,:lag] - mean2)
             else:
                 prod = (data1[...,:-lag] - mean1)*(data2[...,lag:] - mean2)
-            autocorrs[...,i] = prod.sum(axis=-1) / ((naxis - lag)*std1*std2)
-        return np.array(lags)*dx, unpermute(autocorrs, axis)
+            corrs[...,i] = prod.sum(axis=-1) / ((naxis - lag)*std1*std2)
+        return np.array(lags)*dx, unpermute(corrs, axis)
 
 def covar(*args, **kwargs):
     """
-    As above, but gets the covariance.
+    As in `corr`, but returns the covariance.
     """
     return corr(*args, **kwargs, _normalize=False)
 
@@ -542,16 +556,16 @@ def eof(data, neof=5, record=-2, space=-1,
 
 def eot(data, neof=5):
     """
-    EOTs, used in some other research contexts.
+    EOTs, whatever they are.
     """
-    raise NotImplementedError('Not yet implemented.')
+    raise NotImplementedError
 
 def reof(data, neof=5):
     """
     Rotated EOFs, e.g. according to Varimax.
     The EOFs will be rotated according only to the first N signals.
     """
-    raise NotImplementedError('Not yet implemented.')
+    raise NotImplementedError
 
 #------------------------------------------------------------------------------#
 # Application of filters
@@ -559,59 +573,66 @@ def reof(data, neof=5):
 # real-space filters, and without shifting the data in x (i.e.
 # filling the trails of the data with NaNs)
 #------------------------------------------------------------------------------#
-def rolling(x, w, axis=-1, btype='lowpass',
-                  pad=True, padvalue=np.nan, **kwargs):
+def rolling(*args, **kwargs):
     """
-    Implementation is similar to scipy.signal.lfilter. Note for non-recursive
-    (i.e. windowing) filters, the 'a' vector is just 1, followed by zeros.
-    Read this: https://stackoverflow.com/a/4947453/4970632
+    Alias for `running`.
+    """
+    return rolling(*args, **kwargs)
 
-    Generates rolling numpy window along final axis; can then operate with
-    functions like polyfit or mean along the new last axis of output.
-
-    Just creates *view* of original array, without duplicating data, so no worries
-    about efficiency.
+def running(x, w, axis=-1, btype='lowpass',
+                  pad=True, pad_value=np.nan, **kwargs):
+    """
+    Apply running filter along axis.
 
     Parameters
     ----------
-    x :
-        data, and we roll along axis 'axis'.
-    w : int or iterable
-        boxcar window length, or custom weights
-    pad : bool
-        whether to pad the edges of axis back to original size
-    padvalue : float
-        what to pad with (default np.nan)
-    btype : string
-        whether to apply lowpass, highpass, or bandpass
-    **kwargs :
-        remaining kwargs passed to windowing function
+    x : array-like
+        Data, and we roll along axis `axis`.
+    w : int or array-like
+        Boxcar window length, or custom weights.
+    axis : int, optional
+        Axis to filter.
+    pad : bool, optional
+        Whether to pad the edges of axis back to original size.
+    pad_value : float, optional
+        Pad value.
+    btype : {'lowpass', 'highpass', 'bandpass'}
+        Type of filter to apply.
 
     Returns
     -------
-    x :
-        data windowed along arbitrary dimension
+    x : ndarray
+        Data windowed along axis `axis`.
+
+    Other parameters
+    ----------------
+    kwargs :
+        Remaining kwargs passed to windowing function.
 
     Notes
     -----
-    * For 1-D data numpy 'convolve' would be appropriate, problem is 'concolve'
-    doesn't take multidimensional input! Likely that the source code employs
-    something similar to what I do below anyway.
-    * If x has odd number of obs along axis, result will have last element
-    trimmed. Just like filter().
-    * Will generate a new axis in the -1 position that is a running representation
-    of value in axis numver <axis>.
+    Implementation is similar to `scipy.signal.lfilter`. Read
+    `this post <https://stackoverflow.com/a/4947453/4970632>`_.
+
+    Generates rolling numpy window along final axis. Can then operate with
+    functions like polyfit or mean along the new last axis of output.
+    Note this creates *view* of original array, without duplicating data, so
+    no worries about efficiency.
+
+    * For 1-D data numpy `convolve` would be appropriate, problem is `convolve`
+      doesn't take multidimensional input!
+    * If `x` has odd number of obs along axis, result will have last element
+      trimmed. Just like `filter`.
     * Strides are apparently the 'number of bytes' one has to skip in memory
-    to move to next position *on the given axis*. For example, a 5 by 5
-    array of 64bit (8byte) values will have array.strides == (40,8).
-    * Should consider using swapaxes instead of these permute and unpermute
-    functions, might be simpler.
+      to move to next position *on the given axis*. For example, a 5 by 5
+      array of 64bit (8byte) values will have array.strides == (40,8).
     """
     # Roll axis, reshape, and get generate running dimension
     n_orig = x.shape[axis]
     if axis<0:
         axis = x.ndim + axis # e.g. if 3 dims, and want to axis dim -1, this is dim number 2
     x = permute(x, axis)
+
     # Determine weights
     if type(w) is str:
         raise NotImplementedError("Need to allow string 'w' argument, e.g. w='Lanczos'")
@@ -624,18 +645,21 @@ def rolling(x, w, axis=-1, btype='lowpass',
         # Arbitrary windowing function
         # TODO: Add windowing functions!
         nw = len(w)
+
     # Manipulate array
     shape = x.shape[:-1] + (x.shape[-1]-(nw-1), nw)
     strides = [*x.strides, x.strides[-1]] # repeat striding on end
     x = np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
+
     # Next 'put back' axis, keep axis=1 as
     # the 'rolling' dimension which can be averaged by arbitrary weights.
     x = unpermute(x, axis, select=-2) # want to 'put back' axis -2;
+
     # Finally take the weighted average
     # Note numpy will broadcast from right, so weights can be scalar or not
     # print(x.min(), x.max(), x.mean())
     x = (x*w).sum(axis=-1) # broadcasts to right
-    # print(x.min(), x.max(), x.mean())
+
     # Optionally fill the rows taken up
     if not pad:
         return x
@@ -644,54 +668,55 @@ def rolling(x, w, axis=-1, btype='lowpass',
     n_right = n_orig - n_new - n_left
     if n_left!=n_right:
         print('Warning: Data shifted left by one.')
-    d_left  = padvalue*np.ones((*x.shape[:axis], n_left, *x.shape[axis+1:]))
-    d_right = padvalue*np.ones((*x.shape[:axis], n_right, *x.shape[axis+1:]))
+    d_left  = pad_value*np.ones((*x.shape[:axis], n_left, *x.shape[axis+1:]))
+    d_right = pad_value*np.ones((*x.shape[:axis], n_right, *x.shape[axis+1:]))
     x = np.concatenate((d_left, x, d_right), axis=axis)
     return x
 
-def running(*args, **kwargs):
-    """
-    Alias for climpy.rolling().
-    """
-    return rolling(*args, **kwargs)
-
-def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, fixvalue=np.nan):
+def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, pad_value=np.nan):
     """
     Apply scipy.signal.lfilter to data. By default this does *not* pad
     ends of data. May keep it this way.
 
     Parameters
     ----------
-    x :
-        data to be filtered
-    b :
-        b coefficients (non-recursive component)
-    a :
-        scale factor in index 0, followed by a coefficients (recursive component)
-    n :
-        number of times to filter data (will go forward-->backward-->forward...)
-    axis :
-        axis along which we filter data
-    fix :
-        whether to (a) trim leading part of axis by number of a/b coefficients
-        and (b) fill trimmed values with NaNs; will also attempt to *re-center*
-        the data if a net-forward (e.g. f, fbf, fbfbf, ...) filtering was
-        performed (this works for non-recursive filters only)
+    x : array-like
+        Data to be filtered.
+    b : array-like
+        *b* coefficients (non-recursive component).
+    a : array-like, optional
+        *a* coefficients (recursive component); default of ``1`` indicates
+        a non-recursive filter.
+    n : int, optional
+        Number of times to filter data; will go forward --> backward
+        --> forward...
+    axis : int, optional
+        Axis along which we filter data. Defaults to last axis.
+    fix : bool, optional
+        Whether to trim leading part of axis by number of *b* coefficients.
+        Will also attempt to *re-center* the data if a net-forward
+        (e.g. f, fbf, fbfbf, ...) filtering was performed. This works
+        for non-recursive filters only.
+    pad : bool, optional
+        Whether to pad trimmed values (when `fix` is ``True``) with `pad_value`.
+    pad_value : float
+        The pad value.
 
-    Output
-    ------
-    y :
-        filtered data
-    Notes:
-      * Consider adding **empirical method for trimming either side of recursive
-        filter that trims up to where impulse response is negligible**
-      * If x has odd number of obs along axis, lfilter will trim
-        the last one. Just like rolling().
-      * For non-recursive time-space filters, 'a' should just be
-        set to 1. The 'a' vector contains (index 0) the scalar use to normalize 'b'
-        coefficients, and (index 1,2,...) the coefficients on 'y' in the filtering
-        conversion from 'x' to 'y': so, 1 implies array of [1, 0, 0...], implies
-        non-recursive.
+    Returns
+    -------
+    y : ndarray
+        Data filtered along axis `axis`.
+
+    Notes
+    -----
+    * Consider adding empirical method for trimming either side of recursive
+      filter that trims up to where impulse response is negligible.
+    * If `x` has odd number of obs along axis, lfilter will trim
+      the last one. Just like `rolling`.
+    * The *a* vector contains (index 0) the scalar used to normalize *b*
+      coefficients, and (index 1,2,...) the coefficients on `y` in the filtering
+      conversion from `x` to `y`. So, 1 implies array of [1, 0, 0...], implies
+      non-recursive.
     """
     # Apply filter 'n' times to each sample
     a, b = np.atleast_1d(a), np.atleast_1d(b)
@@ -702,11 +727,11 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, fixvalue=np.nan):
     y = x.copy() # then can filter multiple times
     ym = y.mean(axis=1, keepdims=True)
     y = y-ym # remove mean
-    for i in range(y.shape[0]): # iterate through samples
-        for j in range(n): # applications
-            step = 1 if j%2==0 else -1 # forward-backward application
-            y[i,::step] = signal.lfilter(b, a, y[i,::step], axis=-1)
+    for i in range(n): # applications
+        step = 1 if i%2==0 else -1 # forward-backward application
+        y[:,::step] = signal.lfilter(b, a, y[:,::step], axis=-1)
     y = y+ym # add mean back in
+
     # Fancy manipulation
     if fix:
         # Capture component that (for non-recursive filter) doesn't include datapoints with clipped edges
@@ -723,9 +748,10 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, fixvalue=np.nan):
             y = y[:,(n_2sides + n_left):(-n_2sides)]
         # Optionally pad with a 'fill value' (usually NaN)
         if pad:
-            y_left  = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
-            y_right = fixvalue*np.ones((y.shape[0], n_2sides+n_left//2))
+            y_left  = pad_value*np.ones((y.shape[0], n_2sides+n_left//2))
+            y_right = pad_value*np.ones((y.shape[0], n_2sides+n_left//2))
             y = np.concatenate((y_left, y, y_right), axis=-1)
+
     # Return
     y = unpermute(lead_unflatten(y, shape), axis)
     return y
@@ -738,13 +764,18 @@ def response(dx, b, a=1, n=1000, simple=False):
 
     Dennis Notes: https://atmos.washington.edu/~dennis/552_Notes_ftp.html
 
-    Formula
-    -------
+    Notes
+    -----
+    The response function formula is depicted as follows:
+
+    ::
+
                 jw               -jw            -jmw
         jw  B(e)    b[0] + b[1]e + .... + b[m]e
         H(e) = ---- = ------------------------------------
                 jw               -jw            -jnw
             A(e)    a[0] + a[1]e + .... + a[n]e
+
     and below we calculate simultaneously for vector of input omegas.
     """
     # Simple calculation given 'b' coefficients, from Libby's notes
@@ -781,14 +812,14 @@ def impulse():
     Displays the *impulse* response function for a recursive filter.
     """
     # R2_q = 1./(1. + (omega/omega_c)**(2*N))
-    pass
+    raise NotImplementedError
 
 #------------------------------------------------------------------------------#
 # Filters and windows
 #------------------------------------------------------------------------------#
 def harmonics(x, k=4, axis=-1, absval=False): #n=np.inf, kmin=0, kmax=np.inf): #, kscale=1, krange=None, k=None):
     """
-    Select the first k Fourier harmonics of the time series. Useful
+    Select the first `k` Fourier harmonics of the time series. Useful
     for example in removing seasonal cycle or something.
     """
     # Get fourier transform
@@ -834,32 +865,32 @@ def lanczos(dx, width, cutoff):
 
     Parameters
     ----------
-    dx :
-         units of your x-dimension (so that cutoff can be translated
-         from physical units to 'timestep' units)
-    width :
-        length of filter in time steps
-    cutoff :
-        cutoff wavelength in physical units
+    dx : float
+        Units of your x-dimension, so that cutoff can be translated
+        from physical units to 'timestep' units.
+    width : float
+        Length of filter in time steps.
+    cutoff : float
+        Cutoff wavelength in physical units.
 
     Returns
     -------
-    b :
-        numerator coeffs
-    a :
-        denominator coeffs
+    b : ndarray
+        Numerator coeffs.
+    a : ndarray
+        Denominator coeffs.
 
     Notes
     -----
     * The smoothing should only be *approximate* (see Hartmann notes), response
-    function never exactly perfect like with Butterworth filter.
+      function never exactly perfect like with Butterworth filter.
     * The '2' factor appearing in multiple places may seem random. But actually
-    converts linear frequency (i.e. wavenumber) to angular frequency in
-    sine call below. The '2' doesn't appear in any other factor just as a
-    consequence of the math.
+      converts linear frequency (i.e. wavenumber) to angular frequency in
+      sine call below. The '2' doesn't appear in any other factor just as a
+      consequence of the math.
     * Code is phrased slightly differently, more closely follows Libby's discription in class.
     * Keep in mind 'cutoff' must be provided in *time step units*. Change
-    the converter 'dx' otherwise.
+      the converter 'dx' otherwise.
 
     Example
     -------
@@ -890,29 +921,29 @@ def butterworth(dx, order, cutoff, btype='low'):
 
     Parameters
     ----------
-      dx :
-        data spacing
-      order :
-        order of the filter
-      cutoff :
-        cutoff frequency in 'x' units (i.e. *wavelengths*)
+      dx : float
+        Data spacing.
+      order : int
+        Order of the filter.
+      cutoff : float
+        Cutoff frequency in 'x' units (i.e. *wavelengths*).
 
     Returns
     -------
-      b :
-        numerator coeffs
-      a :
-        denominator coeffs
+      b : ndarray
+        Numerator coeffs.
+      a : ndarray
+        Denominator coeffs.
 
     Notes
     -----
     * Need to run *forward and backward* to prevent time-shifting.
     * The 'analog' means units of cutoffs are rad/s.
     * Unlike Lanczos filter, the *length* of this should be
-        determined always as function of timestep, because really high
-        order filters can get pretty wonky.
+      determined always as function of timestep, because really high
+      order filters can get pretty wonky.
     * Cutoff is point at which gain reduces to 1/sqrt(2) of the
-        initial frequency. If doing bandpass, can 
+      initial frequency. If doing bandpass, can 
     """
     # Initial stuff
     # N = (width/dx)//1 # convert to timestep units
@@ -939,10 +970,18 @@ def window(wintype, n, normalize=False):
     """
     Retrieves weighting function window, identical to get_window(). Note
     the raw window weights must be normalized, or will screw up the power
-    of your FFT coefficients.
+    of your FFT coefficients.  For windows that require extra parameters,
+    window must be a tuple of window-name, parameter.
 
-    For windows that require extra parameters, window
-    must be a tuple of window-name, parameter.
+    Parameters
+    ----------
+    wintype : str or (str, float) tuple
+        The window name.
+
+    Returns
+    -------
+    win : ndarray
+        The window coefficients.
     """
     # Default error messages are shit, make them better
     if wintype=='welch':
@@ -952,9 +991,6 @@ def window(wintype, n, normalize=False):
     if wintype=='gaussian':
         raise ValueError('Gaussian window needs 2-tuple of (name,stdev).')
     # Get window
-    # NOTE: Window will be normalized to have maximum of 1. Windowing decreases
-    # total power of resulting transform; to get it back, divide FFT by sum
-    # of window coefficients instead of length of the FFT'd dimension.
     win = signal.get_window(wintype, n)
     return win
 
@@ -968,44 +1004,37 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
 
     Parameters
     ----------
-    y1 :
-        the data
-    y2 :
-        the data, if you want cross-spectral power
-    dx :
-        timestep in physical units (used for scaling the frequency-coordinates)
-    cyclic :
-        whether data is cyclic along axis; in this case the nperseg
-        will be overridden
+    y1 : array-like
+        Input data.
+    y2 : array-like, default ``None``
+        Second input data, if cross-spectrum is desired.
+        Must have same shape as `y1`.
+    dx : float, optional
+        Timestep in physical units, used for scaling the
+        frequency-coordinates.
+    cyclic : bool, optional
+        Whether data is cyclic along axis. When ``True``, the *nperseg*
+        argument will be overridden
+    coherence : bool, optional
+        Ignored when `z2` is ``None``. If ``False`` (the default), `power`
+        returns the co-power spectrum, quadrature spectrum, and individual
+        power spectra. If ``True``, `power` returns the coherence
+        and phase difference.
 
-    Returns (single transform)
+    Returns
     -------
-    f :
-        wavenumbers, in <x units>**-1
-    P :
-        power spectrum, in units <data units>**2
-
-    Returns (cross transform, coherence == False)
-    -------
-    f :
-        wavenumbers, in <x units>**-1
-    P :
-        co-power spectrum
-    Q :
-        quadrature power spectrum
-    Py1 :
-        power spectrum for y1
-    Py2 :
-        power spectrum for y2
-
-    Returns (cross transform, coherence == True)
-    -------
-    f :
-        wavenumbers, in <x units>**-1
-    Coh :
-        coherence squared
-    Phi :
-        average phase relationship
+    f : ndarray
+        Wavenumbers, in [x units]**-1.
+    P : ndarray
+        Present when `z2` is ``None``. Power spectrum, in
+        units [data units]**2.
+    P, Q, Pz1, Pz2 : ndarray
+        Present when `z2` is not ``None``, `coherence` = ``False``. Co-power
+        spectrum, quadrature spectrum, power spectrum for `z1`, and
+        power spectrum for `z2`, respectively.
+    Coh, Phi : ndarray
+        Present when `z2` is not ``None``, `coherence` = ``True``.
+        Coherence and phase difference, respectively.
 
     Notes
     -----
@@ -1017,6 +1046,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     normalizing by 1/N after FFT.
 
     See:
+
       * https://stackoverflow.com/a/19976162/4970632
       * https://stackoverflow.com/a/15148195/4970632
 
@@ -1031,16 +1061,23 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
 
     Example
     -------
-    # Power reduction depends on signal
-    for y in (np.sin(np.arange(0,8*np.pi-0.01,np.pi/25)),
-        np.random.rand(200)):
-        yvar = ((y-y.mean())**2).mean()
-        Y = (np.abs(np.fft.fft(y)[1:]/y.size)**2).sum()
-        Yw = (np.abs(np.fft.fft(y*w)[1:]/y.size)**2).sum()
-        print('test')
-        print(Yw/yvar)
-        print(Yw*(y.size/w.sum())/yvar)
-        print(Y/yvar)
+    Below proves that extent of power reduction due to windowing
+    depends on the signal.
+
+    .. ipython:: python
+
+        import numpy as np
+        import climpy
+        w = climpy.window('hanning', 200)
+        y1 = np.sin(np.arange(0,8*np.pi-0.01,np.pi/25)) # simple signal
+        y2 = np.random.rand(200) # complex signal
+        for y in (y1, y2):
+            yvar = ((y-y.mean())**2).mean()
+            Y = (np.abs(np.fft.fft(y)[1:]/y.size)**2).sum()
+            Yw = (np.abs(np.fft.fft(y*w)[1:]/y.size)**2).sum()
+            print('Boxcar', Y/yvar)
+            print('Hanning', Yw/yvar)
+
     """
     # Initial stuff
     N = y1.shape[axis] # window count
@@ -1154,45 +1191,53 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
 
 def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         nperseg=100, wintype='boxcar',
-        center=np.pi, axes=(-2,-1), # first position is *cyclic* (perform simple real transform), second is *not* (windowed)
+        center=np.pi, axes=(-2,-1), # first position is *time* (windowed), second is *cyclic* (perform simple real transform)
         manual=False, detrend='constant', scaling='spectrum'):
     """
     Performs 2-d spectral decomposition, with windowing along only *one* dimension,
     in style of Randel and Held 1991. Therefore assumption is we have *cyclic*
     data along one dimension, the 'x' dimension.
 
-    Returns (single transform)
-    -------
-    f :
-        wavenumbers, in <x units>**-1
-    P :
-        power spectrum, in units <data units>**2
+    Parameters
+    ----------
+    z1 : array-like
+        Input data.
+    z2 : array-like, default ``None``
+        Second input data, if cross-spectrum is desired. Must have same
+        shape as `z1`.
+    dx : float, optional
+        Timestep in physical units, used for scaling the
+        frequency-coordinates.
+    dy : float, optional
+        Physical units of cyclic dimension step, used for scaling the
+        frequency-coordinates.
+    axes : (int, int), optional
+        Locations of the "time" and "cyclic" axes, respectively.
+        By default the second-to-last and last axes are used.
+    coherence : bool, optional
+        Ignored when `z2` is ``None``. If ``False`` (the default), `power2d`
+        returns the co-power spectrum, quadrature spectrum, and individual
+        power spectra. If ``True``, `power2d` returns the coherence
+        and phase difference.
 
-    Returns (cross transform, coherence == False)
+    Returns
     -------
-    f :
-        wavenumbers, in <x units>**-1
-    P :
-        co-power spectrum
-    Q :
-        quadrature power spectrum
-    Pz1 :
-        power spectrum for y1
-    Pz2 :
-        power spectrum for y2
-
-    Returns (cross transform, coherence == True)
-    -------
-    f :
-        wavenumbers, in <x units>**-1
-    Coh :
-        coherence squared
-    Phi :
-        average phase relationship
+    f : ndarray
+        Wavenumbers, in [x units]**-1.
+    P : ndarray
+        Present when `z2` is ``None``. Power spectrum, in
+        units [data units]**2.
+    P, Q, Pz1, Pz2 : ndarray
+        Present when `z2` is not ``None``, `coherence` = ``False``. Co-power
+        spectrum, quadrature spectrum, power spectrum for `z1`, and
+        power spectrum for `z2`, respectively.
+    Coh, Phi : ndarray
+        Present when `z2` is not ``None``, `coherence` = ``True``.
+        Coherence and phase difference, respectively.
 
     Notes
     -----
-    See notes for the 1D version.
+    See notes for `power`.
     """
     # Checks
     taxis, caxis = axes
@@ -1367,11 +1412,18 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
 
 def autopower():
     """
-    This will turn into a wrapper around power1d, that generates co-spectral
-    statistics and whatnot at ***successive lags***.
-
-    Uses scipy.signal.welch windowing method to generate an estimate of the
-    *lagged* spectrum. Can also optionally do this with two variables.
+    Will turn into a wrapper around `power1d`, that generates co-spectral
+    statistics and whatnot at **successive lags**.
     """
-    raise NotImplementedError()
+    # Uses scipy.signal.welch windowing method to generate an estimate of the
+    # *lagged* spectrum. Can also optionally do this with two variables.
+    raise NotImplementedError
+
+def autopower2d():
+    """
+    Will turn into a wrapper around `power2d`, that generates co-spectral
+    statistics and whatnot at **successive lags**.
+    """
+    raise NotImplementedError
+
 

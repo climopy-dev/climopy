@@ -5,6 +5,15 @@
 # This file does only contain a selection of the most common options. For a
 # full list see the documentation:
 # http://www.sphinx-doc.org/en/master/config
+#
+# For ReStructuredText primer see:
+# http://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html
+#
+# For numpy docstring guide see:
+# https://numpydoc.readthedocs.io/en/latest/format.html#sections
+#
+# For bibtex referencing see:
+# https://sphinxcontrib-bibtex.readthedocs.io/en/latest/usage.html
 
 # -- Path setup --------------------------------------------------------------
 
@@ -12,9 +21,9 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-# import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
+import os
+import sys
+sys.path.insert(0, os.path.abspath('..')) # for autodoc
 
 
 # -- Project information -----------------------------------------------------
@@ -36,8 +45,7 @@ release = ''
 # needs_sphinx = '1.0'
 
 # Add any Sphinx extension module names here, as strings. They can be
-# extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
-# ones.
+# extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.doctest',
@@ -45,10 +53,56 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
     'sphinx.ext.mathjax',
-    'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
+    'sphinx.ext.napoleon', # for NumPy style docstrings, instead of reStructred Text
+    'sphinx.ext.autosummary',
+    'sphinxcontrib.bibtex',
+    'IPython.sphinxext.ipython_directive',
+    'IPython.sphinxext.ipython_console_highlighting',
+    'sphinx_automodapi.automodapi', # see: https://sphinx-automodapi.readthedocs.io/en/latest/
 ]
+
+# Generate stub pages whenever ::autosummary directive encountered
+# This way don't have to call sphinx-autogen manually
+autosummary_generate = True
+
+# Turn off code and image links for embedded mpl plots
+# plot_html_show_source_link = False
+# plot_html_show_formats = False
+
+# One of 'class', 'both', or 'init'
+# The 'both' concatenates class and __init__ docstring
+# See: http://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
+autoclass_content = 'both'
+
+# Set up mapping for other projects' docs
+intersphinx_mapping = {
+                       'matplotlib': ('https://matplotlib.org', None),
+                       'sphinx': ('http://www.sphinx-doc.org/en/stable/', None),
+                       'python': ('https://docs.python.org/3', None),
+                       'numpy': ('https://docs.scipy.org/doc/numpy', None),
+                       'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
+                       'xarray': ('http://xarray.pydata.org/en/stable', None)
+                       }
+
+# If true, the current module name will be prepended to all description
+# unit titles (such as .. function::).
+add_module_names = True
+
+# Napoleon options
+# See: http://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html
+napoleon_use_rtype = False
+napoleon_use_param = False
+napoleon_use_ivar = False
+napoleon_use_keyword = False
+napoleon_numpy_docstring = True
+napoleon_google_docstring = False
+napoleon_include_init_with_doc = False # move init doc to 'class' doc
+
+# Fix duplicate class member documentation from autosummary + numpydoc
+# See: https://github.com/phn/pytpm/issues/3#issuecomment-12133978
+numpydoc_show_class_members = False
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -72,18 +126,21 @@ language = None
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path .
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['_build', '_templates', 'Thumbs.db', '.DS_Store']
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
 
+# Role
+default_role = 'py:obj' # default family is py, but can also set default role so don't need :func:`name`, :module:`name`, etc.
 
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+# html_theme = 'alabaster'
+html_theme = 'sphinx_rtd_theme' # from: https://sphinx-rtd-theme.readthedocs.io/en/latest/installing.html
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -106,6 +163,11 @@ html_static_path = ['_static']
 #
 # html_sidebars = {}
 
+# The name of an image file (within the static path) to use as favicon of the
+# docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
+# pixels large. Static folder is for CSS and image files.
+# For icons see: https://icons8.com/icon
+html_favicon = os.path.join('_static', 'globe.ico')
 
 # -- Options for HTMLHelp output ---------------------------------------------
 
@@ -165,11 +227,6 @@ texinfo_documents = [
 
 
 # -- Extension configuration -------------------------------------------------
-
-# -- Options for intersphinx extension ---------------------------------------
-
-# Example configuration for intersphinx: refer to the Python standard library.
-intersphinx_mapping = {'https://docs.python.org/': None}
 
 # -- Options for todo extension ----------------------------------------------
 
