@@ -12,7 +12,7 @@ related to atmospheric science, including several common statistical and
 objective analysis techniques, formulas for derived physical quantities,
 and physical constants.
 
-Many atmospheric scientists may already have scripts for some of these operations lying around. But this package is meant to be a **user-friendly**, **well-documented**, **flexible** consolidation of a diverse range of data analysis tasks.
+Many atmospheric scientists may already have scripts for data analysis tasks lying around. But this package is meant to be a **user-friendly**, **well-documented**, **flexible** consolidation of these tasks.
 
 This is a work-in-progress -- currently, there is no formal release
 on PyPi. For the time being, you may install directly from Github using:
