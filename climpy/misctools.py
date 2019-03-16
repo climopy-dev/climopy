@@ -71,9 +71,9 @@ def month(dt):
 def zip(*iterables):
     """
     Special kind of zip that fails when iterators not same length;
-    see `this post <https://stackoverflow.com/a/32954700/4970632>`_.
+    see `this post <https://stackoverflow.com/a/32954700/4970632>`__.
     For purpose of ``sentinel`` see `this post
-    <https://stackoverflow.com/a/28306434/4970632>`_.
+    <https://stackoverflow.com/a/28306434/4970632>`__.
     """
     sentinel = object() # filler object; point is, will always be unique!
     for combo in itertools.zip_longest(*iterables, fillvalue=sentinel):

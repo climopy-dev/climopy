@@ -21,7 +21,7 @@ def eraint(params, stream, levtype,
         filename='eraint.nc'
         ):
     """
-    Retrieves ERA-Interim DATA using the provided API. User MUST have, in home
+    Retrieves ERA-Interim data using the provided API. User must have, in home
     directory, a file named ``.ecmwfapirc``. See API documentation, but should
     look like:
     ::

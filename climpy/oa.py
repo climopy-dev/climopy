@@ -589,7 +589,7 @@ def rolling(*args, **kwargs):
     """
     Alias for `running`.
     """
-    return rolling(*args, **kwargs)
+    return running(*args, **kwargs)
 
 def running(x, w, axis=-1, btype='lowpass',
                   pad=True, pad_value=np.nan, **kwargs):
@@ -620,6 +620,10 @@ def running(x, w, axis=-1, btype='lowpass',
     ----------------
     kwargs :
         Remaining kwargs passed to windowing function.
+
+    Todo
+    ----
+    Merge this with `running`?
 
     Notes
     -----

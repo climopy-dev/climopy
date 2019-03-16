@@ -61,8 +61,8 @@ def deriv1(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
         derivatives. That is when `keepedges` is ``True``, shape of output
         array is unchanged.
 
-    Output
-    ------
+    Returns
+    -------
     array-like
         The "derivative".
 
