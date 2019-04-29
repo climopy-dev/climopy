@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Includes various finite difference schemes.
+Various finite difference schemes.
 """
 # TODO: Add integration schemes! Will be simple to implement, they are just
 # cumsums.
 import numpy as np
-from functools import wraps
 from .arraytools import *
 
 #------------------------------------------------------------------------------#
@@ -33,16 +32,48 @@ def integrate(x, y, y0=0, axis=0):
     dx = np.reshape(dx, shape) # add singletons
     return y0 + (y*dx).cumsum()
 
-def deriv(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False):
+def deriv(*args, **kwargs):
     """
-    First order finite differencing. Can be accurate to h^2, h^4, or h^6.
-    Reduces axis length by "accuracy" amount, except for zero version (special).
+    Alias for `deriv1`.
+    """
+    return deriv1(*args, **kwargs)
+
+def deriv1(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False):
+    """
+    First order finite differencing. Can be accurate to :math:`h^2`,
+    :math:`h^4`, or :math:`h^6`. Reduces axis length by `accuracy`,
+    except when `keepedges` = ``True``, in which case progressively
+    lower-`accuracy` derivatives are used for edges.
+
+    Parameters
+    ----------
+    h : float, array-like
+        Step size. If array-like, step size is taken as `h[1] - h[0]`.
+    y : array-like
+        The data.
+    axis : int, optional
+        Axis along which derivative is taken.
+    accuracy : {0, 2, 4, 6}
+        Accuracy of Euler centered-finite difference method. "0" corresponds
+        to differentiation onto half-levels, as in `diff`.
+    keepleft, keepright, keepedges : bool, optional
+        Whether to retain edge data with progressively lower-`accuracy`
+        derivatives. That is when `keepedges` is ``True``, shape of output
+        array is unchanged.
+
+    Returns
+    -------
+    array-like
+        The "derivative".
 
     Notes
     -----
-    See: https://en.wikipedia.org/wiki/Finite_difference_coefficient
-    * Check out that fancy recursion!
-    * Uses progressively lower-accuracy methods for edges to preserve shape.
+    This was developed from the `wikipedia definition 
+    <https://en.wikipedia.org/wiki/Finite_difference_coefficient>`_.
+
+    See Also
+    --------
+    diff, deriv1_uneven
     """
     # Simple Euler scheme
     h = _step(h)
@@ -61,11 +92,11 @@ def deriv(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=F
     elif n<5:
         if accuracy>2:
             print(f'Warning: Setting accuracy to 2 for derivative on length-{n} axis.')
-            accuracy = 0
+            accuracy = 2
     elif n<7:
         if accuracy>4:
             print(f'Warning: Setting accuracy to 4 for derivative on length-{n} axis.')
-            accuracy = 0
+            accuracy = 4
 
     # Derivative
     y = np.array(y) # for safety
@@ -99,21 +130,20 @@ def deriv(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=F
         raise ValueError('Invalid accuracy; for now, choose form O(h^2), O(h^4), or O(h^6).')
     return unpermute(diff, axis)
 
-@wraps(deriv)
-def deriv1(*args, **kwargs):
-    return deriv(*args, **kwargs)
-
 def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False):
     """
-    Second order finite differencing. Can be accurate to h^2, h^4, or h^6.
-    Reduces axis length by the 'accuracy' param, except for the zero version.
+    Second order finite differencing. Can be accurate to :math:`h^2`,
+    :math:`h^4`, or :math:`h^6`. Reduces axis length by `accuracy`,
+    except when `keepedges` = ``True``, in which case progressively
+    lower-`accuracy` derivatives are used for edges.
 
     Notes
     -----
-    See: https://en.wikipedia.org/wiki/Finite_difference_coefficient
-    * Here, since there is no comparable midpoint-2nd derivative, need to
-      just pad endpoints with the adjacent derivatives.
-    * Again, check out that fancy recursion!
+    For usage, see `deriv1`.
+
+    See Also
+    --------
+    deriv2_uneven
     """
     # Simple Euler scheme
     # y = np.rollaxis(y, axis, y.ndim)
@@ -133,11 +163,11 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
     elif n<5:
         if accuracy>2:
             print(f'Warning: Setting accuracy to 2 for derivative on length-{n} axis.')
-            accuracy = 0
+            accuracy = 2
     elif n<7:
         if accuracy>4:
             print(f'Warning: Setting accuracy to 4 for derivative on length-{n} axis.')
-            accuracy = 0
+            accuracy = 4
 
     # Derivative
     y = np.array(y) # for safety
@@ -170,22 +200,50 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
     # return np.rollaxis(diff, y.ndim-1, axis)
     return unpermute(diff, axis)
 
-def deriv_uneven(x, y, axis=0, keepedges=False):
+def deriv_uneven(*args, **kwargs):
     """
+    Alias for `deriv1_uneven`.
+    """
+    return deriv_uneven(*args, **kwargs)
+
+def deriv1_uneven(x, y, axis=0, keepedges=False):
+    r"""
     Central numerical differentiation, uneven/even spacing.
     Reduces axis length by 2.
 
-    Equation
-    --------
-    dy/dx = (((x1-x0)/(x2-x1))(y2-y1)
-           + ((x2-x1)/(x1-x0))(y1-y0)) / (x2-x0)
+    Parameters
+    ----------
+    x : float, array-like
+        If not array-like, the step size. If array-like, the *x*-coordinates.
+        May exactly match shape of `y`, or match length of `y` along the axis
+        `axis`.
+    y : array-like
+        The data.
+    axis : int, optional
+        Axis along which derivative is taken.
+    keepedges : bool, default False
+        When ``True``, result is padded along `axis` edges with the adjacent
+        derivative estimates, to preserve the shape of `y`.
+
+    Returns
+    -------
+    float
+        The "derivative".
 
     Notes
     -----
-    * Reduces to standard (y2-y0)/(x2-x0) for even spcing, and for uneven
-      weights the slope closer to center point more heavily
-    * Want weighted average of forward/backward Euler, with weights 1 minus
-      percentage of total x2-x0 interval
+    Equation is as follows:
+
+    .. math::
+        \frac{dy}{dx} = \dfrac{\frac{x_1 - x_0}{x_2 - x_1}(y_2 - y_1)
+                        - \frac{x_2 - x_1}{x_1 - x_0}(y_1 - y_0)}{x_2 - x_0}
+
+    * Weights the slope closer to center point more heavily.
+    * Reduces to standard :math:`(y_2-y_0)/(x_2-x_0)` for even spacing,
+
+    See Also
+    --------
+    diff, deriv1
     """
     # Preliminary stuff
     y = np.array(y)
@@ -229,15 +287,18 @@ def deriv_uneven(x, y, axis=0, keepedges=False):
         diff = np.concatenate((bdiff, diff, ediff), axis=-1)
     return unpermute(diff, axis)
 
-def deriv1_uneven(*args, **kwargs):
-    """
-    Defined for name consistency.
-    """
-    return deriv_uneven(*args, **kwargs)
-
 def deriv2_uneven(x, y, axis=0, keepedges=False): # alternative
     """
-    Second derivative adapted from Euler's method using the same technique as above.
+    Second derivative adapted from Euler's method as in `deriv_uneven`.
+    Formulation is found `here <https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/>`_.
+
+    Notes
+    -----
+    For usage, see `deriv1_uneven`.
+
+    See Also
+    --------
+    deriv2
     """
     # Preliminary stuff
     x, y = np.array(x), np.array(y) # precaution
@@ -260,7 +321,12 @@ def deriv2_uneven(x, y, axis=0, keepedges=False): # alternative
 
 def deriv3_uneven(x, y, axis=0, keepedges=False): # alternative
     """
-    Second derivative adapted from Euler's method using the same technique as above.
+    Third derivative adapted from Euler's method as in `deriv_uneven`.
+    Formulation is found `here <https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/>`_.
+
+    See Also
+    --------
+    deriv3
     """
     # Preliminary stuff
     x, y = np.array(x), np.array(y) # precaution
@@ -300,6 +366,10 @@ def diff(x, y, axis=0):
     """
     Trivial differentiation onto half levels.
     Reduces axis length by 1.
+
+    See Also
+    --------
+    deriv1, deriv1_uneven
     """
     if x.ndim>1: # if want x interpreted as vector
         xaxis = axis

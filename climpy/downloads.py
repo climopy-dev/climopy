@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+Wrappers on python APIs for downloading reanalysis data.
+"""
 # Imports
 import xarray as xr
 import numpy as np
@@ -15,65 +18,66 @@ def eraint(params, stream, levtype,
         levrange=None, levs=None, grid='N32', # means number of lats per hemisphere, we want 64
         hours=(0,6,12,18), hour=None,
         res=1.0, box=None,
-        filename='eraint.nc'):
+        filename='eraint.nc'
+        ):
     """
-    Retrieves ERA-Interim DATA using the provided API. User MUST have, in home
-    directory, a file named '.ecmwfapirc'; see API documentation, but should look like:
+    Retrieves ERA-Interim data using the provided API. User must have, in home
+    directory, a file named ``.ecmwfapirc``. See API documentation, but should
+    look like:
+    ::
+
         {
         "url"   : "https://api.ecmwf.int/v1",
-        "key"   : "960dbe61271d3902c8b0f768d69d679f",
+        "key"   : "abcdefghijklmnopqrstuvwxyz",
         "email" : "email@gmail.com"
         }
-    with the key found on your user/profile page on the ecmwf website.
 
-    Time range params
-    -----------------
-    years/yearrange :
-        list of range of years
-    months/monthrange :
-        list or range of months
-    daterange :
-        range of dates/datetimes
+    with the key found on your user/profile page on the ECMWF website.
 
-    Other params
-    ------------
-    params: can be either of:
-        list/tuple of variable string names
-        individual variable string
-    *** Must know MARS id for requested params; can add to dictionary in code below using
-        https://rda.ucar.edu/datasets/ds627.0/docs/era_interim_grib_table.html
+    Parameters
+    ----------
+    params : str or list of str
+        Variable name. Gets translated to MARS id name by dictionary below.
+        Add to this from the `online GRIB table <https://rda.ucar.edu/datasets/ds627.0/docs/era_interim_grib_table.html>`_.
         Pay attention to *available groups*. If not available for the group
-        you selected (e.g. pressure levs, moda), get ERROR 6 (MARS_EXPECTED_FIELDS).
-    *** For rates of change of *parameterized* processes (i.e. diabatic) see:
-        https://confluence.ecmwf.int/pages/viewpage.action?pageId=57448466
-    stream: can be any of:
-        'oper', 'moda', 'mofm', 'mdfa', or 'mnth'
-    levtype: can be any of:
-        'ml' (model levels)
-        'pl' (pressure levels)
-        'sfc' (earth surface)
-        'pt' (potential temperature)
-        'pv' (2pvu surface)
-    levrange: can be either of:
-        length-2 tuple/list of pressure/pt levels; retrieves all available levels between these
-        single number, to pick individual level
-    levs: can be either of:
-        list/tuple of multiple levels; retrieves each level in list
-        single number, to pick individual level
-    hours: can be either of:
-        list/tuple of integer hours (should be in [0,6,12,18])
-        single number, to pick individual hour
-    forecast:
-        whether we want forecast type ('fc') or analysis type ('an')
-    res: desired output resolution; not sure if this is arbitrary, or if ERA-interim only has
-        a select few valid resolution options.
-    box: can be either of:
-        string name for particular region, e.g. "europe" (see documentation)
-        the West/South/East/North boundaries (so lower-left corner, upper-right corner), as a length-4 list/tuple
-    format:
-        one of 'grib1', 'grib2', or 'netcdf'
-    filename:
-        name of file output
+        you selected (e.g. pressure levs, moda), get ``ERROR 6 (MARS_EXPECTED_FIELDS)``.
+        For rates of change of *parameterized* processes (i.e. diabatic) see
+        `this link <https://confluence.ecmwf.int/pages/viewpage.action?pageId=57448466>`_.
+    stream : {'oper', 'moda', 'mofm', 'mdfa', 'mnth'}
+        Data stream.
+    levtype : {'ml', 'pl', 'sfc', 'pt', 'pv'}
+        Level type: model, pressure, surface, potential temperature, and 2PVU
+        surface, respectively.
+    levrange : float or (float, float)
+        Individual level or range of levels.
+    levs : float or array-like
+        Individual level or list of levels.
+    yearrange : int or (int, int)
+        Individual year or range of years.
+    years : int or array-like
+        Individual year or list of years.
+    monthrange : int or (int, int)
+        Individual month or range of months.
+    months : int or array-like
+        Individual month or list of months.
+    daterange : (datetime.datetime, datetime.datetime)
+        Range of dates.
+    hours : {0, 6, 12, 18} or list thereof
+        Hour(s) (UTC) of observation.
+    forecast : bool, default False
+        Whether we want forecast `'fc'` or analysis `'an'` data. Note that
+        some data is only available in `'fc'` mode, e.g. diabatic heating.
+    res : float
+        Desired output resolution in degrees. Not sure if this is arbitrary,
+        or if ERA-interim only has a select few valid resolution options.
+    box : str, (float, float, float, float)
+        String name for particular region, e.g. ``'europe'``, or the west,
+        south, east, and north boundaries, respectively.
+    format : {'grib1', 'grib2', 'netcdf'}
+        Output format.
+    filename : str
+        Name of file output.
+
 
     Notes
     -----

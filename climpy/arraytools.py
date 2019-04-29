@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Includes several helper/base functions shared by other tools.
+This module contains helper functions for manipulating arrays. Helps
+us perform various complex analysis tasks "along axes" on arbirary
+n-dimensional arrays. Generally you won't need to use them, but they are
+public just in case.
 """
 import numpy as np
 
@@ -11,16 +14,16 @@ def trail_flatten(data, nflat=None):
     Parameters
     ----------
     data : array
-        input data
+        Input data.
     nflat : int or None
-        number of dimensions flattened -- default is to
-        choose rank-1 i.e. enough to flatten into a rank 2 array
+        Number of dimensions flattened -- default is to
+        choose rank-1, i.e. enough to flatten into a rank 2 array.
 
     Notes
     -----
-    * Note that numpy prod of an empty iterable will be 1; so, adds singleton dim.
-    * Note we use tuple expansion of the [shape] tuple
-    * Note default for numpy is is row-major.
+    * The `numpy.prod` of an empty array is 1. So in this case,
+      a singleton dimension is added.
+    * Note numpy arrays are row-major by default.
     """
     shape = list(data.shape)
     if nflat is None:
@@ -34,17 +37,17 @@ def trail_flatten(data, nflat=None):
 
 def trail_unflatten(data, shape, nflat=None):
     """
-    Undo action of trail_flatten.
+    Undoes action of `trail_flatten`.
 
     Parameters
     ----------
     data : array
-        the input data
-    shape : iterable of ints
-        desired shape of reconstructed array.
+        Input data.
+    shape : list of int
+        Desired shape of reconstructed array.
     nflat : int or None
-        number of dimensions unflattened -- default is to
-        choose rank-1 i.e. enough to flatten into a rank 2 array
+        Number of dimensions unflattened -- default is to
+        choose rank-1, i.e. enough to restore from a rank 2 array.
     """
     if nflat is None:
         nflat = len(shape)-1 # all but last dimension
@@ -64,10 +67,10 @@ def lead_flatten(data, nflat=None):
     Parameters
     ----------
     data : array
-        input data
+        Input data.
     nflat : int or None
-        number of dimensions flattened -- default is to
-        choose rank-1 i.e. enough to flatten into a rank 2 array
+        Number of dimensions flattened -- default is to
+        choose rank-1, i.e. enough to flatten into a rank 2 array.
     """
     shape = list(data.shape)
     if nflat is None:
@@ -79,19 +82,17 @@ def lead_flatten(data, nflat=None):
 
 def lead_unflatten(data, shape, nflat=None):
     """
-    Undo action of lead_flatten.
-
-    Flatten *trailing* dimensions onto single dimension.
+    Undoes action of `lead_flatten`.
 
     Parameters
     ----------
-    data : array
-        input data
-    shape : iterable of ints
-        desired shape of reconstructed array.
+    data : array-like
+        Input data.
+    shape : list of int
+        Desired shape of reconstructed array.
     nflat : int or None
-        number of dimensions unflattened -- default is to
-        choose rank-1 i.e. enough to restore from a rank 2 array
+        Number of dimensions unflattened -- default is to
+        choose rank-1, i.e. enough to restore from a rank 2 array.
     """
     if nflat is None:
         nflat = len(shape) - 1 # all but last dimension
@@ -110,28 +111,25 @@ def permute(data, source=-1, destination=-1):
 
     Arguments
     ---------
-    source : int
-        dimension to be permuted
-    destination : int
-        destination for that dimension
+    data : array-like
+        Input data.
+    source : int, optional
+        Dimension to be permuted.
+    destination : int, optional
+        Destination for that dimension.
 
     Notes
     -----
-    This is now a simple wrapper around np.moveaxis.
-    This used to use np.rollaxis but it sucks as acknowledged by maintainers:
-    https://github.com/numpy/numpy/issues/9473
+    This is now a simple wrapper around `numpy.moveaxis`. This used to use
+    `numpy.rollaxis`, but it sucks, as `acknowledged by maintainers
+    <https://github.com/numpy/numpy/issues/9473>`_.
     """
     data = np.moveaxis(data, source, destination)
     return data
 
 def unpermute(data, source=-1, destination=-1):
     """
-    Arguments
-    ---------
-    source : int
-        dimension that was previously moved
-    destination : int
-        destination for that moved dimension
+    Undoes action of `permute`. Usage is identical.
     """
     data = np.moveaxis(data, destination, source)
     return data

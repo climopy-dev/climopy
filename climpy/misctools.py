@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Includes miscelaneous useful functions.
+Includes miscellaneous useful functions.
 """
 import numpy as np
-from itertools import zip_longest
+import itertools
 from .arraytools import *
 
 # Trigonometric functions in degrees
@@ -44,12 +44,6 @@ def arccot(x):
     """Inverse cotangent returning degrees."""
     return np.arctan(1/x)*180/np.pi
 
-def isiter(v):
-    """
-    Test whether value is iterable.
-    """
-    return hasattr(v,'__iter__') or hasattr(v,'__getitem__')
-
 ################################################################################
 # Time handling stuff
 ################################################################################
@@ -76,12 +70,13 @@ def month(dt):
 ################################################################################
 def zip(*iterables):
     """
-    Special kind of zip that fails when iterators not same length.
-    See: https://stackoverflow.com/a/32954700/4970632
-    For purpose of object() see: https://stackoverflow.com/a/28306434/4970632
+    Special kind of zip that fails when iterators not same length;
+    see `this post <https://stackoverflow.com/a/32954700/4970632>`__.
+    For purpose of ``sentinel`` see `this post
+    <https://stackoverflow.com/a/28306434/4970632>`__.
     """
     sentinel = object() # filler object; point is, will always be unique!
-    for combo in zip_longest(*iterables, fillvalue=sentinel):
+    for combo in itertools.zip_longest(*iterables, fillvalue=sentinel):
         # if sentinel in combo:
         if any(sentinel is c for c in combo):
             print(combo)
@@ -93,6 +88,9 @@ def match(*args):
     """
     Match arbitrary number of 1D vectors; will return slices for producing the matching
     segment from either vector, and the vector itself, so use as follows:
+
+    ::
+
         i1, i2, ..., vmatch = match(v1, v2, ...)
         v1[i1] == v2[i2] == ... == vmatch
 
