@@ -1047,13 +1047,18 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     if cyclic:
         wintype = 'boxcar'
         nperseg = N
+    if y2 is not None and y2.shape != y1.shape:
+        raise ValueError(f'Got conflicting shapes for y1 {y1.shape} and y2 {y2.shape}.')
     nperseg = 2*(nperseg // 2) # enforce even window size
+    # Trim if necessary
     r = N % nperseg
     if r!=0:
         s = [slice(None) for i in range(y1.ndim)]
         s[axis] = slice(None,-r)
         y1 = y1[tuple(s)] # slice it up
         N = y1.shape[axis] # update after trim
+        if y2 is not None:
+            y2 = y2[tuple(s)]
         print(f'Warning: Trimmed {r} out of {N} points to accommodate length-{nperseg} window.')
 
     # Just use scipy csd
@@ -1072,6 +1077,8 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     # Have checked these and results are identical
     # Get copsectrum, quadrature spectrum, and powers for each window
     y1, shape = lead_flatten(permute(y1, axis)) # shape is shape of *original* data
+    if y2 is not None:
+        y2, _ = lead_flatten(permute(y2, axis)) # shape is shape of *original* data
     extra = y1.shape[0]
     pm = nperseg//2
     shape[-1] = pm # new shape
@@ -1141,6 +1148,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
             Phi = np.arctan2(Q, CO) # phase
             Phi[Phi >= center + np.pi] -= 2*np.pi
             Phi[Phi <  center - np.pi] += 2*np.pi
+            Phi = Phi*180/np.pi # convert to degrees!!!
             Coh = unshape(Coh)
             Phi = unshape(Phi)
             return f/dx, Coh, Phi

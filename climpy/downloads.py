@@ -12,7 +12,7 @@ def eraint(params, stream, levtype,
         years=None, months=None, # can specify list
         format='netcdf', # file format
         forecast=False, step=12, # whether we want the *forecast* field? and forecast timestep if so
-        levrange=None, levs=None,
+        levrange=None, levs=None, grid='N32', # means number of lats per hemisphere, we want 64
         hours=(0,6,12,18), hour=None,
         res=1.0, box=None,
         filename='eraint.nc'):
@@ -83,18 +83,14 @@ def eraint(params, stream, levtype,
     """
     # Data stream
     import ecmwfapi as ecmwf # only do so inside function
-    # stream = { # oper is original, moda is monthly mean of daily means
-    #         'synoptic':  'oper',
-    #         'monthly':   'moda'
-    #         }.get(stream)
-    # if stream is None:
-    #     raise ValueError('Must choose from "oper" for synoptic fields, "moda" for monthly means of daily means.')
 
     # Variable id conversion (see: https://rda.ucar.edu/datasets/ds627.0/docs/era_interim_grib_table.html)
     if isinstance(params, str) or not np.iterable(params):
         params = (params,)
     params = [{
             'tdt':     '110.162',
+            'msp':     '152.128', # model-level surface pressure; use this whenever getting tdt and stuff (requires lev=1)
+            'sp':      '134.128', # surface pressure
             't2m':     '167.128', # 2m temp
             'd2m':     '168.128', # 2m dew point
             'sst':     '34.128', # sst
@@ -182,15 +178,17 @@ def eraint(params, stream, levtype,
     if levchoices==[]:
         raise ValueError('Invalid level type. Choose from "pl", "pt", "pv", "sfc".')
     # More options
+    # WARNING: Some vars are technically on "levels" like hybrid level surface
+    # pressure, but we still need 60.
     if levtype not in ('sfc','pv'): # these have multiple options
         # Require input
-        if levs is None and levrange is None and levtype not in ('sfc','pv'):
+        if levs is None and levrange is None:
             raise ValueError('Must specify list of levels to "levs" kwarg, range of levels to "levrange" kwarg, or single level to either one.')
         # Convert levels to mars request
         if levs is not None:
             if not np.iterable(levs):
                 levs = (levs,)
-        elif levrange is not None:
+        else:
             if not np.iterable(levrange):
                 levs = (levrange,)
             else:
@@ -237,7 +235,7 @@ def eraint(params, stream, levtype,
         # because their reanalysis model just picks out point observations
         # from spherical harmonics; so maybe grid cell concept is dumb? maybe need to focus
         # on just using cosine weightings, forget about rest?
-        'grid':     'N32',
+        'grid':     grid, # 64 latitudes, i.e. T42 truncation
         'stream':   stream, # product monthly, raw, etc.
         'date':     dates,
         'time':     hours,
@@ -246,15 +244,48 @@ def eraint(params, stream, levtype,
         'target':   filename, # save location
         }
     maxlen = max(map(len, request.keys()))
-    print("REQUEST\n" + "\n".join(f'"{key}": ' + " "*(maxlen - len(key)) + f"{value}" for key,value in request.items()))
     if levs is not None:
         request.update(levelist=levs)
-    # if box is not None:
-    #     request.update(area=box)
-    if stream!='moda':
+    if box is not None:
+        request.update(area=box)
+    if stream=='oper': # TODO: change?
         request.update(hour=hour)
+    print("REQUEST\n" + "\n".join(f'"{key}": ' + " "*(maxlen - len(key)) + f"{value}" for key,value in request.items()))
     # Retrieve DATA with settings
     server = ecmwf.ECMWFDataServer()
     server.retrieve(request)
     return
+
+#------------------------------------------------------------------------------#
+# Merra
+#------------------------------------------------------------------------------#
+def merra():
+    """
+    Download MERRA data. Is this possible?
+    """
+    raise NotImplementedError
+
+def ncar():
+    """
+    Download NCAR CFSL data. Is this possible?
+    """
+    raise NotImplementedError
+
+#------------------------------------------------------------------------------#
+# Satellite data
+#------------------------------------------------------------------------------#
+def satellite():
+    """
+    Download satellite data.
+    """
+    raise NotImplementedError
+
+#------------------------------------------------------------------------------#
+# CMIP5 data
+#------------------------------------------------------------------------------#
+def cmip():
+    """
+    Download CMIP5 model data.
+    """
+    raise NotImplementedError
 
