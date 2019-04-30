@@ -128,9 +128,7 @@ def permute(data, source=-1, destination=-1):
     return data
 
 def unpermute(data, source=-1, destination=-1):
-    """
-    Undoes action of `permute`. Usage is identical.
-    """
+    """Undoes action of `permute`. Usage is identical."""
     data = np.moveaxis(data, destination, source)
     return data
 

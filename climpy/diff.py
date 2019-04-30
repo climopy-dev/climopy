@@ -11,9 +11,7 @@ from .arraytools import *
 # Functions
 #------------------------------------------------------------------------------#
 def _step(h):
-    """
-    Determine scalar step h.
-    """
+    """Determine scalar step h."""
     h = np.atleast_1d(h)
     if len(h)==1:
         return h[0]
@@ -22,9 +20,7 @@ def _step(h):
         return h[1]-h[0]
 
 def integrate(x, y, y0=0, axis=0):
-    """
-    Integrate stuff.
-    """
+    """Integrate stuff."""
     dx = x[1:] - x[:-1]
     dx = np.concatenate((dx[:1], dx))
     shape = [1]*y.ndim
@@ -33,9 +29,7 @@ def integrate(x, y, y0=0, axis=0):
     return y0 + (y*dx).cumsum()
 
 def deriv(*args, **kwargs):
-    """
-    Alias for `deriv1`.
-    """
+    """Alias for `deriv1`."""
     return deriv1(*args, **kwargs)
 
 def deriv1(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False):
@@ -201,9 +195,7 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
     return unpermute(diff, axis)
 
 def deriv_uneven(*args, **kwargs):
-    """
-    Alias for `deriv1_uneven`.
-    """
+    """Alias for `deriv1_uneven`."""
     return deriv_uneven(*args, **kwargs)
 
 def deriv1_uneven(x, y, axis=0, keepedges=False):

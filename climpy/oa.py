@@ -399,20 +399,20 @@ def eof(data, neof=5, record=-2, space=-1,
 
     Parameters
     ----------
-        data :
-            Data of arbitrary shape.
-        neof :
-            Number of eigenvalues we want.
-        percent : bool
-            Whether to return raw eigenvalue(s), or *percent* of variance
-            explained by eigenvalue(s).
-        record :
-            Axis used as 'record' dimension -- should only be 1.
-        space :
-            Axes used as 'space' dimension -- can be many.
-        weights :
-            Area/mass weights; must be broadcastable on multiplication with 'data'
-            weights will be normalized prior to application.
+    data :
+        Data of arbitrary shape.
+    neof :
+        Number of eigenvalues we want.
+    percent : bool
+        Whether to return raw eigenvalue(s), or *percent* of variance
+        explained by eigenvalue(s).
+    record :
+        Axis used as 'record' dimension -- should only be 1.
+    space :
+        Axes used as 'space' dimension -- can be many.
+    weights :
+        Area/mass weights; must be broadcastable on multiplication with 'data'
+        weights will be normalized prior to application.
     """
     # First query array shapes and stuff
     m_dims = np.atleast_1d(record)
@@ -586,9 +586,7 @@ def reof(data, neof=5):
 # filling the trails of the data with NaNs)
 #------------------------------------------------------------------------------#
 def rolling(*args, **kwargs):
-    """
-    Alias for `running`.
-    """
+    """Alias for `running`."""
     return running(*args, **kwargs)
 
 def running(x, w, axis=-1, btype='lowpass',
@@ -937,18 +935,18 @@ def butterworth(dx, order, cutoff, btype='low'):
 
     Parameters
     ----------
-      dx : float
+    dx : float
         Data spacing.
-      order : int
+    order : int
         Order of the filter.
-      cutoff : float
+    cutoff : float
         Cutoff frequency in 'x' units (i.e. *wavelengths*).
 
     Returns
     -------
-      b : ndarray
+    b : ndarray
         Numerator coeffs.
-      a : ndarray
+    a : ndarray
         Denominator coeffs.
 
     Notes
@@ -1322,9 +1320,7 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         X = np.fft.rfft2(win[:,None]*x, axes=(0,1)) # last axis specified should get a *real* transform
         X = X[:,1:] # remove the zero-frequency value
         X = X/(x.shape[0]*x.shape[1]) # complex FFT has to be normalized by sample size
-        # print(w.sum()/x.shape[0])
-        # print((w**2).sum()/x.shape[0])
-        return np.concatenate((X[pm:,:], X[1:pm+1,:]), axis=0)
+        out = np.concatenate((X[pm:,:], X[1:pm+1,:]), axis=0)
         # Manual approach, virtually identical
         # Follows Libby's recipe, where instead real is cosine and imag is
         # sine. Note only need to divide by 2 when conjugates are included.
@@ -1332,10 +1328,11 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         # xi = win[:,None]*xi # got a bunch of sines and cosines
         # C = np.fft.rfft(xi.real, axis=0)[1:,:]/x.shape[0]
         # S = np.fft.rfft(xi.imag, axis=0)[1:,:]/x.shape[0]
-        # return np.concatenate((
+        # out = np.concatenate((
         #     (C.real + S.imag + 1j*(C.imag - S.real))[::-1,:], # frequency increasing in absolute magnitude along axis
         #      C.real - S.imag + 1j*(-C.imag - S.real),
         #     ), axis=0)
+        return out
 
     # The window *centers* for time windowing
     loc = np.arange(pm, N - pm + 0.1, pm).astype(int) # jump by half window length
