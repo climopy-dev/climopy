@@ -11,15 +11,15 @@ import calendar
 # ERA-interim downloads
 #-------------------------------------------------------------------------------
 def eraint(params, stream, levtype,
-        daterange=None, yearrange=None, monthrange=None, dayrange=None,
-        years=None, months=None, # can specify list
-        format='netcdf', # file format
-        forecast=False, step=12, # whether we want the *forecast* field? and forecast timestep if so
-        levrange=None, levs=None,
-        hours=(0,6,12,18), hour=None,
-        res=1.0, box=None,
-        filename='eraint.nc'
-        ):
+    daterange=None, yearrange=None, monthrange=None, dayrange=None,
+    years=None, months=None, # can specify list
+    format='netcdf', # file format
+    forecast=False, step=12, # whether we want the *forecast* field? and forecast timestep if so
+    levrange=None, levs=None, grid='N32', # means number of lats per hemisphere, we want 64
+    hours=(0,6,12,18), hour=None,
+    res=1.0, box=None,
+    filename='eraint.nc'
+    ):
     """
     Retrieves ERA-Interim data using the provided API. User must have, in home
     directory, a file named ``.ecmwfapirc``. See API documentation, but should
@@ -44,38 +44,38 @@ def eraint(params, stream, levtype,
         For rates of change of *parameterized* processes (i.e. diabatic) see
         `this link <https://confluence.ecmwf.int/pages/viewpage.action?pageId=57448466>`_.
     stream : {'oper', 'moda', 'mofm', 'mdfa', 'mnth'}
-        Data stream.
+        The data stream.
     levtype : {'ml', 'pl', 'sfc', 'pt', 'pv'}
         Level type: model, pressure, surface, potential temperature, and 2PVU
         surface, respectively.
-    levrange : float or (float, float)
+    levrange : float or (float, float), optional
         Individual level or range of levels.
-    levs : float or array-like
+    levs : float or ndarray, optional
         Individual level or list of levels.
     yearrange : int or (int, int)
         Individual year or range of years.
-    years : int or array-like
+    years : int or ndarray, optional
         Individual year or list of years.
-    monthrange : int or (int, int)
+    monthrange : int or (int, int), optional
         Individual month or range of months.
-    months : int or array-like
+    months : int or ndarray, optional
         Individual month or list of months.
-    daterange : (datetime.datetime, datetime.datetime)
+    daterange : (datetime.datetime, datetime.datetime), optional
         Range of dates.
-    hours : {0, 6, 12, 18} or list thereof
+    hours : {0, 6, 12, 18} or list thereof, optional
         Hour(s) (UTC) of observation.
-    forecast : bool, default False
+    forecast : bool, optional
         Whether we want forecast `'fc'` or analysis `'an'` data. Note that
         some data is only available in `'fc'` mode, e.g. diabatic heating.
-    res : float
+    res : float, optional
         Desired output resolution in degrees. Not sure if this is arbitrary,
         or if ERA-interim only has a select few valid resolution options.
-    box : str, (float, float, float, float)
+    box : str or length-4 list of float, optional
         String name for particular region, e.g. ``'europe'``, or the west,
         south, east, and north boundaries, respectively.
-    format : {'grib1', 'grib2', 'netcdf'}
+    format : {'grib1', 'grib2', 'netcdf'}, optional
         Output format.
-    filename : str
+    filename : str, optional
         Name of file output.
 
 
@@ -87,39 +87,35 @@ def eraint(params, stream, levtype,
     """
     # Data stream
     import ecmwfapi as ecmwf # only do so inside function
-    # stream = { # oper is original, moda is monthly mean of daily means
-    #         'synoptic':  'oper',
-    #         'monthly':   'moda'
-    #         }.get(stream)
-    # if stream is None:
-    #     raise ValueError('Must choose from "oper" for synoptic fields, "moda" for monthly means of daily means.')
 
     # Variable id conversion (see: https://rda.ucar.edu/datasets/ds627.0/docs/era_interim_grib_table.html)
     if isinstance(params, str) or not np.iterable(params):
         params = (params,)
     params = [{
-            'tdt':     '110.162',
-            't2m':     '167.128', # 2m temp
-            'd2m':     '168.128', # 2m dew point
-            'sst':     '34.128', # sst
-            'msl':     '151.128', # sea level pressure
-            'slp':     '151.128', # same
-            'z':       '129.128', # geopotential
-            't':       '130.128', # temp
-            'u':       '131.128', # u wind
-            'v':       '132.128', # v wind
-            'w':       '135.128', # w wind
-            'q':       '133.128', # specific humidity
-            'r':       '157.128', # relative humidity
-            'vort':    '138.128', # relative vorticity
-            'vo':      '138.128', # same
-            'zeta':    '138.128', # same
-            'pt':      '3.128', # potential temp (available on 2pvu surf)
-            'theta':   '3.128', # same
-            'p':       '54.128', # pressure (availble on pt, 2pvu surfaces)
-            'pres':    '54.128', # same
-            'pv':      '60.128', # potential vorticity (available on p, pt surfaces)
-            'precip':  '228.128',
+            'tdt':    '110.162',
+            'msp':    '152.128', # model-level surface pressure; use this whenever getting tdt and stuff (requires lev=1)
+            'sp':     '134.128', # surface pressure
+            't2m':    '167.128', # 2m temp
+            'd2m':    '168.128', # 2m dew point
+            'sst':    '34.128', # sst
+            'msl':    '151.128', # sea level pressure
+            'slp':    '151.128', # same
+            'z':      '129.128', # geopotential
+            't':      '130.128', # temp
+            'u':      '131.128', # u wind
+            'v':      '132.128', # v wind
+            'w':      '135.128', # w wind
+            'q':      '133.128', # specific humidity
+            'r':      '157.128', # relative humidity
+            'vort':   '138.128', # relative vorticity
+            'vo':     '138.128', # same
+            'zeta':   '138.128', # same
+            'pt':     '3.128', # potential temp (available on 2pvu surf)
+            'theta':  '3.128', # same
+            'p':      '54.128', # pressure (availble on pt, 2pvu surfaces)
+            'pres':   '54.128', # same
+            'pv':     '60.128', # potential vorticity (available on p, pt surfaces)
+            'precip': '228.128',
             }.get(p) for p in params] # returns generator object for each param
     if None in params:
         raise ValueError('MARS id for variable is unknown (might need to be added to this script).')
@@ -186,15 +182,17 @@ def eraint(params, stream, levtype,
     if levchoices==[]:
         raise ValueError('Invalid level type. Choose from "pl", "pt", "pv", "sfc".')
     # More options
+    # WARNING: Some vars are technically on "levels" like hybrid level surface
+    # pressure, but we still need 60.
     if levtype not in ('sfc','pv'): # these have multiple options
         # Require input
-        if levs is None and levrange is None and levtype not in ('sfc','pv'):
+        if levs is None and levrange is None:
             raise ValueError('Must specify list of levels to "levs" kwarg, range of levels to "levrange" kwarg, or single level to either one.')
         # Convert levels to mars request
         if levs is not None:
             if not np.iterable(levs):
                 levs = (levs,)
-        elif levrange is not None:
+        else:
             if not np.iterable(levrange):
                 levs = (levrange,)
             else:
@@ -241,7 +239,7 @@ def eraint(params, stream, levtype,
         # because their reanalysis model just picks out point observations
         # from spherical harmonics; so maybe grid cell concept is dumb? maybe need to focus
         # on just using cosine weightings, forget about rest?
-        'grid':     'N32',
+        'grid':     grid, # 64 latitudes, i.e. T42 truncation
         'stream':   stream, # product monthly, raw, etc.
         'date':     dates,
         'time':     hours,
@@ -250,15 +248,64 @@ def eraint(params, stream, levtype,
         'target':   filename, # save location
         }
     maxlen = max(map(len, request.keys()))
-    print("REQUEST\n" + "\n".join(f'"{key}": ' + " "*(maxlen - len(key)) + f"{value}" for key,value in request.items()))
     if levs is not None:
         request.update(levelist=levs)
-    # if box is not None:
-    #     request.update(area=box)
-    if stream!='moda':
+    if box is not None:
+        request.update(area=box)
+    if stream=='oper': # TODO: change?
         request.update(hour=hour)
+    print("REQUEST\n" + "\n".join(f'"{key}": ' + " "*(maxlen - len(key)) + f"{value}" for key,value in request.items()))
     # Retrieve DATA with settings
     server = ecmwf.ECMWFDataServer()
     server.retrieve(request)
     return
+
+#------------------------------------------------------------------------------#
+# Merra
+#------------------------------------------------------------------------------#
+def merra():
+    """
+    Download MERRA data. Is this possible?
+
+    Warning
+    -------
+    Not yet implemented.
+    """
+    raise NotImplementedError
+
+def ncar():
+    """
+    Download NCAR CFSL data. Is this possible?
+
+    Warning
+    -------
+    Not yet implemented.
+    """
+    raise NotImplementedError
+
+#------------------------------------------------------------------------------#
+# Satellite data
+#------------------------------------------------------------------------------#
+def satellite():
+    """
+    Download satellite data.
+
+    Warning
+    -------
+    Not yet implemented.
+    """
+    raise NotImplementedError
+
+#------------------------------------------------------------------------------#
+# CMIP5 data
+#------------------------------------------------------------------------------#
+def cmip():
+    """
+    Download CMIP5 model data.
+
+    Warning
+    -------
+    Not yet implemented.
+    """
+    raise NotImplementedError
 

@@ -5,4 +5,4 @@ Wave activity quantification
 
 .. automodsumm:: climpy.waq
    :toctree: api
-   :skip: lead_flatten, lead_unflatten, permute, trail_flatten, trail_unflatten, unpermute, dataclass
+   :skip: lead_flatten, lead_unflatten, trail_flatten, trail_unflatten
