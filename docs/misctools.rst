@@ -5,5 +5,5 @@ Miscellaneous tools
 
 .. automodsumm:: climpy.misctools
    :toctree: api
-   :skip: lead_flatten, lead_unflatten, permute, trail_flatten, trail_unflatten, unpermute
+   :skip: lead_flatten, lead_unflatten, trail_flatten, trail_unflatten
 
