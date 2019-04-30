@@ -18,6 +18,7 @@ import scipy.signal as signal
 import scipy.stats as stats
 import scipy.linalg as linalg
 import scipy.optimize as optimize
+import warnings
 from . import const # as its own module
 from .arraytools import *
 # from . import arraytools as tools
@@ -82,11 +83,11 @@ def rednoise(a, ntime, samples=1, mean=0, stdev=1, nested=False):
     b = (1-a**2)**0.5  # from OA class
 
     # Nested loop
+    # data[1:,i] = a*data[:-1,i] + b*eps[:-1] # won't work because next state function of previous state
     data, shape = trail_flatten(data)
     data[0,:] = 0 # initialize
     for i in range(data.shape[-1]):
         eps = np.random.normal(loc=0, scale=1, size=ntime)
-        # data[1:,i] = a*data[:-1,i] + b*eps[:-1] # won't work because next state function of previous state
         for t in range(1,ntime+1):
             data[t,i] = a*data[t-1,i] + b*eps[t-1]
 
@@ -197,7 +198,7 @@ def linefit(*args, axis=-1, build=False, stderr=False):
         x, y = args
     else:
         raise ValueError("Must input 'x' or 'x, y'.")
-    y, shape = lead_flatten(permute(y, axis))
+    y, shape = lead_flatten(np.moveaxis(y, axis, -1))
     z, v = np.polyfit(x, y.T, deg=1, cov=True)
     z = np.fliplr(z.T) # put a first, b next
     # Prepare output
@@ -221,9 +222,10 @@ def linefit(*args, axis=-1, build=False, stderr=False):
         # Replace regression dimension with singleton (slope)
         z = z[:,1:]
         shape[-1] = 1 # axis now occupied by the slope
-    return unpermute(lead_unflatten(z, shape), axis)
+    return np.moveaxis(lead_unflatten(z, shape), -1, axis)
 
-def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=False):
+def rednoisefit(data, dt=1, corr=False, nlag=None, axis=-1,
+        lag1=False, series=False, verbose=False):
     """
     Calculates a best-fit red noise autocorrelation spectrum.
     Goes up to nlag-timestep autocorrelation.
@@ -232,6 +234,10 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
     ----------
     data : array-like
         The input data.
+    dt : float, optional
+        The timestep for your time series, used to scale the final timescale.
+    corr : bool, optional
+        Whether the input data indicates correlation at a series of lags.
     nlag : int, optional
         Number of lags to use for least-squares fit to red noise spectrum.
         Ignored if `lag1` is ``True``.
@@ -245,43 +251,72 @@ def rednoisefit(data, nlag=None, axis=-1, lag1=False, series=False, verbose=Fals
 
     Returns
     -------
-    timescale : ndarray
+    taus : ndarray
+        If `series` is ``False``, this is an array of timescales. Its shape
+        is the same as `data`, with the time dimension replaced with a singleton
+        dimesion.
+
+        If `series` is ``True``, this is a reconstructed red noise
+        autocorrelation spectrum. Its shape is the same as `data`.
         Present when `series` is ``False``. The *e*-folding timescales.
-    spectrum : ndarray
-        Present when `series` is ``True``. The autocorrelation spectrum.
+    sigmas : ndarray
+        The standard error for the curve fit timescale estimate. If `lag1`
+        is ``True``, this is an array of zeros (no curve fitting was
+        performed).
     """
     # Initial stuff
-    if nlag is None:
+    data, shape = lead_flatten(np.moveaxis(data, axis, -1))
+    shape = [*shape]
+    # First get the autocorrelation
+    if corr: # already was passed!
+        auto = data
+    elif nlag is None:
         raise ValueError(f"Must declare \"nlag\" argument; number of points to use for fit.")
-    data, shape = lead_flatten(permute(data, axis))
-    # if len(time)!=data.shape[-1]:
-    #     raise ValueError(f"Got {len(time)} time values, but {data.shape[-1]} timesteps for data.")
-    # First get the autocorrelation spectrum, and flatten leading dimensions
-    # Dimensions will need to be flat because we gotta loop through each 'time series' and get curve fits.
-    # TODO: Add units support, i.e. a 'dx'
-    # time = time[:nlag+1] # for later
-    _, autocorrs = corr(data, nlag=nlag, axis=-1, verbose=verbose)
-    # Next iterate over the flattened dimensions, and perform successive curve fits
-    ndim = data.shape[-1] if series else 1
-    output = np.empty((autocorrs.shape[0], ndim))
-    time = np.arange(autocorrs.shape[-1]) # time series for curve fit
-    for i in range(autocorrs.shape[0]): # iterate along first dimension; each row is an autocorrelation spectrum
+    else:
+        _, auto = corr(data, nlag=nlag, axis=-1, verbose=verbose)
+    # Shape stuff
+    ne = data.shape[0] # extras
+    nt = data.shape[1]
+    shape1 = [*shape] # copy; this is where sigma is stored
+    shape1[-1] = 1
+    if series:
+        ndim = nt
+    else:
+        ndim = 1
+        shape = shape1 # same size as sigma array
+    # Iterate
+    time = np.arange(0, nt) # time series for curve fit
+    taus = np.empty((ne, ndim))
+    sigmas = np.zeros((ne, 1))
+    for i in range(ne): # iterate along first dimension; each row is an autocorrelation spectrum
+        # Calculate
         if lag1:
-            # dt = time[1]-time[0] # use this for time diff
-            p = [-1/np.log(autocorrs[i,1])] # -ve inverse natural log of lag-1 autocorrelation
+            p = -dt/np.log(auto[i,1]) # -ve inverse natural log of lag-1 autocorrelation
+            s = 0 # no sigma, because no estimate
         else:
-            p, _ = optimize.curve_fit(lambda t,tau: np.exp(-t/tau), time, autocorrs[i,:])
+            p, s = optimize.curve_fit(lambda t,tau: np.exp(-t*dt/tau), time, auto[i,:])
+            s = np.sqrt(np.diag(s)) # standard error from covariance matrix; this is general solution, but in this case have 1D array
+            p, s = p[0], s[0] # take only first param
+        # Return
         if series:
-            output[i,:] = np.exp(-np.arange(ndim)/p[0]) # return the best-fit red noise spectrum
+            taus[i,:] = np.exp(-dt*time/p) # return the best-fit red noise spectrum
         else:
-            output[i,0] = p[0] # add just the timescale
-    return unpermute(lead_unflatten(output, shape), axis)
+            taus[i,0] = p # just store the timescale
+        if not lag1:
+            sigmas[i,0] = s
+    taus = np.moveaxis(lead_unflatten(taus, shape), -1, axis)
+    sigmas = np.moveaxis(lead_unflatten(sigmas, shape1), -1, axis)
+    return taus, sigmas
 
 #------------------------------------------------------------------------------#
 # Correlation analysis
 #------------------------------------------------------------------------------#
-def corr(data1, data2=None, dx=1, nlag=None, lag=None,
-         verbose=False, axis=0):
+def covar(*args, **kwargs):
+    """As in `corr`, but returns the covariance."""
+    return corr(*args, **kwargs, _normalize=False)
+
+def corr(data1, data2=None, dt=1, lag=None, nlag=None,
+         verbose=False, axis=-1, _normalize=True):
     """
     Gets the correlation spectrum at successive lags. For autocorrelation,
     pass only a single ndarray.
@@ -293,16 +328,18 @@ def corr(data1, data2=None, dx=1, nlag=None, lag=None,
     data2 : array-like, optional
         Second input data, if cross-correlation is desired. Must have same
         shape as `data1`.
-    nlag : int, optional
-        Return lag correlation up to `nlag` timesteps.
+    axis : int, optional
+        Axis along which correlation is taken.
     lag : int, optional
         Return correlation at the single lag `lag`.
+    nlag : int, optional
+        Return lag correlation up to `nlag` timesteps.
 
     Returns
     -------
     lags : ndarray
         The lags.
-    autocorrs : ndarray
+    corrs : ndarray
         The correlation as a function of lag.
 
     Notes
@@ -316,15 +353,15 @@ def corr(data1, data2=None, dx=1, nlag=None, lag=None,
     data1 = np.array(data1)
     if data2 is None:
         autocorr = True
-        data2 = data1.copy()
     else:
         autocorr = False
         data2 = np.array(data2)
         if data1.shape != data2.shape:
             raise ValueError(f'Data 1 shape {data1.shape} and Data 2 shape {data2.shape} do not match.')
     naxis = data1.shape[axis] # length
-    if (nlag is None and lag is None) or (nlag is not None and lag is not None):
-        raise ValueError(f"Must specify *either* a lag <lag> or range of lags <nlags>.")
+    # Checks
+    if not (nlag is None) ^ (lag is None): # a wild xor appears!
+        raise ValueError(f"Must specify either of the 'lag' or 'nlag' keyword args.")
     if nlag is not None and nlag>=naxis/2:
         raise ValueError(f"Lag {nlag} must be greater than axis length {naxis}.")
     if verbose:
@@ -332,39 +369,43 @@ def corr(data1, data2=None, dx=1, nlag=None, lag=None,
             print(f"Calculating lag-{lag} autocorrelation.")
         else:
             print(f"Calculating autocorrelation spectrum up to lag {nlag} for axis length {naxis}.")
-    # Standardize maybe
-    var1 = var2 = 1
-    data1 = permute(data1, axis)
-    data2 = permute(data2, axis)
+    # Means and permute
+    std1 = std2 = 1 # use for covariance
+    data1 = np.moveaxis(data1, axis, -1)
     mean1 = data1.mean(axis=-1, keepdims=True) # keepdims for broadcasting in (data1 minus mean)
-    mean2 = data2.mean(axis=-1, keepdims=True)
+    if autocorr:
+        data2, mean2 = data1, mean1
+    else:
+        data2 = np.moveaxis(data2, axis, -1)
+        mean2 = data2.mean(axis=-1, keepdims=True)
+    # Standardize maybe
     if _normalize:
         std1 = data1.std(axis=-1, keepdims=False) # this is divided by the summation term, so should have annihilated axis
-        std2 = data2.std(axis=-1, keepdims=False)
-    else:
-        std1 = std2 = 1 # use for covariance
+        if autocorr:
+            std2 = std1
+        else:
+            std2 = data2.std(axis=-1, keepdims=False)
 
-    # Trivial autocorrelation done, just fill with ones
+    # This is just the variance, or one if autocorrelation mode is enabled
     # corrs = np.ones((*data1.shape[:-1], 1))
     if nlag is None and lag==0:
-        return unpermute(np.sum((data1 - mean1)*(data2 - mean2)) / (naxis*std1*std2), axis)
-    # Autocorrelation on specific lag
+        return np.moveaxis(np.sum((data1 - mean1)*(data2 - mean2))
+            / (naxis*std1*std2), -1, axis)
+    # Correlation on specific lag
     elif nlag is None:
-        lag = np.round(lag*dx).astype(int)
-        return unpermute(np.sum((data1[...,:-lag] - mean1)*(data2[...,lag:] - mean2), axis=-1, keepdims=True)
-            / ((naxis - lag)*std1*std2), axis)
-    # Autocorrelation up to n timestep-lags after 0-correlation
+        lag = np.round(lag*dt).astype(int)
+        return np.moveaxis(np.sum((data1[...,:-lag] - mean1)*(data2[...,lag:] - mean2), axis=-1, keepdims=True)
+            / ((naxis - lag)*std1*std2), -1, axis)
+    # Correlation up to n timestep-lags after 0-correlation
     else:
         # First figure out lags
         # Negative lag means data2 leads data1 (e.g. z corr m, left-hand side
         # is m leads z).
-        nlag = np.round(nlag/dx).astype(int) # e.g. 20 day lag, at synoptic timesteps
+        nlag = np.round(nlag/dt).astype(int) # e.g. 20 day lag, at synoptic timesteps
         if not autocorr:
-            # print('Getting autocorr-sided correlation.')
             n = nlag*2 + 1 # the center point, and both sides
             lags = range(-nlag, nlag+1)
         else:
-            # print('Getting one-sided correlation.')
             n = nlag + 1
             lags = range(0, nlag+1)
         # Get correlation
@@ -377,13 +418,7 @@ def corr(data1, data2=None, dx=1, nlag=None, lag=None,
             else:
                 prod = (data1[...,:-lag] - mean1)*(data2[...,lag:] - mean2)
             corrs[...,i] = prod.sum(axis=-1) / ((naxis - lag)*std1*std2)
-        return np.array(lags)*dx, unpermute(corrs, axis)
-
-def covar(*args, **kwargs):
-    """
-    As in `corr`, but returns the covariance.
-    """
-    return corr(*args, **kwargs, _normalize=False)
+        return np.array(lags)*dt, np.moveaxis(corrs, -1, axis)
 
 #------------------------------------------------------------------------------#
 # Empirical orthogonal functions and related decomps
@@ -449,8 +484,8 @@ def eof(data, neof=5, record=-2, space=-1,
 
     # Turn matrix into *record* by *space*, or 'M' by 'N'
     # 1) Move record dimension to right
-    data  = permute(data, m_dims[0], -1)
-    dataw = permute(dataw, m_dims[0], -1)
+    data  = np.moveaxis(data,  m_dims[0], -1)
+    dataw = np.moveaxis(dataw, m_dims[0], -1)
     # 2) successively move space dimensions to far right, proceeding from the
     # rightmost space dimension to leftmost space dimension so axis numbers
     # do not change
@@ -459,8 +494,8 @@ def eof(data, neof=5, record=-2, space=-1,
         dims -= 1
     dims = np.sort(dims)[::-1]
     for axis in dims:
-        data = permute(data, axis, -1)
-        dataw = permute(dataw, axis, -1)
+        data = np.moveaxis(data, axis, -1)
+        dataw = np.moveaxis(dataw, axis, -1)
     # Only flatten after apply weights (e.g. if have level and latitude dimensoins)
     shape_trail = data.shape[-n_dims.size:]
     data,  _ = trail_flatten(data,  n_dims.size)
@@ -547,14 +582,14 @@ def eof(data, neof=5, record=-2, space=-1,
         dims -= 1 # the dims are *actually* one slot to left, since time was not put back yet
     dims = np.sort(dims)
     for axis in dims:
-        pcs = unpermute(pcs, axis)
-        projs = unpermute(projs, axis)
-        evals = unpermute(evals, axis)
-        nstar = unpermute(nstar, axis)
-    pcs = unpermute(pcs, m_dims[0]+1)
-    projs = unpermute(projs, m_dims[0]+1)
-    evals = unpermute(evals, m_dims[0]+1)
-    nstar = unpermute(nstar, m_dims[0]+1)
+        pcs = np.moveaxis(pcs, -1, axis)
+        projs = np.moveaxis(projs, -1, axis)
+        evals = np.moveaxis(evals, -1, axis)
+        nstar = np.moveaxis(nstar, -1, axis)
+    pcs = np.moveaxis(pcs, -1, m_dims[0]+1)
+    projs = np.moveaxis(projs, -1, m_dims[0]+1)
+    evals = np.moveaxis(evals, -1, m_dims[0]+1)
+    nstar = np.moveaxis(nstar, -1, m_dims[0]+1)
     # And return everything! Beautiful!
     return evals, nstar, projs, pcs
 
@@ -647,7 +682,7 @@ def running(x, w, axis=-1, btype='lowpass',
     n_orig = x.shape[axis]
     if axis<0:
         axis = x.ndim + axis # e.g. if 3 dims, and want to axis dim -1, this is dim number 2
-    x = permute(x, axis)
+    x = np.moveaxis(x, axis, -1)
 
     # Determine weights
     if type(w) is str:
@@ -667,9 +702,9 @@ def running(x, w, axis=-1, btype='lowpass',
     strides = [*x.strides, x.strides[-1]] # repeat striding on end
     x = np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
 
-    # Next 'put back' axis, keep axis=1 as
+    # Next 'put back' axis, keep axis as
     # the 'rolling' dimension which can be averaged by arbitrary weights.
-    x = unpermute(x, axis, select=-2) # want to 'put back' axis -2;
+    x = np.moveaxis(x, -2, axis) # want to 'put back' axis -2;
 
     # Finally take the weighted average
     # Note numpy will broadcast from right, so weights can be scalar or not
@@ -683,7 +718,7 @@ def running(x, w, axis=-1, btype='lowpass',
     n_left  = (n_orig-n_new)//2
     n_right = n_orig - n_new - n_left
     if n_left!=n_right:
-        print('Warning: Data shifted left by one.')
+        warnings.warn('Data shifted left by one.')
     d_left  = pad_value*np.ones((*x.shape[:axis], n_left, *x.shape[axis+1:]))
     d_right = pad_value*np.ones((*x.shape[:axis], n_right, *x.shape[axis+1:]))
     x = np.concatenate((d_left, x, d_right), axis=axis)
@@ -739,7 +774,7 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, pad_value=np.nan):
     n_half = (max(len(a), len(b))-1)//2
     if axis<0:
         axis = x.ndim + axis # necessary for concatenate below
-    x, shape = lead_flatten(permute(x, axis))
+    x, shape = lead_flatten(np.moveaxis(x, axis, -1))
     y = x.copy() # then can filter multiple times
     ym = y.mean(axis=1, keepdims=True)
     y = y-ym # remove mean
@@ -769,7 +804,7 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, pad_value=np.nan):
             y = np.concatenate((y_left, y, y_right), axis=-1)
 
     # Return
-    y = unpermute(lead_unflatten(y, shape), axis)
+    y = np.moveaxis(lead_unflatten(y, shape), -1, axis)
     return y
 
 def response(dx, b, a=1, n=1000, simple=False):
@@ -839,16 +874,16 @@ def harmonics(x, k=4, axis=-1, absval=False): #n=np.inf, kmin=0, kmax=np.inf): #
     for example in removing seasonal cycle or something.
     """
     # Get fourier transform
-    x   = permute(x, axis)
+    x = np.moveaxis(x, axis, -1)
     fft = np.fft.fft(x, axis=-1)
     # Remove frequencies outside range. The FFT will have some error and give
     # non-zero imaginary components, but we can get magnitude or naively cast to real
     fft[...,0] = 0
     fft[...,k+1:-k] = 0
     if absval:
-        y = unpermute(np.abs(np.fft.ifft(fft)), axis)
+        y = np.moveaxis(np.abs(np.fft.ifft(fft)), -1, axis)
     else:
-        y = unpermute(np.real(np.fft.ifft(fft)), axis)
+        y = np.moveaxis(np.real(np.fft.ifft(fft)), -1, axis)
     return y
 
 def highpower(x):
@@ -858,7 +893,7 @@ def highpower(x):
     """
     # Naively remove certain frequencies
     # Should ignore first coefficient, the mean
-    x   = permute(x, axis)
+    x = np.moveaxis(x, axis, -1)
     fft = np.fft.fft(x, axis=-1)
     fftfreqs = np.arange(1, fft.shape[-1]//2) # up to fft.size/2 - 1, units cycles per sample
     # Get indices of n largest values
@@ -1112,7 +1147,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
         N = y1.shape[axis] # update after trim
         if y2 is not None:
             y2 = y2[tuple(s)]
-        print(f'Warning: Trimmed {r} out of {N} points to accommodate length-{nperseg} window.')
+        warnings.warn(f'Trimmed {r} out of {N} points to accommodate length-{nperseg} window.')
 
     # Just use scipy csd
     # 'one-sided' says to only return first symmetric half if data is real
@@ -1129,9 +1164,9 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     # Manual approach
     # Have checked these and results are identical
     # Get copsectrum, quadrature spectrum, and powers for each window
-    y1, shape = lead_flatten(permute(y1, axis)) # shape is shape of *original* data
+    y1, shape = lead_flatten(np.moveaxis(y1, axis, -1)) # shape is shape of *original* data
     if y2 is not None:
-        y2, _ = lead_flatten(permute(y2, axis)) # shape is shape of *original* data
+        y2, _ = lead_flatten(np.moveaxis(y2, axis, -1)) # shape is shape of *original* data
     extra = y1.shape[0]
     pm = nperseg//2
     shape[-1] = pm # new shape
@@ -1149,7 +1184,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     for j in range(extra):
         # Loop through windows
         if np.any(~np.isfinite(y1[j,:])) or (y2 is not None and np.any(~np.isfinite(y2[j,:]))):
-            print('Warning: Skipping array with missing values.')
+            warnings.warn('Skipping array with missing values.')
             continue
         for i,l in enumerate(loc):
             if y2 is None:
@@ -1177,7 +1212,7 @@ def power(y1, y2=None, dx=1, cyclic=False, coherence=False,
     # Helper function
     def unshape(x):
         x = lead_unflatten(x, shape)
-        x = unpermute(x, axis)
+        x = np.moveaxis(x, -1, axis)
         return x
     # Get window averages, reshape, and other stuff
     # NOTE: For the 'real' transform, all values but Nyquist must
@@ -1285,7 +1320,7 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
         s = [slice(None) for i in range(z1.ndim)]
         s[taxis] = slice(None,-r)
         z1 = z1[s] # slice it up
-        print(f'Warning: Trimmed {r} out of {l} points to accommodate length-{nperseg} window.')
+        warnings.warn(f'Trimmed {r} out of {l} points to accommodate length-{nperseg} window.')
         # raise ValueError(f'Window width {nperseg} does not divide axis length {z1.shape[axis]}.')
 
     # Helper function
@@ -1295,8 +1330,8 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     offset = int(taxis<caxis) # TODO: does this work, or is stuff messed up?
     nflat = z1.ndim - 2 # we overwrite z1, so must save this value!
     def reshape(x):
-        x = permute(x, taxis, -1) # put on -1, then will be moved to -2
-        x = permute(x, caxis - offset, -1) # put on -1
+        x = np.moveaxis(x, taxis, -1) # put on -1, then will be moved to -2
+        x = np.moveaxis(x, caxis - offset, -1) # put on -1
         x, shape = lead_flatten(x, nflat) # flatten remaining dimensions
         return x, shape
 
@@ -1358,7 +1393,7 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     for j in range(extra):
         # Missing values handling
         if np.any(~np.isfinite(z1[j,:,:])) or (z2 is not None and np.any(~np.isfinite(z2[j,:,:]))):
-            print('Warning: Skipping array with missing values.')
+            warnings.warn('Skipping array with missing values.')
             continue
         # 2D transform for each window on non-cyclic dimension
         for i,l in enumerate(loc):
@@ -1394,8 +1429,8 @@ def power2d(z1, z2=None, dx=1, dy=1, coherence=False,
     # average without needing to divide by 2
     def unshape(x):
         x = lead_unflatten(x, shape, nflat)
-        x = unpermute(x, caxis - offset) # put caxis back, accounting for if taxis moves to left
-        x = unpermute(x, taxis) # put taxis back
+        x = np.moveaxis(x, -1, caxis - offset) # put caxis back, accounting for if taxis moves to left
+        x = np.moveaxis(x, -1, taxis) # put taxis back
         return x
     # Get window averages, reshape, and other stuff
     # NOTE: For the 'real' transform, all values but Nyquist must
