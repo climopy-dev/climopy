@@ -20,21 +20,30 @@ import numpy as np
 # def test2(data, axis=-1):
 #     # Test the new approach
 #     # TODO: Directly use nditer with more minute control?
-#     output = np.empty(data.shape)
-#     # With class
-#     # for d,o in zip(iter_1d(data, axis), iter_1d(output, axis)):
-#     #     o[...] = f(d)
-#     # return output
-#     # Manually, without class creation
 #     axis = (axis % data.ndim) # e.g. for 3D array, -1 becomes 2
-#     shape = (s if i!=axis else 1 for i,s in enumerate(data.shape))
-#     # shape = (s for i,s in enumerate(data.shape) if i!=axis)
-#     # for idx in np.ndindex(*shape):
-#     for idx in np.ndindex(*shape):
-#         idx = [*idx]
-#         idx[axis] = slice(None)
-#         # idx.insert(axis, slice(None))
+#     output = np.empty(data.shape)
+#     s = slice(None)
+#     s1 = slice(None,axis) # speed!
+#     s2 = slice(axis,None) # speed!
+#     # Fastest yet!
+#     ss = tuple(s for i,s in enumerate(data.shape) if i!=axis)
+#     for idx in np.ndindex(*ss):
+#         idx = (*idx[s1], s, *idx[s2])
 #         output[idx] = f(data[idx])
+#     # Way way slower with class
+#     # for o,d in zip(iter_1d(output), iter_1d(data)):
+#     #     o[:] = f(d)
+#     # Tuple indexing, faster but still not perfect!
+#     # shape = (1 if i==axis else s for i,s in enumerate(data.shape))
+#     # for idx in np.ndindex(*shape):
+#     #     idx = tuple(s if j==axis else i for i,j in enumerate(idx))
+#     #     output[idx] = f(data[idx])
+#     # List indexing, slow!
+#     # shape = (1 if i==axis else s for i,s in enumerate(data.shape))
+#     # for idx in np.ndindex(*shape):
+#     #     idx = [*idx]
+#     #     idx[axis] = slice(None)
+#     #     output[idx] = f(data[idx])
 #     return output
 
 #------------------------------------------------------------------------------#
@@ -43,7 +52,7 @@ import numpy as np
 # in the end... but this approach would allow integration with xarray because
 # would not have to fuck up and rebuild Dataset indices.
 #------------------------------------------------------------------------------#
-# First the class where shape does not change
+# # First the class where shape does not change
 # class iter_1d(object):
 #     """Magical class for iterating over arbitrary axis of arbitrarily-shaped
 #     array. Will return slices of said array."""
@@ -52,21 +61,22 @@ import numpy as np
 #         axis = (axis % data.ndim) # e.g. for 3D array, -1 becomes 2
 #         self.data = data
 #         self.axis = axis
+#         self._s1 = slice(None,axis) # speed!
+#         self._s2 = slice(None)
+#         self._s3 = slice(axis+1,None) # speed!
 #
 #     def __iter__(self):
 #         """Instantiate."""
-#         shape = (s for i,s in enumerate(self.data.shape) if i!=self.axis)
-#         self.iter = np.ndindex(*shape)
+#         s = (s for i,s in enumerate(self.data.shape) if i!=self.axis)
+#         self.iter = np.ndindex(*s)
 #         return self
 #
 #     def __next__(self):
 #         """Get next."""
 #         idx = self.iter.next()
-#         idx = [*idx]
-#         idx.insert(self.axis, slice(None))
-#         return self.data[idx]
-
-# Next approach where shape does change
+#         return self.data[(*idx[self._s1], self._s2, *idx[self._s3])]
+#
+# # Next approach where shape does change
 # class iter_1d_reshape(object):
 #     """Magical class that permutes and stuff."""
 #     def __init__(self, data, axis=-1):
@@ -92,7 +102,7 @@ import numpy as np
 #     def __next__(self):
 #         """Get next."""
 #         self.i += 1
-#         if self.i >= self.view.shape[0]
+#         if self.i >= self.view.shape[0]:
 #             raise StopIteration
 #         return self.data[i,:]
 

@@ -26,5 +26,3 @@ I may also consider merging this project with `MetPy <https://unidata.github.io/
 The dependencies are `xarray <http://xarray.pydata.org/en/stable/>`_, `numpy <http://www.numpy.org/>`_, and `scipy <https://www.scipy.org/>`_.
 To use the (optional) `ECMWF <https://www.ecmwf.int/>`_ `ERA-Interim <https://apps.ecmwf.int/datasets/data/interim-full-daily/levtype=sfc/>`_ downloading tool, you will also need to install the `ECMWF python API <https://confluence.ecmwf.int/display/WEBAPI/Access+ECMWF+Public+Datasets>`_.
 
-For a walkthrough of the features, check out the tutorial. Once you get the hang of the API,
-see the :ref:`Full documentation`.

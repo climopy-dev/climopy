@@ -8,11 +8,22 @@
 .. toctree::
    :hidden:
    :maxdepth: 4
-   :caption: Contents:
+   :caption: Getting Started
 
-   tutorial
-   modules
+   showcase
 
+.. toctree::
+   :hidden:
+   :maxdepth: 4
+   :caption: API Reference
+
+   oa
+   diff
+   gridtools
+   arraytools
+   misctools
+   downloads
+   waq
 
 Indices and tables
 ==================
