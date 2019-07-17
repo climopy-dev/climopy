@@ -30,7 +30,7 @@ To use the (optional) `ECMWF <https://www.ecmwf.int/>`_ `ERA-Interim <https://ap
    :maxdepth: 4
    :caption: Getting Started
 
-   showcase
+   quickstart
 
 .. toctree::
    :hidden:

@@ -74,7 +74,7 @@ keyword arg.
 
 
 
-.. image:: showcase/showcase_7_1.png
+.. image:: quickstart/quickstart_7_1.png
    :width: 450px
    :height: 336px
 
@@ -163,11 +163,11 @@ shown in the panel on the right.
 
 
 
-.. image:: showcase/showcase_13_1.svg
+.. image:: quickstart/quickstart_13_1.svg
 
 
 
-.. image:: showcase/showcase_13_2.svg
+.. image:: quickstart/quickstart_13_2.svg
 
 
 ND
@@ -225,7 +225,7 @@ with a “baroclinic” mode and a “barotropic” mode.
 
 
 
-.. image:: showcase/showcase_15_1.svg
+.. image:: quickstart/quickstart_15_1.svg
 
 
 Spectral analysis
@@ -358,13 +358,13 @@ sample data.
 
 
 
-.. image:: showcase/showcase_20_1.png
+.. image:: quickstart/quickstart_20_1.png
    :width: 450px
    :height: 786px
 
 
 
-.. image:: showcase/showcase_20_2.png
+.. image:: quickstart/quickstart_20_2.png
    :width: 450px
    :height: 786px
 
@@ -418,7 +418,7 @@ sine curves, generated with `~climpy.oa.waves`.
 
 
 
-.. image:: showcase/showcase_23_1.svg
+.. image:: quickstart/quickstart_23_1.svg
 
 
 2D space-time power spectra
@@ -477,7 +477,7 @@ propagating up the *y* axis with negative phase speed.
 
 
 
-.. image:: showcase/showcase_27_3.png
+.. image:: quickstart/quickstart_27_3.png
    :width: 450px
    :height: 560px
 
