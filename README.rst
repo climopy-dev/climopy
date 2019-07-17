@@ -11,6 +11,7 @@ ClimPy
 
 .. include:: docs/index.rst
 
+
 .. |build-status| image:: https://img.shields.io/travis/lukelbd/climpy.svg?style=flat
     :alt: build status
     :target: https://travis-ci.org/lukelbd/climpy
