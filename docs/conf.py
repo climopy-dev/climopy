@@ -57,10 +57,10 @@ extensions = [
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon', # for NumPy style docstrings, instead of reStructred Text
     'sphinx.ext.autosummary',
-    'IPython.sphinxext.ipython_directive',
-    'IPython.sphinxext.ipython_console_highlighting',
     'sphinxcontrib.bibtex', # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html
-    'sphinxext.automodapi', # see: https://sphinx-automodapi.readthedocs.io/en/latest/
+    'sphinxcontrib.automodapi', # see: https://sphinx-automodapi.readthedocs.io/en/latest/
+    # 'IPython.sphinxext.ipython_directive',
+    # 'IPython.sphinxext.ipython_console_highlighting',
 ]
 
 # Generate stub pages whenever ::autosummary directive encountered
