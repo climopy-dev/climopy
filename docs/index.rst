@@ -9,7 +9,7 @@ ClimPy
 This package includes utilities for analyzing and processing geophysical
 datasets, including several common statistical and
 objective analysis techniques, formulas for derived physical quantities,
-and physical constants.
+and physical constants. The Github page is `here <https://github.com/lukelbd/climpy>`__.
 
 Many atmospheric scientists may already have scripts for data analysis tasks lying around. But this package is meant to be a **standardized**, **well-documented**, **flexible** consolidation of these tasks.
 
