@@ -1,14 +1,10 @@
 # Minimal makefile for Sphinx documentation
-#
-
 # You can set these variables from the command line.
-SPHINXOPTS    =
-SPHINXBUILD   = sphinx-build
-SPHINXPROJ    = ClimPy
-SOURCEDIR     = .
-BUILDDIR      = ../../climpy-doc
-PDFBUILDDIR   = /tmp
-PDF           = ../manual.pdf
+SPHINXOPTS  =
+SPHINXBUILD = sphinx-build
+SPHINXPROJ  = ClimPy
+SOURCEDIR   = .
+BUILDDIR    = _build
 
 .PHONY: help clean Makefile
 
@@ -29,9 +25,3 @@ clean:
 %: Makefile
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-latexpdf:
-	@$(SPHINXBUILD) -M latex "$(SPHINXOPTS)" "$(PDFBUILDDIR)"/latex
-	@echo "Running LaTeX files through pdflatex..."
-	make -C "$(PDFBUILDDIR)"/latex all-pdf
-	cp "$(PDFBUILDDIR)"/latex/*.pdf $(PDF)
-	@echo "pdflatex finished; see $(PDF)"
