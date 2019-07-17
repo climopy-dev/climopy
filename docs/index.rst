@@ -11,7 +11,7 @@ datasets, including several common statistical and
 objective analysis techniques, formulas for derived physical quantities,
 and physical constants. The Github page is `here <https://github.com/lukelbd/climpy>`__.
 
-Many atmospheric scientists may already have scripts for data analysis tasks lying around. But this package is meant to be a **standardized**, **well-documented**, **flexible** consolidation of these tasks.
+Many atmospheric scientists may already have scripts for data analysis tasks lying around. But this package is meant to be a standardized, well-documented, flexible consolidation of these tasks.
 
 This is a work-in-progress -- currently, there is no formal release
 on PyPi. For the time being, you may install directly from Github using:
