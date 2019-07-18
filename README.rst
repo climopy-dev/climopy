@@ -9,12 +9,12 @@ ClimPy
 
 |build-status| |coverage| |docs| |license| |pr-welcome|
 
-This package includes utilities for analyzing and processing geophysical
-datasets, including several common statistical and
-objective analysis techniques, formulas for derived physical quantities,
-and physical constants. The documentation is `published on readthedocs <https://climpy.readthedocs.io>`__.
+This package is meant to help geophysical scientists complete a variety of analysis tasks.
+It provides handy functions for objective and statisical analysis methods, formulas for deriving physical quantities, and utilities for downloading data.
+The documentation is `published on readthedocs <https://climpy.readthedocs.io>`__.
 
-Many atmospheric scientists may already have scripts for data analysis tasks lying around. But this package is meant to be a standardized, well-documented consolidation of these tasks.
+Many atmospheric scientists may already have scripts for data analysis tasks lying around. But this is meant to be a standardized, user-friendly consolidation of these tasks.
+
 
 This is a work-in-progress -- currently, there is no formal release
 on PyPi. For the time being, you may install directly from Github using:
