@@ -3,7 +3,7 @@ from setuptools import setup
 # https://stackoverflow.com/a/1857436/4970632
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
-    name='ClimPy',
+    name='climpy',
     url='https://github.com/lukelbd/climpy',
     author='Luke Davis',
     author_email='lukelbd@gmail.com',
