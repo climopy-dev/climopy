@@ -6,6 +6,8 @@ n-dimensional arrays. Generally you won't need to use them, but they are
 public just in case.
 """
 import numpy as np
+
+
 #------------------------------------------------------------------------------#
 # Benchmarks
 #------------------------------------------------------------------------------#
@@ -20,22 +22,32 @@ import numpy as np
 # def test2(data, axis=-1):
 #     # Test the new approach
 #     # TODO: Directly use nditer with more minute control?
-#     output = np.empty(data.shape)
-#     # With class
-#     # for d,o in zip(iter_1d(data, axis), iter_1d(output, axis)):
-#     #     o[...] = f(d)
-#     # return output
-#     # Manually, without class creation
 #     axis = (axis % data.ndim) # e.g. for 3D array, -1 becomes 2
-#     shape = (s if i!=axis else 1 for i,s in enumerate(data.shape))
-#     # shape = (s for i,s in enumerate(data.shape) if i!=axis)
-#     # for idx in np.ndindex(*shape):
-#     for idx in np.ndindex(*shape):
-#         idx = [*idx]
-#         idx[axis] = slice(None)
-#         # idx.insert(axis, slice(None))
+#     output = np.empty(data.shape)
+#     s = slice(None)
+#     s1 = slice(None,axis) # speed!
+#     s2 = slice(axis,None) # speed!
+#     # Fastest yet!
+#     ss = tuple(s for i,s in enumerate(data.shape) if i!=axis)
+#     for idx in np.ndindex(*ss):
+#         idx = (*idx[s1], s, *idx[s2])
 #         output[idx] = f(data[idx])
+#     # Way way slower with class
+#     # for o,d in zip(iter_1d(output), iter_1d(data)):
+#     #     o[:] = f(d)
+#     # Tuple indexing, faster but still not perfect!
+#     # shape = (1 if i==axis else s for i,s in enumerate(data.shape))
+#     # for idx in np.ndindex(*shape):
+#     #     idx = tuple(s if j==axis else i for i,j in enumerate(idx))
+#     #     output[idx] = f(data[idx])
+#     # List indexing, slow!
+#     # shape = (1 if i==axis else s for i,s in enumerate(data.shape))
+#     # for idx in np.ndindex(*shape):
+#     #     idx = [*idx]
+#     #     idx[axis] = slice(None)
+#     #     output[idx] = f(data[idx])
 #     return output
+
 
 #------------------------------------------------------------------------------#
 # Class
@@ -43,7 +55,7 @@ import numpy as np
 # in the end... but this approach would allow integration with xarray because
 # would not have to fuck up and rebuild Dataset indices.
 #------------------------------------------------------------------------------#
-# First the class where shape does not change
+# # First the class where shape does not change
 # class iter_1d(object):
 #     """Magical class for iterating over arbitrary axis of arbitrarily-shaped
 #     array. Will return slices of said array."""
@@ -52,21 +64,22 @@ import numpy as np
 #         axis = (axis % data.ndim) # e.g. for 3D array, -1 becomes 2
 #         self.data = data
 #         self.axis = axis
+#         self._s1 = slice(None,axis) # speed!
+#         self._s2 = slice(None)
+#         self._s3 = slice(axis+1,None) # speed!
 #
 #     def __iter__(self):
 #         """Instantiate."""
-#         shape = (s for i,s in enumerate(self.data.shape) if i!=self.axis)
-#         self.iter = np.ndindex(*shape)
+#         s = (s for i,s in enumerate(self.data.shape) if i!=self.axis)
+#         self.iter = np.ndindex(*s)
 #         return self
 #
 #     def __next__(self):
 #         """Get next."""
 #         idx = self.iter.next()
-#         idx = [*idx]
-#         idx.insert(self.axis, slice(None))
-#         return self.data[idx]
-
-# Next approach where shape does change
+#         return self.data[(*idx[self._s1], self._s2, *idx[self._s3])]
+#
+# # Next approach where shape does change
 # class iter_1d_reshape(object):
 #     """Magical class that permutes and stuff."""
 #     def __init__(self, data, axis=-1):
@@ -92,13 +105,11 @@ import numpy as np
 #     def __next__(self):
 #         """Get next."""
 #         self.i += 1
-#         if self.i >= self.view.shape[0]
+#         if self.i >= self.view.shape[0]:
 #             raise StopIteration
 #         return self.data[i,:]
 
-#------------------------------------------------------------------------------#
-# Functions
-#------------------------------------------------------------------------------#
+
 def lead_flatten(data, nflat=None):
     """
     Flattens *leading* dimensions onto single dimension.
@@ -113,11 +124,13 @@ def lead_flatten(data, nflat=None):
     """
     shape = [*data.shape]
     if nflat is None:
-        nflat = data.ndim - 1 # all but last dimension
-    if nflat<=0: # just apply singleton dimension
-        return data[None,...], shape
-    data = np.reshape(data, (np.prod(data.shape[:nflat]).astype(int), *data.shape[nflat:]), order='C')
-    return data, shape # make column major
+        nflat = data.ndim - 1  # all but last dimension
+    if nflat <= 0:  # just apply singleton dimension
+        return data[None, ...], shape
+    data = np.reshape(data, (np.prod(data.shape[:nflat]).astype(
+        int), *data.shape[nflat:]), order='C')
+    return data, shape  # make column major
+
 
 def lead_unflatten(data, shape, nflat=None):
     """
@@ -134,15 +147,18 @@ def lead_unflatten(data, shape, nflat=None):
         choose rank-1, i.e. enough to restore from a rank 2 array.
     """
     if nflat is None:
-        nflat = len(shape) - 1 # all but last dimension
-    if nflat<=0: # we artificially added a singleton dimension; remove it
-        return data[0,...]
+        nflat = len(shape) - 1  # all but last dimension
+    if nflat <= 0:  # we artificially added a singleton dimension; remove it
+        return data[0, ...]
     if data.shape[0] != np.prod(shape[:nflat]):
-        raise ValueError(f'Number of leading elements {data.shape[0]} does not match leading shape {shape[nflat:]}.')
-    if not all(s1==s2 for s1,s2 in zip(data.shape[1:], shape[nflat:])):
-        raise ValueError(f'Trailing dimensions on data, {data.shape[1:]}, do not match trailing dimensions on new shape, {shape[nflat:]}.')
+        raise ValueError(
+            f'Number of leading elements {data.shape[0]} does not match leading shape {shape[nflat:]}.')
+    if not all(s1 == s2 for s1, s2 in zip(data.shape[1:], shape[nflat:])):
+        raise ValueError(
+            f'Trailing dimensions on data, {data.shape[1:]}, do not match trailing dimensions on new shape, {shape[nflat:]}.')
     data = np.reshape(data, shape, order='C')
     return data
+
 
 def trail_flatten(data, nflat=None):
     """
@@ -164,13 +180,17 @@ def trail_flatten(data, nflat=None):
     """
     shape = [*data.shape]
     if nflat is None:
-        nflat = data.ndim - 1 # all but last dimension
-    if nflat<=0: # just add singleton dimension
-        return data[...,None], shape
+        nflat = data.ndim - 1  # all but last dimension
+    if nflat <= 0:  # just add singleton dimension
+        return data[..., None], shape
     if nflat is None:
-        nflat = data.ndim - 1 # all but last dimension
-    data = np.reshape(data, (*data.shape[:-nflat], np.prod(data.shape[-nflat:]).astype(int)), order='F')
+        nflat = data.ndim - 1  # all but last dimension
+    data = np.reshape(data,
+                      (*data.shape[:-nflat],
+                       np.prod(data.shape[-nflat:]).astype(int)),
+                      order='F')
     return data, shape
+
 
 def trail_unflatten(data, shape, nflat=None):
     """
@@ -187,13 +207,14 @@ def trail_unflatten(data, shape, nflat=None):
         choose rank-1, i.e. enough to restore from a rank 2 array.
     """
     if nflat is None:
-        nflat = len(shape)-1 # all but last dimension
-    if nflat<=0:
-        return data[...,0]
+        nflat = len(shape) - 1  # all but last dimension
+    if nflat <= 0:
+        return data[..., 0]
     if data.shape[-1] != np.prod(shape[-nflat:]):
-        raise ValueError(f'Number of trailing elements {data.shape[-1]} does not match trailing shape {shape[nflat:]}.')
-    if not all(s1==s2 for s1,s2 in zip(data.shape[:-1], shape[:-nflat])):
-        raise ValueError(f'Leading dimensions on data, {data.shape[:-1]}, do not match leading dimensions on new shape, {shape[:-nflat]}.')
+        raise ValueError(
+            f'Number of trailing elements {data.shape[-1]} does not match trailing shape {shape[nflat:]}.')
+    if not all(s1 == s2 for s1, s2 in zip(data.shape[:-1], shape[:-nflat])):
+        raise ValueError(
+            f'Leading dimensions on data, {data.shape[:-1]}, do not match leading dimensions on new shape, {shape[:-nflat]}.')
     data = np.reshape(data, shape, order='F')
     return data
-

@@ -7,12 +7,11 @@
 ClimPy
 ======
 
-This package includes utilities for analyzing and processing datasets
-related to atmospheric science, including several common statistical and
-objective analysis techniques, formulas for derived physical quantities,
-and physical constants.
+|build-status| |coverage| |docs| |license| |pr-welcome|
 
-Many atmospheric scientists may already have scripts for data analysis tasks lying around. But this package is meant to be a **user-friendly**, **well-documented**, **flexible** consolidation of these tasks.
+This package is meant to help climate scientists complete a variety of data analysis tasks.
+It provides handy functions for objective and statistical analysis methods, deriving physical quantities, and downloading archived observational and model data.
+The Github page is `here <https://github.com/lukelbd/climpy>`__.
 
 This is a work-in-progress -- currently, there is no formal release
 on PyPi. For the time being, you may install directly from Github using:
@@ -21,10 +20,33 @@ on PyPi. For the time being, you may install directly from Github using:
 
    pip install git+https://github.com/lukelbd/climpy.git#egg=climpy
 
-I may also consider merging this project with `MetPy <https://unidata.github.io/MetPy/latest/index.html>`_ at some point. If you are an atmospheric scientist, you should check that project out -- it's awesome. But for the time being, it cannot perform many of the data analysis tasks used by *climate* scientists.
+I may consider merging this project with `MetPy <https://unidata.github.io/MetPy/latest/index.html>`_ eventually. But for the time being, MetPy cannot perform many of the objective and statistical analysis tasks used by climate scientists.
 
 The dependencies are `xarray <http://xarray.pydata.org/en/stable/>`_, `numpy <http://www.numpy.org/>`_, and `scipy <https://www.scipy.org/>`_.
 To use the (optional) `ECMWF <https://www.ecmwf.int/>`_ `ERA-Interim <https://apps.ecmwf.int/datasets/data/interim-full-daily/levtype=sfc/>`_ downloading tool, you will also need to install the `ECMWF python API <https://confluence.ecmwf.int/display/WEBAPI/Access+ECMWF+Public+Datasets>`_.
 
-For a walkthrough of the features, check out the tutorial. Once you get the hang of the API,
-see the :ref:`Full documentation`.
+.. |build-status| image:: https://img.shields.io/travis/lukelbd/climpy.svg?style=flat
+    :alt: build status
+    :target: https://travis-ci.org/lukelbd/climpy
+
+.. |coverage| image:: https://codecov.io/gh/lukelbd/climpy.org/branch/master/graph/badge.svg
+    :alt: coverage
+    :target: https://codecov.io/gh/lukelbd/climpy.org
+
+.. |license| image:: https://img.shields.io/github/license/lukelbd/climpy.svg
+   :alt: license
+   :target: LICENSE.txt
+
+.. |docs| image:: https://readthedocs.org/projects/climpy/badge/?version=latest
+    :alt: docs
+    :target: https://climpy.readthedocs.io/en/latest/?badge=latest
+
+.. |pr-welcome| image:: https://img.shields.io/badge/PR-Welcome-%23FF8300.svg?
+   :alt: PR welcome
+   :target: https://git-scm.com/book/en/v2/GitHub-Contributing-to-a-Project
+
+..
+.. |quality| image:: https://api.codacy.com/project/badge/Grade/931d7467c69c40fbb1e97a11d092f9cd
+   :alt: quality
+   :target: https://www.codacy.com/app/lukelbd/proplot?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=lukelbd/proplot&amp;utm_campaign=Badge_Grade
+
