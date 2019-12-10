@@ -276,10 +276,10 @@ def rednoisefit(data, dt=1, corr=False, nlag=None, axis=-1,
     elif nlag is None:
         raise ValueError(f"Must declare \"nlag\" argument; number of points to use for fit.")
     else:
-        _, auto = corr(data, nlag=nlag, axis=-1, verbose=verbose)
+        _, auto = globals()['corr'](data, nlag=nlag, axis=-1, verbose=verbose)
     # Shape stuff
-    ne = data.shape[0] # extras
-    nt = data.shape[1]
+    ne = auto.shape[0] # extras
+    nt = auto.shape[1]
     shape1 = [*shape] # copy; this is where sigma is stored
     shape1[-1] = 1
     if series:
@@ -293,6 +293,7 @@ def rednoisefit(data, dt=1, corr=False, nlag=None, axis=-1,
     sigmas = np.zeros((ne, 1))
     for i in range(ne): # iterate along first dimension; each row is an autocorrelation spectrum
         # Calculate
+        # print(data.shape, auto.shape, auto[i,:].shape, time.shape)
         if lag1:
             p = -dt/np.log(auto[i,1]) # -ve inverse natural log of lag-1 autocorrelation
             s = 0 # no sigma, because no estimate
@@ -628,10 +629,9 @@ def rolling(*args, **kwargs):
     """Alias for `running`."""
     return running(*args, **kwargs)
 
-def running(x, w, axis=-1, btype='lowpass',
-                  pad=True, pad_value=np.nan, **kwargs):
+def running(x, w, axis=-1, pad=True, pad_value=np.nan, **kwargs):
     """
-    Apply running filter along axis.
+    Apply running average to array.
 
     Parameters
     ----------
@@ -645,8 +645,6 @@ def running(x, w, axis=-1, btype='lowpass',
         Whether to pad the edges of axis back to original size.
     pad_value : float, optional
         Pad value.
-    btype : {'lowpass', 'highpass', 'bandpass'}, optional
-        Type of filter to apply.
 
     Returns
     -------
@@ -655,7 +653,7 @@ def running(x, w, axis=-1, btype='lowpass',
 
     Other parameters
     ----------------
-    kwargs
+    **kwargs
         Remaining kwargs passed to windowing function.
 
     Todo

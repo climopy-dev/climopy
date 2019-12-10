@@ -220,7 +220,7 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=
 #------------------------------------------------------------------------------#
 def deriv_uneven(*args, **kwargs):
     """Alias for `deriv1_uneven`."""
-    return deriv_uneven(*args, **kwargs)
+    return deriv1_uneven(*args, **kwargs)
 
 def deriv1_uneven(x, y, axis=0, keepedges=False):
     r"""
