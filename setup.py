@@ -13,9 +13,9 @@ setup(
     # Needed for dependencies
     install_requires=['numpy', 'matplotlib', 'xarray', 'scipy'],
     # *Strongly* suggested for sharing
-    version='0.1',
+    version='0.0.2',
     # The license can be anything you like
-    license='LICENSE.txt',
-    description='Tricked out matplotlib wrapper for making clear, compact, publication-quality graphics quickly and easily.',
+    license='MIT',
+    description='Toolset for working with climatological data.',
     long_description=open('README.rst').read(),
 )
