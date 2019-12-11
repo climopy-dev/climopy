@@ -1,0 +1,6 @@
+# Requirements
+# For now this is not version specific
+numpy
+matplotlib
+xarray
+scipy
