@@ -47,21 +47,28 @@ release = ''
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
+    'IPython.sphinxext.ipython_console_highlighting',
+    'IPython.sphinxext.ipython_directive',  # for ipython highlighting
     'sphinx.ext.autodoc',
     'sphinx.ext.doctest',
-    'sphinx.ext.intersphinx',
+    'sphinx.ext.extlinks',  # for :pr:, :issue:, :commit:
+    'sphinx.ext.autosectionlabel',  # use :ref:`Heading` for any heading
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
-    'sphinx.ext.githubpages',
-    'sphinx.ext.napoleon', # for NumPy style docstrings, instead of reStructred Text
     'sphinx.ext.autosummary',
+    'sphinx.ext.napoleon', # for NumPy style docstrings, instead of reStructred Text
+    'sphinx.ext.intersphinx',  # external links
     'sphinxcontrib.bibtex', # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html
-    'sphinxcontrib.automodapi', # see: https://sphinx-automodapi.readthedocs.io/en/latest/
-    # 'IPython.sphinxext.ipython_directive',
-    # 'IPython.sphinxext.ipython_console_highlighting',
+    'sphinx_automodapi.automodapi',  # see: https://github.com/lukelbd/sphinx-automodapi/tree/proplot-mods # noqa
 ]
+
+extlinks = {
+    'issue': ('https://github.com/lukelbd/proplot/issues/%s', 'GH#'),
+    'commit': ('https://github.com/lukelbd/proplot/commit/%s', '@'),
+    'pr': ('https://github.com/lukelbd/proplot/pull/%s', 'GH#'),
+}
 
 # Generate stub pages whenever ::autosummary directive encountered
 # This way don't have to call sphinx-autogen manually

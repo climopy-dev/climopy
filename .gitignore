@@ -3,38 +3,37 @@
 .vimsession
 .*.sw[a-z]
 
-# Ignore sample data
+# Sample data
 data
 
-# Docs data
-_*
-api
+# Development
+libby
+
+# Local docs builds
+docs/api
+docs/_build
 
 # Other stuff
 trash
 *.pdf
-empty*
-sample*
-notes*
 
-# Python extras
-__pycache__
-.*.pyc
-*.pyc
-*.egg-info
-.eggs
+# PyPi stuff
 build
 dist
+.eggs
+*.egg-info
 
+# Notebook stuff
+.ipynb_checkpoints
 
-# Ignore notebooks for now
-*.ipynb
+# Python extras
+*.log
+*.pyc
+.*.pyc
+__pycache__
 
 # OS generated files
 .DS_Store
 .DS_Store?
 ._*
-.Spotlight-V100
 .Trashes
-ehthumbs.db
-Thumbs.db
