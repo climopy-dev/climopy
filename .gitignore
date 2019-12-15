@@ -6,6 +6,9 @@
 # Sample data
 data
 
+# Development
+libby
+
 # Local docs builds
 docs/api
 docs/_build
