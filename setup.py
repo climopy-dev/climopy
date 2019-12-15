@@ -1,21 +1,55 @@
-from setuptools import setup
 # For including non-python data, see:
 # https://stackoverflow.com/a/1857436/4970632
+from setuptools import setup
+from os.path import exists
+
+with open('requirements.txt') as f:
+    install_req = [req.strip() for req in f.read().split('\n')]
+install_req = [req for req in install_req if req and req[0] != '#']
+
+classifiers = [
+    'License :: OSI Approved :: MIT License',
+    'Operating System :: OS Independent',
+    'Intended Audience :: Science/Research',
+    'Programming Language :: Python :: 3 :: Only',
+    'Programming Language :: Python :: 3.6',
+    'Programming Language :: Python :: 3.7',
+    'Programming Language :: Python :: 3.8',
+]
+
+if exists('README.rst'):  # when does this not exist?
+    with open('README.rst') as f:
+        long_description = f.read()
+else:
+    long_description = ''
+
 setup(
-    # Needed to silence warnings (and to be a worthwhile package)
+    url='https://lukelbd.github.io/climpy',
     name='climpy',
-    url='https://github.com/lukelbd/climpy',
     author='Luke Davis',
     author_email='lukelbd@gmail.com',
-    # Package stuff
-    # Also include package data
+    maintainer='Luke Davis',
+    maintainer_email='lukelbd@gmail.com',
+    python_requires='>=3.6.0',
+    project_urls={
+        'Bug Tracker': 'https://github.com/lukelbd/climpy/issues',
+        'Documentation': 'https://climpy.readthedocs.io',
+        'Source Code': 'https://github.com/lukelbd/climpy'
+    },
     packages=['climpy'],
-    # Needed for dependencies
-    install_requires=['numpy', 'matplotlib', 'xarray', 'scipy'],
-    # *Strongly* suggested for sharing
-    version='0.1',
-    # The license can be anything you like
-    license='LICENSE.txt',
-    description='Tricked out matplotlib wrapper for making clear, compact, publication-quality graphics quickly and easily.',
-    long_description=open('README.rst').read(),
+    classifiers=classifiers,
+    # normally uses MANIFEST.in but setuptools_scm auto-detects tracked files
+    include_package_data=True,
+    install_requires=install_req,
+    license='MIT',
+    description='A data analysis toolkit for climate scientists.',
+    long_description=long_description,
+    long_description_content_type='text/x-rst',
+    use_scm_version={'version_scheme': 'post-release',
+                     'local_scheme': 'dirty-tag'},
+    setup_requires=[
+        'setuptools_scm',
+        'setuptools>=30.3.0',
+        'setuptools_scm_git_archive',
+    ],
 )
