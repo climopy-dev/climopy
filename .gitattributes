@@ -1,0 +1,3 @@
+# See: https://github.com/kynan/nbstripout
+*.ipynb filter=nbstripout
+*.ipynb diff=ipynb
