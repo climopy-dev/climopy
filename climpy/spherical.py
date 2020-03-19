@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Various geographic utilities. Includes calculus on spherical geometry.
+Various utilities for mathematical operations on the sphere.
 """
 import numpy as np
-from . import const
+from . import const, diff
 
 
 def geopad(lon, lat, data, nlon=1, nlat=0):
@@ -63,7 +63,7 @@ def geomean(
 
     Todo
     ----
-    Allow applying land/ocean mask as part of module functionality.
+    Allow applying land or ocean mask as part of module functionality.
     """
     # Parse input
     box = (None, None, None, None)
@@ -111,21 +111,76 @@ def geomean(
         return ave
 
 
-def haversine(lon1, lat1, lon2, lat2):
+def geogradient(lon, lat, data):  # noqa: U100
     """
-    Calculate the great circle distance between two points
-    on the earth (specified in decimal degrees)
+    Calculate gradient in spherical coordinates.
+    """
+    return NotImplementedError
+
+
+def geolaplacian(lon, lat, data, accuracy=4):
+    r"""
+    Calculate Laplacian in spherical coordinates.
 
     Parameters
     ----------
-    lon1, lat1, lon2, lat2 : ndarrays
-        Arrays of longitude and latitude in degrees. If one pair is scalar,
-        distances are calculated between the scalar pair and each element of
-        the non-scalar pair. Otherwise, pair shapes must be identical.
+    lon, lat : ndarray
+        The longitude and latitude.
+    data : ndarray
+        The data.
+
+    Notes
+    -----
+    The solved equation is as follows:
+
+    .. math::
+
+        \nabla^2 = \frac{\cos^2(\phi)}{a^2}\frac{\partial^2}{\partial^2\theta} + \frac{\cos(\phi)}{a^2}\frac{\partial}{\partial\phi}\frac{\cos\phi\partial}{\partial\phi}
+    """  # noqa
+    # Setup
+    npad = accuracy // 2  # need +/-1 for O(h^2) approx, +/-2 for O(h^4), etc.
+    data = geopad(lon, lat, data, nlon=npad, nlat=npad)[2]  # pad lons/lats
+    phi, theta = lat * np.pi / 180, lon * np.pi / 180  # from north pole
+
+    # Execute
+    h_phi = phi[2] - phi[1]
+    h_theta = theta[2] - theta[1]
+    phi = phi[None, ...]
+    for i in range(2, data.ndim):
+        phi = phi[..., None]
+    laplacian = (
+        (1 / (const.a ** 2 * np.cos(phi) ** 2))
+        * diff.deriv2(
+            h_theta, data[:, npad:-npad, ...], axis=0, accuracy=accuracy
+        )  # unpad latitudes
+        + (-np.tan(phi) / (const.a ** 2))
+        * diff.deriv1(
+            h_phi, data[npad:-npad, ...], axis=1, accuracy=accuracy
+        )  # unpad longitudes
+        + (1 / (const.a ** 2))
+        * diff.deriv2(
+            h_phi, data[npad:-npad, ...], axis=1, accuracy=accuracy
+        )  # unpad longitudes
+    )  # no axis rolling required here; the deriv schemes do that
+    return laplacian
+
+
+def haversine(lon1, lat1, lon2, lat2):
+    """
+    Calculate the great circle distance between two points
+    on Earth, specified in degrees.
+
+    Parameters
+    ----------
+    lon1, lat1, lon2, lat2 : ndarray
+        Coordinate arrays for the first and second point(s). If one pair is
+        scalar, distances are calculated between the scalar pair and each
+        element of the non-scalar pair. Otherwise, the pair shapes must
+        be identical.
 
     Returns
     -------
-    d : ndarray
+    ndarray
         Distances in km.
     """
     # Earth radius in km
@@ -142,4 +197,3 @@ def haversine(lon1, lat1, lon2, lat2):
         + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
     ))
     return km
-

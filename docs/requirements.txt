@@ -2,7 +2,7 @@
 # NOTE: The automodapi module imports module, so the website 'build' process
 # has same requirements as module itself! The version choices are somewhat random.
 sphinxcontrib-bibtex==0.4.2
-sphinxcontrib-automodapi==0.2
+git+https://github.com/lukelbd/sphinx-automodapi@v0.6.proplot-mods
 matplotlib==3.0
 ipython==7.0.0
 xarray==0.12.1

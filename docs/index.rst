@@ -32,15 +32,11 @@ To use the (optional) `ECMWF <https://www.ecmwf.int/>`_ `ERA-Interim <https://ap
 .. toctree::
    :hidden:
    :maxdepth: 4
-   :caption: API Reference
+   :caption: Reference
 
-   oa
-   diff
-   gridtools
-   arraytools
-   misctools
-   downloads
-   waq
+   api
+   changelog
+   authors
 
 Indices and tables
 ==================
