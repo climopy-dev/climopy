@@ -733,7 +733,7 @@ def running(x, w, axis=-1, pad=True, pad_value=np.nan):
     axis : int, optional
         Axis to filter.
     pad : bool, optional
-        Whether to pad the edges of axis back to original size.
+        Whether to pad the edgas of axis back to original size.
     pad_value : float, optional
         Pad value.
 
@@ -1219,46 +1219,44 @@ def power(
 
     Note
     ----
-    The scaling conventions, and definitions of coefficients, change between
-    references and packages! Libby's notes defines variance equals one half
-    the sum of right-hand square coefficients, but numpy package defines
-    variance as sum of square of all coefficients (or twice the right-hand
-    coefficients). Also complex DFT convention in general seems to require
-    normalizing by 1/N after FFT.
+    The scaling conventions coefficient definitions change between
+    references and packages! Elizabeth Barnes's `notes \
+<http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`__
+    define variance as equal to one half the sum of right-hand square
+    coefficients, but the numpy tools define variance as the sum of squares
+    of all coefficients (or twice the right-hand coefficients). Complex
+    DFT convention in general `seems to require \
+<https://stackoverflow.com/a/19976162/4970632>`__
+    normalizing by 1/N after the FFT.
 
-    See:
-
-      * https://stackoverflow.com/a/19976162/4970632
-      * https://stackoverflow.com/a/15148195/4970632
-
-    Note that windowing reduces the power amplitudes, and results in loss
-    of information! With 'boxcar' window, summing the components gives you
-    the exact variance. Another issue is the necessary amplitude 'correction'
-    factor varies depending on frequency and the signal analysed.
-
-    Better perhaps to follow example of Randel and Held and smooth in
-    frequency space with a Gaussian filter (running average with window
-    summing to 1; should not reduce power).
+    Also note that windowing reduces the power amplitudes and results in loss
+    of information! The necessary amplitude correction factor also varies
+    depending on the frequency and the signal analysed.
+    It is perhaps to follow the example of :cite:`1991:randel` and smooth in
+    frequency space with a Gaussian filter, which should not reduce power.
 
     Example
     -------
-    Below proves that extent of power reduction due to windowing
+    The below example shows that the extent of power reduction due to windowing
     depends on the signal.
 
-    .. ipython:: python
+    .. code-block:: python
 
         import numpy as np
         import climpy
         w = climpy.window('hanning', 200)
-        y1 = np.sin(np.arange(0,8*np.pi-0.01,np.pi/25)) # simple signal
+        y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
         y2 = np.random.rand(200) # complex signal
         for y in (y1, y2):
-            yvar = ((y-y.mean())**2).mean()
-            Y = (np.abs(np.fft.fft(y)[1:]/y.size)**2).sum()
-            Yw = (np.abs(np.fft.fft(y*w)[1:]/y.size)**2).sum()
-            print('Boxcar', Y/yvar)
-            print('Hanning', Yw/yvar)
+            yvar = ((y - y.mean()) ** 2).mean()
+            Y = (np.abs(np.fft.fft(y)[1:] / y.size) ** 2).sum()
+            Yw = (np.abs(np.fft.fft(y * w)[1:] / y.size) ** 2).sum()
+            print('Boxcar', Y / yvar)
+            print('Hanning', Yw / yvar)
 
+    References
+    ----------
+    .. bibliography:: ../power.bib
     """
     # Initial stuff
     N = y1.shape[axis]  # window count
@@ -1412,7 +1410,7 @@ def power2d(
 ):
     """
     Performs 2-d spectral decomposition, with windowing along only *one*
-    dimension, in style of Randel and Held 1991. Therefore assumption is we
+    dimension, in style of :cite:`1991:randel`. Therefore assumption is we
     have *cyclic* data along one dimension, the 'x' dimension.
 
     Parameters
@@ -1455,6 +1453,10 @@ def power2d(
     Note
     ----
     See notes for `power`.
+
+    References
+    ----------
+    .. bibliography:: ../power.bib
     """
     # Checks
     taxis, caxis = axes
