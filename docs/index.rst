@@ -19,6 +19,7 @@ are incomplete, and undiscovered bugs may exist.
 
    install
    why
+   usage
 
 .. toctree::
    :maxdepth: 1
