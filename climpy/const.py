@@ -1,8 +1,10 @@
 """
 A variety of physical constants.
 """
+import math
+
 #: :math:`\pi` (3.14159...)
-from math import pi
+pi = math.pi
 
 #: Earth radius in meters.
 a = 6.371e6
