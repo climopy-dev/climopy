@@ -12,6 +12,7 @@ libby
 # Local docs builds
 docs/api
 docs/_build
+tests*
 
 # Other stuff
 trash

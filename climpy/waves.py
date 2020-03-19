@@ -4,10 +4,6 @@ Module for performing `Noboru Nakamura's <https://geosci.uchicago.edu/people/nob
 finite-amplitude wave activity quantification. Incorporates code developed
 by `Clare Huang <https://github.com/csyhuang/hn2016_falwa/>`_.
 
-Warnings
---------
-This module is very old and needs work!
-
 Todo
 ----
 Incorporate xarray Datasets into this. Incorporate Noboru's grad
@@ -18,27 +14,31 @@ import numpy as np
 from .arraytools import *
 from . import const
 
-#------------------------------------------------------------------------------#
-# Grid description, useful for WAQ analysis
-#------------------------------------------------------------------------------#
-# @dataclass # consider for python3.7?
 
-
-class GridDes(object):
+class GeoGrid(object):
     """
     For storing latitude/longitude grid properties. Assumes global grid, and
     borders halfway between each grid center.
     """
-
     def __init__(self, lon, lat):
         # First, guess cell widths and edges
         lon, lat = lon.astype(np.float32), lat.astype(np.float32)
         dlon1, dlon2 = lon[1] - lon[0], lon[-1] - lon[-2]
         dlat1, dlat2 = lat[1] - lat[0], lat[-1] - lat[-2]
         self.latb = np.concatenate(
-            (lat[:1] - dlat1 / 2, (lat[1:] + lat[:-1]) / 2, lat[-1:] + dlat2 / 2))
+            (
+                lat[:1] - dlat1 / 2,
+                (lat[1:] + lat[:-1]) / 2,
+                lat[-1:] + dlat2 / 2,
+            )
+        )
         self.lonb = np.concatenate(
-            (lon[:1] - dlon1 / 2, (lon[1:] + lon[:-1]) / 2, lon[-1:] + dlon2 / 2))
+            (
+                lon[:1] - dlon1 / 2,
+                (lon[1:] + lon[:-1]) / 2,
+                lon[-1:] + dlon2 / 2,
+            )
+        )
         self.latc, self.lonc = lat.copy(), lon.copy()
 
         # Use corrections for dumb grids with 'centers' at poles
@@ -56,23 +56,32 @@ class GridDes(object):
             self.dlat[-1] /= 2
 
         # Radians
-        self.phic, self.phib, self.dphi = self.latc * np.pi / \
-            180, self.latb * np.pi / 180, self.dlat * np.pi / 180
-        self.thetac, self.thetab, self.dtheta = self.lonc * np.pi / \
-            180, self.lonb * np.pi / 180, self.dlon * np.pi / 180
+        self.phic, self.phib, self.dphi = (
+            self.latc * np.pi / 180,
+            self.latb * np.pi / 180,
+            self.dlat * np.pi / 180,
+        )
+        self.thetac, self.thetab, self.dtheta = (
+            self.lonc * np.pi / 180,
+            self.lonb * np.pi / 180,
+            self.dlon * np.pi / 180,
+        )
 
         # Area weights (function of latitude only). Close approximation to area,
         # since cosine is extremely accurate. Also make lon by lat, so
         # broadcasting rules can apply.
-        self.weights = self.dphi[None, :] * \
-            self.dtheta[:, None] * np.cos(self.phic[None, :])
-        self.areas = self.dphi[None, :] * self.dtheta[:,
-                                                      None] * np.cos(self.phic[None, :]) * (const.a**2)
+        self.weights = (
+            self.dphi[None, :]
+            * self.dtheta[:, None]
+            * np.cos(self.phic[None, :])
+        )
+        self.areas = (
+            self.dphi[None, :]
+            * self.dtheta[:, None]
+            * np.cos(self.phic[None, :])
+            * (const.a ** 2)
+        )
         # areas = dphi*dtheta*np.cos(phic)*(const.a**2)[None,:]
-
-# ------------------------------------------------------------------------------
-# Wave activity stuff
-# ------------------------------------------------------------------------------
 
 
 def eqlat(lon, lat, q, skip=10, sigma=None, fix=False):  # n=1001, skip=10):
@@ -91,7 +100,7 @@ def eqlat(lon, lat, q, skip=10, sigma=None, fix=False):  # n=1001, skip=10):
     """
     # Initial stuff
     # Delivers grid areas, as function of latitude
-    areas = GridDes(lon, lat).areas
+    areas = GeoGrid(lon, lat).areas
 
     # Flatten
     q, shape = lead_flatten(q, 2)  # gives current q, and former shape
@@ -120,12 +129,13 @@ def eqlat(lon, lat, q, skip=10, sigma=None, fix=False):  # n=1001, skip=10):
     for k in range(K):  # iterate through extra dimensions
         # Iterate through Q contours
         q_bands[0, :, k] = np.sort(q[:, :, k], axis=None)[
-            offset::skip]  # test q-values
+            offset::skip
+        ]  # test q-values
         for n in range(N):
-            f = (q[:, :, k] <= q_bands[0, n, k])  # filter
+            f = q[:, :, k] <= q_bands[0, n, k]  # filter
             if sigma is None:  # normal weighting
                 # Get sine of eqlat, and correct for rounding errors
-                sin = areas[f].sum() / (2 * np.pi * const.a**2) - 1
+                sin = areas[f].sum() / (2 * np.pi * const.a ** 2) - 1
                 if sin > 1:
                     sin = 1
                 if sin < -1:
@@ -133,8 +143,10 @@ def eqlat(lon, lat, q, skip=10, sigma=None, fix=False):  # n=1001, skip=10):
                 bands[0, n, k] = np.arcsin(sin) * 180 / np.pi
             else:  # mass weighting
                 # Interpolate to latitude of mass contour
-                massk, masscumk = mass[:, :, k], masscum[:,
-                                                         :, k].squeeze()  # latter is coordinate
+                massk, masscumk = (
+                    mass[:, :, k],
+                    masscum[:, :, k].squeeze(),
+                )  # latter is coordinate
                 mass = massk[f].sum()  # total mass below Q
                 # simple interpolation to one point
                 bands[0, n, k] = np.interp(mass, masscumk, lat)
@@ -143,8 +155,7 @@ def eqlat(lon, lat, q, skip=10, sigma=None, fix=False):  # n=1001, skip=10):
     return lead_unflatten(bands, shape, 2), lead_unflatten(q_bands, shape, 2)
 
 
-def waqlocal(lon, lat, q,
-             nh=True, skip=10):
+def waqlocal(lon, lat, q, nh=True, skip=10):
     """
     Get local wave activity measure. Input `skip` is
     the interval of sorted q you choose (passed to eqlat).
@@ -153,7 +164,7 @@ def waqlocal(lon, lat, q,
     if nh:
         lat, q = -np.flipud(lat), -np.flip(q, axis=1)
         # negated q, so monotonically increasing "northward"
-    grid = GridDes(lon, lat)
+    grid = GeoGrid(lon, lat)
     areas, dphi, phib = grid.areas, grid.dphi, grid.phib
     integral = const.a * phib[None, :]
 
@@ -169,7 +180,7 @@ def waqlocal(lon, lat, q,
     waq = np.empty((L, M, K))
     percent = 0
     for k in range(K):
-        if (k / K) > (.01 * percent):
+        if (k / K) > (0.01 * percent):
             print('%d%% finished' % (100 * k / K,))
             percent = percent + 10
         # Loop through each contour
@@ -190,27 +201,34 @@ def waqlocal(lon, lat, q,
                 mid = np.where((phib[:-1] <= band) & (phib[1:] > band))[0]
                 if mid.size > 0:
                     # longitudes where positive
-                    f_pos_mid = (anom[:, mid] >= 0)
-                    p_int, m_int = const.a * \
-                        (band - phib[mid]), const.a * (phib[mid + 1] - band)
+                    f_pos_mid = anom[:, mid] >= 0
+                    p_int, m_int = (
+                        const.a * (band - phib[mid]),
+                        const.a * (phib[mid + 1] - band),
+                    )
                     # partial integrals, positive and negative
                 for l in range(L):
                     # Get individual integral
-                    integral_pos = (anom[l, f_pos[l, :]]
-                                    * integral[:, f_pos[l, :]]).sum()
+                    integral_pos = (
+                        anom[l, f_pos[l, :]] * integral[:, f_pos[l, :]]
+                    ).sum()
                     # minus a negative
-                    integral_neg = -(anom[l, f_neg[l, :]]
-                                     * integral[:, f_neg[l, :]]).sum()
+                    integral_neg = -(
+                        anom[l, f_neg[l, :]] * integral[:, f_neg[l, :]]
+                    ).sum()
                     if mid.size > 0:
-                        if f_pos_mid[l]:  # if positive at this latitude, we add anomaly
+                        if f_pos_mid[
+                            l
+                        ]:  # if positive at this latitude, we add anomaly
                             integral_extra = anom[l, mid] * p_int
                         else:  # else, subtract it
                             integral_extra = -anom[l, mid] * m_int
                     else:
                         integral_extra = 0
                     # Put it all together
-                    waq_k[l, n] = integral_pos + integral_neg + \
-                        integral_extra  # no normalization here
+                    waq_k[l, n] = (
+                        integral_pos + integral_neg + integral_extra
+                    )  # no normalization here
         # Interpolate
         for l in range(L):
             waq[l, :, k] = np.interp(lat, bands[0, :, k], waq_k[l, :])
@@ -221,8 +239,9 @@ def waqlocal(lon, lat, q,
     return lead_unflatten(waq, shape)
 
 
-def waq(lon, lat, q, sigma=None, omega=None,
-        nh=True, skip=10):  # , ignore=None): #N=1001, ignore=None):
+def waq(
+    lon, lat, q, sigma=None, omega=None, nh=True, skip=10
+):  # , ignore=None): #N=1001, ignore=None):
     """
     Get finite-amplitude wave activity. Input `omega` is (quantity being
     integrated), and `skip` is interval of sorted `q` you choose. See
@@ -237,8 +256,7 @@ def waq(lon, lat, q, sigma=None, omega=None,
             omega = -np.flip(omega, axis=1)
         if sigma is not None:
             sigma = np.flipd(sigma, axis=1)
-        # negated q/omega, so monotonically increasing "northward"
-    grid = GridDes(lon, lat)
+    grid = GeoGrid(lon, lat)
     areas, dphi, phib = grid.areas, grid.dphi, grid.phib
 
     # Flatten (eqlat can do this, but not necessary here)
@@ -249,8 +267,9 @@ def waq(lon, lat, q, sigma=None, omega=None,
         sigma, _ = lead_flatten(sigma, 2)
 
     # Get equivalent latiitudes
-    bands, q_bands = eqlat(lon, lat, q, sigma=sigma,
-                           skip=skip)  # note w is just lonbylat
+    bands, q_bands = eqlat(
+        lon, lat, q, sigma=sigma, skip=skip
+    )  # note w is just lonbylat
     # will infer area weights, to get equivalent latitude
     # number of eqlats, number of extra dims
     M, N, K = q.shape[1], bands.shape[1], q.shape[-1]
@@ -259,7 +278,7 @@ def waq(lon, lat, q, sigma=None, omega=None,
     waq = np.empty((1, M, K))
     percent = 0
     for k in range(K):
-        if (k / K) > (.01 * percent):
+        if (k / K) > (0.01 * percent):
             print('%d%% finished' % (percent,))
             percent = percent + 10
         # Loop through each contour
@@ -288,11 +307,13 @@ def waq(lon, lat, q, sigma=None, omega=None,
                 f_pos = (qk >= Qk) & (phib[None, 1:] < band)
                 # low anomalies at high lat (above bottom graticule)
                 f_neg = (qk < Qk) & (phib[None, :-1] >= band)
-                integral = (qint[f_pos] * areas[f_pos]).sum() - \
-                    (qint[f_neg] * areas[f_neg]).sum()  # minus a negative
+                integral = (qint[f_pos] * areas[f_pos]).sum() - (
+                    qint[f_neg] * areas[f_neg]
+                ).sum()  # minus a negative
                 # Next, account for tiny pieces along equivalent latitude cells
-                mid = np.where((phib[:-1] <= band) &
-                               (phib[1:] > band))[0]  # want scalar id
+                mid = np.where((phib[:-1] <= band) & (phib[1:] > band))[
+                    0
+                ]  # want scalar id
                 try:
                     mid = mid[0]
                 except IndexError:
@@ -300,23 +321,23 @@ def waq(lon, lat, q, sigma=None, omega=None,
                 else:
                     # f_pos_mid = (anom[:,mid] >= 0) # longitudes where
                     # positive
-                    f_pos_mid = (qk[:, mid] >= Qk)  # longitudes where positive
+                    f_pos_mid = qk[:, mid] >= Qk  # longitudes where positive
                     p_dphi, m_dphi = (
                         # positive, low lat
                         np.cos((band + phib[mid]) / 2) * (band - phib[mid]),
                         # negative, high lat
-                        np.cos((band + phib[mid + 1]) / 2) * \
-                        (phib[mid + 1] - band)
+                        np.cos((band + phib[mid + 1]) / 2)
+                        * (phib[mid + 1] - band),
                     )
-                    integral_extra = (
-                        qint[f_pos_mid, mid].sum() * (areas[mid] *
-                                                      m_dphi / dphi[mid])
-                        - qint[~f_pos_mid, mid].sum() * (areas[mid] *
-                                                         p_dphi / dphi[mid])
+                    integral_extra = qint[f_pos_mid, mid].sum() * (
+                        areas[mid] * m_dphi / dphi[mid]
+                    ) - qint[~f_pos_mid, mid].sum() * (
+                        areas[mid] * p_dphi / dphi[mid]
                     )
                 # Put it all together
-                waq_k[n] = (integral + integral_extra) / \
-                    (2 * np.pi * const.a * np.cos(band))
+                waq_k[n] = (integral + integral_extra) / (
+                    2 * np.pi * const.a * np.cos(band)
+                )
         # Interpolate
         nanfilt = np.isnan(waq_k)
         if sum(~nanfilt) == 0:
@@ -324,7 +345,8 @@ def waq(lon, lat, q, sigma=None, omega=None,
             waq[0, :, k] = np.nan
         else:
             waq[0, :, k] = np.interp(
-                grid.latc, bands[0, ~nanfilt, k], waq_k[~nanfilt])
+                grid.latc, bands[0, ~nanfilt, k], waq_k[~nanfilt]
+            )
 
     # Return
     if nh:
