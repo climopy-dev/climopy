@@ -13,5 +13,5 @@ build:
 python:
   version: 3.6
   system_packages: true
-conda:
-  environment: docs/environment.yml
+  install:
+    - requirements: requirements.txt
