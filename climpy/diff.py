@@ -35,7 +35,7 @@ def diff(x, y, axis=0):
 
     See Also
     --------
-    `deriv1`, `deriv1_uneven`
+    deriv1, deriv1_uneven
     """
     if x.ndim > 1:  # if want x interpreted as vector
         xaxis = axis
@@ -94,7 +94,7 @@ def deriv1(
 
     See Also
     --------
-    `diff`, `deriv1_uneven`
+    diff, deriv1_uneven
     """
     # Simple Euler scheme
     h = _step(h)
@@ -201,7 +201,7 @@ def deriv2(
 
     See Also
     --------
-    `deriv2_uneven`
+    deriv2_uneven
     """
     # Simple Euler scheme
     h = _step(h)
@@ -324,18 +324,18 @@ def deriv1_uneven(x, y, axis=0, keepedges=False):
 
     Notes
     -----
-    Equation is as follows:
+    The equation is as follows:
 
     .. math::
         \frac{dy}{dx} = \dfrac{\frac{x_1 - x_0}{x_2 - x_1}(y_2 - y_1)
                         - \frac{x_2 - x_1}{x_1 - x_0}(y_1 - y_0)}{x_2 - x_0}
 
-    * Weights the slope closer to center point more heavily.
-    * Reduces to standard :math:`(y_2-y_0)/(x_2-x_0)` for even spacing,
+    This weights the slope closer to the center point more heavily. Note this
+    reduces to the standard :math:`(y_2-y_0)/(x_2-x_0)` for even spacing.
 
     See Also
     --------
-    `diff`, `deriv1`
+    diff, deriv1
     """
     # Preliminary stuff
     y = np.array(y)
@@ -397,11 +397,11 @@ def deriv2_uneven(x, y, axis=0, keepedges=False):  # alternative
 
     Notes
     -----
-    For usage, see `deriv1_uneven`.
+    For usage, see deriv1_uneven.
 
     See Also
     --------
-    `deriv2`
+    deriv2
     """
     # Preliminary stuff
     x, y = np.array(x), np.array(y)  # precaution
@@ -429,9 +429,13 @@ def deriv3_uneven(x, y, axis=0, keepedges=False):  # alternative
     Formulation is found `here \
 <https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/>`_.
 
+    Notes
+    -----
+    For usage, see deriv1_uneven.
+
     See Also
     --------
-    `deriv3`
+    deriv3
     """
     # Preliminary stuff
     x, y = np.array(x), np.array(y)  # precaution

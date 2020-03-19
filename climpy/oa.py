@@ -742,10 +742,6 @@ def running(x, w, axis=-1, pad=True, pad_value=np.nan):
     x : ndarray
         Data windowed along axis `axis`.
 
-    Todo
-    ----
-    Merge this with `running`?
-
     Note
     ----
     Implementation is similar to `scipy.signal.lfilter`. Read
