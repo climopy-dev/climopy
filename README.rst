@@ -13,6 +13,12 @@ This package is meant to help climate scientists complete a variety of data anal
 It provides handy functions for objective and statistical analysis methods, deriving physical quantities, and downloading archived observational and model data.
 The Github page is `here <https://github.com/lukelbd/climpy>`__.
 
+Please note this package is a work-in-progress! The examples and documentation
+are incomplete, and undiscovered bugs may exist.
+
+Installation
+------------
+
 The latest release can be installed or updated from PyPi as follows:
 
 .. code-block:: bash
@@ -20,8 +26,11 @@ The latest release can be installed or updated from PyPi as follows:
    pip install climpy
    pip install --upgrade climpy
 
-The dependencies are `xarray <http://xarray.pydata.org/en/stable/>`__, `numpy <http://www.numpy.org/>`__, and `scipy <https://www.scipy.org/>`__.
-To use the (optional) `ECMWF <https://www.ecmwf.int/>`__ `ERA-Interim <https://apps.ecmwf.int/datasets/data/interim-full-daily/levtype=sfc/>`__ downloading tool, you will also need to install the `ECMWF python API <https://confluence.ecmwf.int/display/WEBAPI/Access+ECMWF+Public+Datasets>`__.
+
+Documentation
+-------------
+The documentation is `published on readthedocs <https://climpy.readthedocs.io>`__.
+
 
 .. |build-status| image:: https://img.shields.io/travis/lukelbd/climpy.svg?style=flat
     :alt: build status
