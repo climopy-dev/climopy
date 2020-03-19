@@ -23,17 +23,21 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('..')) # for autodoc
+
+# Add climpy to path for sphinx-automodapi
+sys.path.insert(0, os.path.abspath('..'))
 
 
 # -- Project information -----------------------------------------------------
 
+today = datetime.datetime.today()
 project = 'ClimPy'
-copyright = '2019, Luke L. B. Davis'
+copyright = f'{today.year}, Luke L. B. Davis'
 author = 'Luke L. B. Davis'
 
 # The short X.Y version
 version = ''
+
 # The full version, including alpha/beta/rc tags
 release = ''
 
@@ -67,25 +71,6 @@ extlinks = {
     'commit': ('https://github.com/lukelbd/climpy/commit/%s', '@'),
     'pr': ('https://github.com/lukelbd/climpy/pull/%s', 'GH#'),
 }
-
-# The name of the Pygments (syntax highlighting) style to use.
-# The light-dark theme toggler overloads this, but set default anyway
-pygments_style = 'none'
-
-# Create local pygments copies
-# Previously used: https://github.com/richleland/pygments-css
-# But do not want to depend on some random repository
-from pygments.formatters import HtmlFormatter  # noqa: E402
-from pygments.styles import get_all_styles  # noqa: E402
-path = os.path.join('_static', 'pygments')
-if not os.path.isdir(path):
-    os.mkdir(path)
-for style in get_all_styles():
-    path = os.path.join('_static', 'pygments', style + '.css')
-    if os.path.isfile(path):
-        continue
-    with open(path, 'w') as f:
-        f.write(HtmlFormatter(style=style).get_style_defs('.highlight'))
 
 # Generate stub pages whenever ::autosummary directive encountered
 # This way don't have to call sphinx-autogen manually
@@ -125,10 +110,10 @@ add_module_names = False # confusing, because I use submodules for *organization
 
 # Napoleon options
 # See: http://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html
-napoleon_use_rtype = False
-napoleon_use_param = False
 napoleon_use_ivar = False
+napoleon_use_param = False
 napoleon_use_keyword = False
+napoleon_use_rtype = False
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False
 napoleon_include_init_with_doc = False # move init doc to 'class' doc
@@ -164,7 +149,23 @@ exclude_patterns = [
 ]
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+# The light-dark theme toggler overloads this, but set default anyway
+pygments_style = 'none'
+
+# Create local pygments copies
+# Previously used: https://github.com/richleland/pygments-css
+# But do not want to depend on some random repository
+from pygments.formatters import HtmlFormatter  # noqa: E402
+from pygments.styles import get_all_styles  # noqa: E402
+path = os.path.join('_static', 'pygments')
+if not os.path.isdir(path):
+    os.mkdir(path)
+for style in get_all_styles():
+    path = os.path.join('_static', 'pygments', style + '.css')
+    if os.path.isfile(path):
+        continue
+    with open(path, 'w') as f:
+        f.write(HtmlFormatter(style=style).get_style_defs('.highlight'))
 
 # Role
 default_role = 'py:obj' # default family is py, but can also set default role so don't need :func:`name`, :module:`name`, etc.
@@ -237,7 +238,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'ClimPy.tex', 'ClimPy Documentation',
+    (master_doc, 'climpy.tex', 'ClimPy Documentation',
      'Luke L. B. Davis', 'manual'),
 ]
 
@@ -258,8 +259,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'ClimPy', 'ClimPy Documentation',
-     author, 'ClimPy', 'One line description of project.',
+    (master_doc, 'climpy', 'ClimPy Documentation',
+     author, 'climpy', 'One line description of project.',
      'Miscellaneous'),
 ]
 
