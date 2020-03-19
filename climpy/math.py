@@ -3,7 +3,6 @@
 Includes miscellaneous useful functions.
 """
 import numpy as np
-import itertools
 from .utils import *  # noqa
 
 
@@ -77,32 +76,48 @@ def month(dt):
     return dt.astype('datetime64[M]').astype(np.int32) % 12 + 1
 
 
+def day(dt):
+    """Get day of year from numpy datetime64."""
+    return dt.astype('datetime64[D]').astype(np.int32) % 365
+
+
 def match(*args):
     """
-    Match arbitrary number of 1D vectors; will return slices for producing the matching
-    segment from either vector, and the vector itself, so use as follows:
+    Return the overlapping points for a group of 1D vectors. Useful e.g. for
+    matching the time dimensions of 3D or 4D variables collected over
+    different years and months.
 
-    .. code-block:: python
+    Parameters
+    ----------
+    v1, v2, ... : ndarray
+        The coordinate vectors.
 
-        i1, i2, ..., vmatch = match(v1, v2, ...)
-        v1[i1] == v2[i2] == ... == vmatch
+    Returns
+    -------
+    i1, i2, ..., v : ndarray
+        The indices of matching coordinates for each vector, and the vector
+        consisting of these coordinates. These satsify the following condition:
 
-    Useful e.g. for matching the time dimensions of 3D or 4D variables collected
-    over different years and months.
+        .. code-block:: python
+
+            v1[i1] == v2[i2] == ... == vmatch
     """
     vs = [np.array(v) for v in args]
     if not all(np.all(v == np.sort(v)) for v in vs):
         raise ValueError('Vectors must be sorted.')
+
     # Get common minima/maxima
     min_all, max_all = max(v.min() for v in vs), min(v.max() for v in vs)
     try:
         min_locs = [np.where(v == min_all)[0][0] for v in vs]
         max_locs = [np.where(v == max_all)[0][0] for v in vs]
     except IndexError:
-        raise ValueError('Vectors do not have matching maxima/minima.')
+        raise ValueError('Vectors do not have matching minima/maxima.')
     slices = [
         slice(min_i, max_i + 1) for min_i, max_i in zip(min_locs, max_locs)
     ]
+
+    # Checks
     if any(
         v[slice_i].size != vs[0][slices[0]].size
         for v, slice_i in zip(vs, slices)
@@ -123,20 +138,23 @@ def match(*args):
 def intersection(x, segment1, segment2, xlog=False):
     """
     Find the (first) intersection point for two line segments.
-    Optionally do this in log-space for the x-axis.
+
+    Parameters
+    ----------
+    x : ndarray
+        The *x* coordinates.
+    segment1, segment2 : ndarray
+        The two lists of *y* coordinates.
+    xlog : bool, optional
+        Whether to find the *x* coordinate intersection in logarithmic space.
     """
     # Initial stuff
     segment1, segment2 = np.array(segment1), np.array(segment2)
     if xlog:  # transform x coordinates optionally
-        def transform(x):
-            return np.log10(x)
-        def itransform(x):
-            return 10 ** x
+        transform = lambda x: np.log10(x)
+        itransform = lambda x: 10 ** x
     else:
-        def transform(x):
-            return x
-        def itransform(x):
-            return x
+        transform = itransform = lambda x: x
 
     # Get intersection
     diff = segment1 - segment2
@@ -144,8 +162,8 @@ def intersection(x, segment1, segment2, xlog=False):
         print('Warning: No intersections found.')
         return np.nan, np.nan
     idx = np.where(diff > 0)[0][0]  # two-element vectors
-    x, y = diff[idx - 1 : idx + 1], transform(x[idx - 1 : idx + 1])
+    x, y = diff[idx - 1:idx + 1], transform(x[idx - 1:idx + 1])
     px = itransform(y[0] + (0 - x[0]) * ((y[1] - y[0]) / (x[1] - x[0])))
-    x, y = y, segment2[idx - 1 : idx + 1]
+    x, y = y, segment2[idx - 1:idx + 1]
     py = y[0] + (transform(px) - x[0]) * ((y[1] - y[0]) / (x[1] - x[0]))
     return px, py

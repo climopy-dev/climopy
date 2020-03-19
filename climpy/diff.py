@@ -6,7 +6,6 @@ Various finite difference schemes.
 # cumsums.
 import warnings
 import numpy as np
-from .arraytools import *
 
 
 def integrate(x, y, y0=0, axis=0):
@@ -42,13 +41,15 @@ def diff(x, y, axis=0):
         xaxis = axis
     else:
         xaxis = 0
-    if x.shape[xaxis] != y.shape[axis]:  # allow broadcasting rules to be used along other axes
+    if x.shape[xaxis] != y.shape[axis]:
         raise ValueError(
-            'x and y dimensions do not match along derivative axis.')
+            'x and y dimensions do not match along derivative axis.'
+        )
     y = np.moveaxis(y, axis, -1)
     x = np.moveaxis(x, xaxis, -1)
-    return np.moveaxis((y[..., 1:] - y[..., :-1]) /
-                       (x[..., 1:] - x[..., :-1]), -1, axis)
+    return np.moveaxis(
+        (y[..., 1:] - y[..., :-1]) / (x[..., 1:] - x[..., :-1]), -1, axis
+    )
 
 
 def deriv(*args, **kwargs):
@@ -56,8 +57,9 @@ def deriv(*args, **kwargs):
     return deriv1(*args, **kwargs)
 
 
-def deriv1(h, y, axis=0, accuracy=2, keepleft=False,
-           keepright=False, keepedges=False):
+def deriv1(
+    h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
+):
     """
     First order finite differencing. Can be accurate to :math:`h^2`,
     :math:`h^4`, or :math:`h^6`. Reduces axis length by `accuracy`,
@@ -107,17 +109,20 @@ def deriv1(h, y, axis=0, accuracy=2, keepleft=False,
     elif n < 3:
         if accuracy > 0:
             warnings.warn(
-                f'Setting accuracy to 0 for derivative on length-{n} axis.')
+                f'Setting accuracy to 0 for derivative on length-{n} axis.'
+            )
             accuracy = 0
     elif n < 5:
         if accuracy > 2:
             warnings.warn(
-                f'Setting accuracy to 2 for derivative on length-{n} axis.')
+                f'Setting accuracy to 2 for derivative on length-{n} axis.'
+            )
             accuracy = 2
     elif n < 7:
         if accuracy > 4:
             warnings.warn(
-                f'Setting accuracy to 4 for derivative on length-{n} axis.')
+                f'Setting accuracy to 4 for derivative on length-{n} axis.'
+            )
             accuracy = 4
 
     # Derivative
@@ -129,40 +134,61 @@ def deriv1(h, y, axis=0, accuracy=2, keepleft=False,
     elif accuracy == 2:
         diff = (1 / 2) * (y[..., 2:] - y[..., :-2]) / h
         if keepleft:
-            ldiff = deriv1(h, y[..., :2], axis=-
-                           1, keepleft=True, accuracy=0),  # one-tuple
+            ldiff = (
+                deriv1(h, y[..., :2], axis=-1, keepleft=True, accuracy=0),
+            )  # one-tuple
         if keepright:
-            rdiff = deriv1(h, y[..., -2:], axis=-1,
-                           keepright=True, accuracy=0),
+            rdiff = (
+                deriv1(h, y[..., -2:], axis=-1, keepright=True, accuracy=0),
+            )
         diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     elif accuracy == 4:
-        diff = (1 / 12) * (-y[..., 4:] + 8 * y[..., 3:-1]
-                           - 8 * y[..., 1:-3] + y[..., :-4]) / h
+        diff = (
+            (1 / 12)
+            * (-y[..., 4:] + 8 * y[..., 3:-1] - 8 * y[..., 1:-3] + y[..., :-4])
+            / h
+        )
         if keepleft:
-            ldiff = deriv1(h, y[..., :3], axis=-
-                           1, keepleft=True, accuracy=2),  # one-tuple
+            ldiff = (
+                deriv1(h, y[..., :3], axis=-1, keepleft=True, accuracy=2),
+            )  # one-tuple
         if keepright:
-            rdiff = deriv1(h, y[..., -3:], axis=-1,
-                           keepright=True, accuracy=2),
+            rdiff = (
+                deriv1(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
+            )
         diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     elif accuracy == 6:
-        diff = (1 / 60) * (y[..., 6:] - 9 * y[..., 5:-1] + 45 * y[..., 4:-2]
-                           - 45 * y[..., 2:-4] + 9 * y[..., 1:-5] - y[..., :-6]) / h
+        diff = (
+            (1 / 60)
+            * (
+                y[..., 6:]
+                - 9 * y[..., 5:-1]
+                + 45 * y[..., 4:-2]
+                - 45 * y[..., 2:-4]
+                + 9 * y[..., 1:-5]
+                - y[..., :-6]
+            )
+            / h
+        )
         if keepleft:
-            ldiff = deriv1(h, y[..., :5], axis=-
-                           1, keepleft=True, accuracy=4),  # one-tuple
+            ldiff = (
+                deriv1(h, y[..., :5], axis=-1, keepleft=True, accuracy=4),
+            )  # one-tuple
         if keepright:
-            rdiff = deriv1(h, y[..., -5:], axis=-1,
-                           keepright=True, accuracy=4),
+            rdiff = (
+                deriv1(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
+            )
         diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     else:
         raise ValueError(
-            'Invalid accuracy; for now, choose form O(h^2), O(h^4), or O(h^6).')
+            'Invalid accuracy; for now, choose form O(h^2), O(h^4), or O(h^6).'
+        )
     return np.moveaxis(diff, -1, axis)
 
 
-def deriv2(h, y, axis=0, accuracy=2, keepleft=False,
-           keepright=False, keepedges=False):
+def deriv2(
+    h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
+):
     """
     Second order finite differencing. Can be accurate to :math:`h^2`,
     :math:`h^4`, or :math:`h^6`. Reduces axis length by `accuracy`,
@@ -190,50 +216,80 @@ def deriv2(h, y, axis=0, accuracy=2, keepleft=False,
     elif n < 3:
         if accuracy > 0:
             warnings.warn(
-                f'Setting accuracy to 0 for derivative on length-{n} axis.')
+                f'Setting accuracy to 0 for derivative on length-{n} axis.'
+            )
             accuracy = 0
     elif n < 5:
         if accuracy > 2:
             warnings.warn(
-                f'Setting accuracy to 2 for derivative on length-{n} axis.')
+                f'Setting accuracy to 2 for derivative on length-{n} axis.'
+            )
             accuracy = 2
     elif n < 7:
         if accuracy > 4:
             warnings.warn(
-                f'Setting accuracy to 4 for derivative on length-{n} axis.')
+                f'Setting accuracy to 4 for derivative on length-{n} axis.'
+            )
             accuracy = 4
 
     # Derivative
     y = np.array(y)  # for safety
     y = np.moveaxis(y, axis, -1)
     if accuracy == 2:
-        diff = (y[..., 2:] - 2 * y[..., 1:-1] + y[..., :-2]) / h**2
+        diff = (y[..., 2:] - 2 * y[..., 1:-1] + y[..., :-2]) / h ** 2
         if keepleft:  # just append the leftmost 2nd deriv
-            ldiff = diff[..., :1],
+            ldiff = (diff[..., :1],)
         if keepright:  # just append the rightmost 2nd deriv
-            rdiff = diff[..., -1:],
+            rdiff = (diff[..., -1:],)
         diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     elif accuracy == 4:
-        diff = (1 / 12) * (-y[..., 4:] + 16 * y[..., 3:-1]
-                           - 30 * y[..., 2:-2] + 16 * y[..., 1:-3] - y[..., :-4]) / h**2
+        diff = (
+            (1 / 12)
+            * (
+                -y[..., 4:]
+                + 16 * y[..., 3:-1]
+                - 30 * y[..., 2:-2]
+                + 16 * y[..., 1:-3]
+                - y[..., :-4]
+            )
+            / h ** 2
+        )
         if keepleft:
-            ldiff = deriv2(h, y[..., :3], axis=-1, keepleft=True, accuracy=2),
+            ldiff = (
+                deriv2(h, y[..., :3], axis=-1, keepleft=True, accuracy=2),
+            )
         if keepright:
-            rdiff = deriv2(h, y[..., -3:], axis=-1,
-                           keepright=True, accuracy=2),
+            rdiff = (
+                deriv2(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
+            )
         diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     elif accuracy == 6:
-        diff = (1 / 180) * (2 * y[..., 6:] - 27 * y[..., 5:-1] + 270 * y[..., 4:-2]
-                            - 490 * y[..., 3:-3] + 270 * y[..., 2:-4] - 27 * y[..., 1:-5] + 2 * y[..., :-6]) / h**2
+        diff = (
+            (1 / 180)
+            * (
+                2 * y[..., 6:]
+                - 27 * y[..., 5:-1]
+                + 270 * y[..., 4:-2]
+                - 490 * y[..., 3:-3]
+                + 270 * y[..., 2:-4]
+                - 27 * y[..., 1:-5]
+                + 2 * y[..., :-6]
+            )
+            / h ** 2
+        )
         if keepleft:
-            ldiff = deriv2(h, y[..., :5], axis=-1, keepleft=True, accuracy=4),
+            ldiff = (
+                deriv2(h, y[..., :5], axis=-1, keepleft=True, accuracy=4),
+            )
         if keepright:
-            rdiff = deriv2(h, y[..., -5:], axis=-1,
-                           keepright=True, accuracy=4),
+            rdiff = (
+                deriv2(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
+            )
         diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     else:
         raise ValueError(
-            'Invalid accuracy; for now, choose form O(h^2), O(h^4), or O(h^6).')
+            'Invalid accuracy; for now, choose form O(h^2), O(h^4), or O(h^6).'
+        )
     return np.moveaxis(diff, -1, axis)
 
 
@@ -287,12 +343,16 @@ def deriv1_uneven(x, y, axis=0, keepedges=False):
         x = np.linspace(0, x * y.shape[axis] - 1, y.shape[axis])
     else:
         x = np.array(x)
-    xaxis = (axis if x.ndim > 1 else 0)  # if want x interpreted as vector
+    xaxis = axis if x.ndim > 1 else 0  # if want x interpreted as vector
     if x.size == 1:  # is just the step size
         x = np.linspace(0, x[0] * y.shape[axis] - 1, y.shape[axis])
-    if x.shape[xaxis] != y.shape[axis]:  # allow broadcasting rules to be used along other axes
+    if (
+        x.shape[xaxis] != y.shape[axis]
+    ):  # allow broadcasting rules to be used along other axes
         raise ValueError(
-            f'x ({x.shape[xaxis]}) and y ({axis}) dimensions do not match along derivative axis.')
+            f'x ({x.shape[xaxis]}) and y ({axis}) dimensions do not match '
+            'along derivative axis.'
+        )
 
     # Checks
     n = y.shape[axis]
@@ -304,8 +364,8 @@ def deriv1_uneven(x, y, axis=0, keepedges=False):
         return np.moveaxis(diff, -1, axis)
 
     # Formulation from stackoverflow, shown to be equivalent to the
-    # one referenced below, but use x's instead of h's, and don't separte out terms
-    # Original from this link:
+    # one referenced below, but use x's instead of h's, and don't separate out
+    # terms. Original from this link:
     # http://www.m-hikari.com/ijma/ijma-password-2009/ijma-password17-20-2009/bhadauriaIJMA17-20-2009.pdf
     x, y = np.moveaxis(x, xaxis, -1), np.moveaxis(y, axis, -1)
     x0, x1, x2 = x[..., :-2], x[..., 1:-1], x[..., 2:]
@@ -315,8 +375,11 @@ def deriv1_uneven(x, y, axis=0, keepedges=False):
     # Derivative
     # f = (x2 - x1)/(x2 - x0)
     # diff = (1-f)*(y2 - y1)/(x2 - x1) + f*(y1 - y0)/(x1 - x0) # version 1
-    diff = -h2 * y0 / (h1 * (h1 + h2)) - (h1 - h2) * y1 / \
-        (h1 * h2) + h1 * y2 / (h2 * (h1 + h2))
+    diff = (
+        -h2 * y0 / (h1 * (h1 + h2))
+        - (h1 - h2) * y1 / (h1 * h2)
+        + h1 * y2 / (h2 * (h1 + h2))
+    )
     if keepedges:  # pad with simple differences on edges
         bh = np.diff(x[..., :2], axis=-1)
         eh = np.diff(x[..., -2:], axis=-1)
@@ -329,7 +392,8 @@ def deriv1_uneven(x, y, axis=0, keepedges=False):
 def deriv2_uneven(x, y, axis=0, keepedges=False):  # alternative
     """
     Second derivative adapted from Euler's method as in `deriv_uneven`.
-    Formulation is found `here <https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/>`_.
+    Formulation is found `here \
+<https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/>`_.
 
     Notes
     -----
@@ -341,23 +405,20 @@ def deriv2_uneven(x, y, axis=0, keepedges=False):  # alternative
     """
     # Preliminary stuff
     x, y = np.array(x), np.array(y)  # precaution
-    xaxis = (axis if x.ndim > 1 else 0)  # if want x interpreted as vector
-    if x.shape[xaxis] != y.shape[axis]:  # allow broadcasting rules to be used along other axes
+    xaxis = axis if x.ndim > 1 else 0  # if want x interpreted as vector
+    if x.shape[xaxis] != y.shape[axis]:  # allow broadcasting rules
         raise ValueError(
-            'x and y dimensions do not match along derivative axis.')
+            'x and y dimensions do not match along derivative axis.'
+        )
     x, y = np.moveaxis(x, xaxis, -1), np.moveaxis(y, axis, -1)
 
-    # Formulation from this link: https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/#comments
-    # Identical to this link:
-    # http://www.m-hikari.com/ijma/ijma-password-2009/ijma-password17-20-2009/bhadauriaIJMA17-20-2009.pdf
+    # Formulation from this link: https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/#comments  # noqa
+    # Identical to this link: http://www.m-hikari.com/ijma/ijma-password-2009/ijma-password17-20-2009/bhadauriaIJMA17-20-2009.pdf  # noqa
     x0, x1, x2 = x[..., :-2], x[..., 1:-1], x[..., 2:]
     y0, y1, y2 = y[..., :-2], y[..., 1:-1], y[..., 2:]
     h1, h2, H = x1 - x0, x2 - x1, x2 - x0  # the x-steps
     diff = 2 * (h2 * y0 - H * y1 + h1 * y2) / (h1 * h2 * H)
-    # diff = 2*((x2 - x1)*y0 - (x2 - x0)*y1 + (x1 - x0)*y2) / ((x2 - x1)*(x1 - x0)*(x2 - x0)) # version 1
-    # diff = 2*(y0/((x1 - x0)*(x2 - x0)) - y1/((x2 - x1)*(x1 - x0)) + y2/((x2
-    # - x1)*(x2 - x0))) # version 2
-    if keepedges:  # need 3 points for 2nd derivative; can only pad edges with the nearest 2nd derivs
+    if keepedges:  # need 3 points for 2nd derivative
         diff = np.concatenate((diff[..., :1], diff, diff[..., -1:]), axis=-1)
     return np.moveaxis(diff, -1, axis)
 
@@ -365,7 +426,8 @@ def deriv2_uneven(x, y, axis=0, keepedges=False):  # alternative
 def deriv3_uneven(x, y, axis=0, keepedges=False):  # alternative
     """
     Third derivative adapted from Euler's method as in `deriv_uneven`.
-    Formulation is found `here <https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/>`_.
+    Formulation is found `here \
+<https://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/>`_.
 
     See Also
     --------
@@ -373,42 +435,67 @@ def deriv3_uneven(x, y, axis=0, keepedges=False):  # alternative
     """
     # Preliminary stuff
     x, y = np.array(x), np.array(y)  # precaution
-    xaxis = (axis if x.ndim > 1 else 0)  # if want x interpreted as vector
-    if x.shape[xaxis] != y.shape[axis]:  # allow broadcasting rules to be used along other axes
+    xaxis = axis if x.ndim > 1 else 0  # if want x interpreted as vector
+    if x.shape[xaxis] != y.shape[axis]:
         raise ValueError(
-            'x and y dimensions do not match along derivative axis.')
+            'x and y dimensions do not match along derivative axis.'
+        )
     x, y = np.moveaxis(x, xaxis, -1), np.moveaxis(y, axis, -1)
 
     # Formulation from the same PDF shown above
-    # First 4-point formula, which is uncentered and weird, so don't use it
-    # x0, x1, x2, x3 = x[...,:-3], x[...,1:-2], x[...,2:-1], x[...,3:]
-    # y0, y1, y2, y3 = y[...,:-3], y[...,1:-2], y[...,2:-1], y[...,3:]
-    # h1, h2, h3, H = x1-x0, x2-x1, x3-x2, x3-x0 # the x-steps
-    # diff = (6/h1)*(-y0/(h1*(h1+h2)*H) + y1/(h1*h2*(h1+h3)) - y2/((h1+h2)*h2*h3) + y3/(H*(h2+h3)*h))
-    # Now the 5-point formula, evaluating on the center points
-    # * Changed second line from h1+h3 to h2+h3; this was just by eyeballing the
-    #   coefficients and trying to enforce symmetry.
-    # * Turns out the *paper is incorrect*; original version leads to weird derivative,
-    #   but by changing that term the results are as expected.
-    # * Cleaned up their notation a bit; now just replace H2 with H, and replace
-    #   H2-h1 with H2; this makes more sense.
-    x0, x1, x2, x3, x4 = x[..., :-4], x[..., 1:-
-                                        3], x[..., 2:-2], x[..., 3:-1], x[..., 4:]
-    y0, y1, y2, y3, y4 = y[..., :-4], y[..., 1:-
-                                        3], y[..., 2:-2], y[..., 3:-1], y[..., 4:]
+    # 4-point formula, which is uncentered and weird, so don't use it.
+    # x0, x1, x2, x3 = x[..., :-3], x[..., 1:-2], x[..., 2:-1], x[..., 3:]
+    # y0, y1, y2, y3 = y[..., :-3], y[..., 1:-2], y[..., 2:-1], y[..., 3:]
+    # h1, h2, h3, H = x1 - x0, x2 - x1, x3 - x2, x3 - x0  # the x-steps
+    # diff = (6 / h1) * (
+    #     -y0 / (h1 * (h1 + h2) * H)
+    #     + y1 / (h1 * h2 * (h1 + h3))
+    #     - y2 / ((h1 + h2) * h2 * h3)
+    #     + y3 / (H * (h2 + h3) * h)
+    # )
+
+    # 5-point formula, evaluating on the center points.
+    # * Changed second line from h1+h3 to h2+h3; this was just by eyeballing
+    #   the coefficients and trying to enforce symmetry.
+    # * Turns out the *paper is incorrect*; original version leads to weird
+    #   derivative, but by changing that term the results are as expected.
+    # * Cleaned up their notation a bit; now just replace H2 with H, and
+    #   replace H2-h1 with H2; this makes more sense.
+    x0, x1, x2, x3, x4 = (
+        x[..., :-4],
+        x[..., 1:-3],
+        x[..., 2:-2],
+        x[..., 3:-1],
+        x[..., 4:],
+    )
+    y0, y1, y2, y3, y4 = (
+        y[..., :-4],
+        y[..., 1:-3],
+        y[..., 2:-2],
+        y[..., 3:-1],
+        y[..., 4:],
+    )
     h1, h2, h3, h4 = x1 - x0, x2 - x1, x3 - x2, x4 - x3
     H1, H2, H = h1 + h2 + h3, h2 + h3 + h4, h1 + h2 + h3 + h4
 
     # Derivative
-    # diff = (-0.5*y0 + y1 - y3 + 0.5*y4)/(50e2**3) # Euler method; result is
-    # actually normal
-    diff = 6 * ((h2 - 2 * h3 - h4) * y0 / (h1 * (h1 + h2) * H1 * H)
-                - (h1 + h2 - 2 * h3 - h4) * y1 / (h1 * h2 * (h2 + h3) * H2)
-                + (h1 + 2 * h2 - 2 * h3 - h4) * y2 /
-                ((h1 + h2) * h2 * h3 * (h3 + h4))
-                - (h1 + 2 * h2 - h3 - h4) * y3 / (H1 * (h2 + h3) * h3 * h4)
-                + (h1 + 2 * h2 - h3) * y4 / (H * H2 * (h3 + h4) * h4))  # holy shitballs
-    if keepedges:  # need 5 points for 3rd derivative; can only pad edges with the nearest 3rd derivs
+    # diff = (-0.5*y0 + y1 - y3 + 0.5*y4) / (50e2**3)  # Euler method
+    diff = 6 * (
+        (h2 - 2 * h3 - h4) * y0 / (h1 * (h1 + h2) * H1 * H)
+        - (h1 + h2 - 2 * h3 - h4) * y1 / (h1 * h2 * (h2 + h3) * H2)
+        + (h1 + 2 * h2 - 2 * h3 - h4) * y2 / ((h1 + h2) * h2 * h3 * (h3 + h4))
+        - (h1 + 2 * h2 - h3 - h4) * y3 / (H1 * (h2 + h3) * h3 * h4)
+        + (h1 + 2 * h2 - h3) * y4 / (H * H2 * (h3 + h4) * h4)
+    )
+    if keepedges:  # 5 points for 3rd derivative
         diff = np.concatenate(
-            (diff[..., :1], diff[..., :1], diff, diff[..., -1:], diff[..., -1:]), axis=-1)
+            (
+                diff[..., :1],
+                diff[..., :1],
+                diff,
+                diff[..., -1:],
+                diff[..., -1:],
+            ),
+            axis=-1,
+        )
     return np.moveaxis(diff, -1, axis)
