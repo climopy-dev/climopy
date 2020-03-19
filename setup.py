@@ -45,8 +45,10 @@ setup(
     description='A data analysis toolkit for climate scientists.',
     long_description=long_description,
     long_description_content_type='text/x-rst',
-    use_scm_version={'version_scheme': 'post-release',
-                     'local_scheme': 'dirty-tag'},
+    use_scm_version={
+        'version_scheme': 'post-release',
+        'local_scheme': 'dirty-tag'
+    },
     setup_requires=[
         'setuptools_scm',
         'setuptools>=30.3.0',
