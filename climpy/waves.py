@@ -158,110 +158,6 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
     )
 
 
-def waqlocal(lon, lat, q, flip=True, skip=10):
-    """
-    Return the local finite-amplitude wave activity. See
-    :cite:`2016:huang` for details.
-
-    .. bibliography:: ../refs.bib
-        :cited:
-        :style: alpha
-
-    Parameters
-    ----------
-    lon, lat : ndarray
-        The longitude and latitude coordiantes.
-    q : ndarray
-        The data array.
-    omega : ndarray, optional
-        The data weights, useful for isentropic coordinates. Shape must match
-        shape of `q`.
-    flip : bool, optional
-        Whether to flip the input data along the latitude dimension. Use this
-        if your zonal average gradient is negative poleward.
-    skip : int, optional
-        Passed to `eqlat`.
-    """
-    # Graticule considerations
-    if flip:
-        lat, q = -np.flipud(lat), -np.flip(q, axis=1)
-    phib = Graticule(lon, lat).phib
-    integral = const.a * phib[None, :]
-
-    # Flatten (eqlat can do this, but not necessary here)
-    q, shape = utils.lead_flatten(q, 2)
-
-    # Get equivalent latiitudes
-    bands, q_bands = eqlat(lon, lat, q, skip=skip)
-    L, M, N, K = q.shape[0], q.shape[1], bands.shape[1], q.shape[-1]
-
-    # Get local wave activity measure, as simple line integrals
-    waq = np.empty((L, M, K))
-    percent = 0
-    for k in range(K):
-        if (k / K) > (0.01 * percent):
-            print('%d%% finished' % (100 * k / K,))
-            percent = percent + 10
-
-        # Loop through each contour
-        waq_k = np.empty((L, N))
-        for n in range(N):
-            # Setup, large areas
-            band = bands[0, n, k] * np.pi / 180
-            if np.isnan(band):  # happens if contours intersect at edge
-                waq_k[:, n] = np.nan
-            else:
-                # Get high anomalies at low latitude (below top graticule) and
-                # low anomalies at high latitude (above bottom graticule)
-                anom = q[:, :, k] - q_bands[0, n, k]
-                f_pos = (anom >= 0) & (phib[None, 1:] < band)
-                f_neg = (anom < 0) & (phib[None, :-1] >= band)
-
-                # See if band is sandwiched between latitudes
-                # want scalar id (might be zero)
-                mid = np.where((phib[:-1] <= band) & (phib[1:] > band))[0]
-                if mid.size > 0:
-                    # Find longitudes where positive
-                    # Perform partial integrals, positive and negative
-                    f_pos_mid = anom[:, mid] >= 0
-                    p_int, m_int = (
-                        const.a * (band - phib[mid]),
-                        const.a * (phib[mid + 1] - band),
-                    )
-
-                for l in range(L):
-                    # Get individual integral
-                    integral_pos = (
-                        anom[l, f_pos[l, :]] * integral[:, f_pos[l, :]]
-                    ).sum()
-                    integral_neg = -(  # *minus* a *negative*
-                        anom[l, f_neg[l, :]] * integral[:, f_neg[l, :]]
-                    ).sum()
-                    if mid.size > 0:
-                        # If positive at this latitude, we add anomaly
-                        # Else, subtract it
-                        if f_pos_mid[l]:
-                            integral_extra = anom[l, mid] * p_int
-                        else:
-                            integral_extra = -anom[l, mid] * m_int
-                    else:
-                        integral_extra = 0
-
-                    # Put it all together
-                    waq_k[l, n] = (
-                        integral_pos + integral_neg + integral_extra
-                    )  # no normalization here
-
-        # Interpolate
-        for l in range(L):
-            waq[l, :, k] = np.interp(lat, bands[0, :, k], waq_k[l, :])
-
-    # Return
-    if flip:
-        waq = np.flip(waq, axis=1)
-    return utils.lead_unflatten(waq, shape)
-
-
 def waq(
     lon, lat, q, sigma=None, omega=None, flip=True, skip=10
 ):
@@ -269,10 +165,6 @@ def waq(
     Return the finite-amplitude wave activity. See
     :cite:`2010:nakamura` for details.
 
-    .. bibliography:: ../refs.bib
-        :cited:
-        :style: alpha
-
     Parameters
     ----------
     lon, lat : ndarray
@@ -287,6 +179,10 @@ def waq(
         if your zonal average gradient is negative poleward.
     skip : int, optional
         Passed to `eqlat`.
+
+    References
+    ----------
+    .. bibliography:: ../waq.bib
     """
     # Graticule considerations
     if flip:
@@ -386,6 +282,110 @@ def waq(
             waq[0, :, k] = np.interp(
                 grid.latc, bands[0, ~nanfilt, k], waq_k[~nanfilt]
             )
+
+    # Return
+    if flip:
+        waq = np.flip(waq, axis=1)
+    return utils.lead_unflatten(waq, shape)
+
+
+def waqlocal(lon, lat, q, flip=True, skip=10):
+    """
+    Return the local finite-amplitude wave activity. See
+    :cite:`2016:huang` for details.
+
+    Parameters
+    ----------
+    lon, lat : ndarray
+        The longitude and latitude coordiantes.
+    q : ndarray
+        The data array.
+    omega : ndarray, optional
+        The data weights, useful for isentropic coordinates. Shape must match
+        shape of `q`.
+    flip : bool, optional
+        Whether to flip the input data along the latitude dimension. Use this
+        if your zonal average gradient is negative poleward.
+    skip : int, optional
+        Passed to `eqlat`.
+
+    References
+    ----------
+    .. bibliography:: ../waqlocal.bib
+    """
+    # Graticule considerations
+    if flip:
+        lat, q = -np.flipud(lat), -np.flip(q, axis=1)
+    phib = Graticule(lon, lat).phib
+    integral = const.a * phib[None, :]
+
+    # Flatten (eqlat can do this, but not necessary here)
+    q, shape = utils.lead_flatten(q, 2)
+
+    # Get equivalent latiitudes
+    bands, q_bands = eqlat(lon, lat, q, skip=skip)
+    L, M, N, K = q.shape[0], q.shape[1], bands.shape[1], q.shape[-1]
+
+    # Get local wave activity measure, as simple line integrals
+    waq = np.empty((L, M, K))
+    percent = 0
+    for k in range(K):
+        if (k / K) > (0.01 * percent):
+            print('%d%% finished' % (100 * k / K,))
+            percent = percent + 10
+
+        # Loop through each contour
+        waq_k = np.empty((L, N))
+        for n in range(N):
+            # Setup, large areas
+            band = bands[0, n, k] * np.pi / 180
+            if np.isnan(band):  # happens if contours intersect at edge
+                waq_k[:, n] = np.nan
+            else:
+                # Get high anomalies at low latitude (below top graticule) and
+                # low anomalies at high latitude (above bottom graticule)
+                anom = q[:, :, k] - q_bands[0, n, k]
+                f_pos = (anom >= 0) & (phib[None, 1:] < band)
+                f_neg = (anom < 0) & (phib[None, :-1] >= band)
+
+                # See if band is sandwiched between latitudes
+                # want scalar id (might be zero)
+                mid = np.where((phib[:-1] <= band) & (phib[1:] > band))[0]
+                if mid.size > 0:
+                    # Find longitudes where positive
+                    # Perform partial integrals, positive and negative
+                    f_pos_mid = anom[:, mid] >= 0
+                    p_int, m_int = (
+                        const.a * (band - phib[mid]),
+                        const.a * (phib[mid + 1] - band),
+                    )
+
+                for l in range(L):
+                    # Get individual integral
+                    integral_pos = (
+                        anom[l, f_pos[l, :]] * integral[:, f_pos[l, :]]
+                    ).sum()
+                    integral_neg = -(  # *minus* a *negative*
+                        anom[l, f_neg[l, :]] * integral[:, f_neg[l, :]]
+                    ).sum()
+                    if mid.size > 0:
+                        # If positive at this latitude, we add anomaly
+                        # Else, subtract it
+                        if f_pos_mid[l]:
+                            integral_extra = anom[l, mid] * p_int
+                        else:
+                            integral_extra = -anom[l, mid] * m_int
+                    else:
+                        integral_extra = 0
+
+                    # Put it all together
+                    waq_k[l, n] = (
+                        integral_pos + integral_neg + integral_extra
+                    )  # no normalization here
+
+        # Interpolate
+        for l in range(L):
+            waq[l, :, k] = np.interp(lat, bands[0, :, k], waq_k[l, :])
 
     # Return
     if flip:

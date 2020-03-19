@@ -36,16 +36,16 @@
   --search-shadow-color: #ddd;
   --main-bg-color: #fcfcfc;
   --code-bg-color: #ffffff;
-  --empty-bg-color: #f4f4f4;
-  --l1-bg-color: #e9e9e9;
-  --l2-bg-color: #dcdcdc;
-  --l3-bg-color: #d0d0d0;
-  --l4-bg-color: #c3c3c3;
-  --l5-bg-color: #b6b6b6;
-  --l6-bg-color: #a9a9a9;
-  --l7-bg-color: #9c9c9c;
-  --block-bg-color: #f0f0f0;
-  --accent-bg-color: #d0d0d0;
+  --empty-bg-color: #f4f6f9;
+  --l1-bg-color: #e9eef2;
+  --l2-bg-color: #dce2e6;
+  --l3-bg-color: #d0d7dc;
+  --l4-bg-color: #c3c9cf;
+  --l5-bg-color: #b6bbc1;
+  --l6-bg-color: #a9afb6;
+  --l7-bg-color: #9ca3a9;
+  --block-bg-color: #f0f4f8;
+  --accent-bg-color: #d0d6da;
 }
 
 /* Dark mode variables */

@@ -1,26 +1,59 @@
-# ------------------------------------------------------------------------------
-# Declare some constants
-# ------------------------------------------------------------------------------
-# Experimental/empirical
-from math import pi  # 3.14159...
-a = 6.371e6      # earth radius, meters
-Omega = 7.292115e-5  # rotation rate, radians/second
-H = 7.0e3        # scale height rule-of-thumb
-g = 9.80665      # standard gravity
-G = 6.67408e-11  # gravitational constant; m3 kg-1 s-2
-R = 8.31446      # Ideal gas constant; J K-1 mol-1
-Na = 6.02214e23   # Avo's number; mol-1
-h = 6.62607e-34  # Planck constant; J s
-# Speed of light (exact because we define meters in terms of this); m s-1
+"""
+A variety of physical constants.
+"""
+#: :math:`\pi` (3.14159...)
+from math import pi
+
+#: Earth radius in meters.
+a = 6.371e6
+
+#: Earth rotation rate in rad / s.
+Omega = 7.292115e-5
+
+#: Scale height rule-of-thumb in m.
+H = 7.0e3
+
+#: Standard gravity in m / s^2.
+g = 9.80665
+
+#: Gravitational constant in m^3 / kg * s^2.
+G = 6.67408e-11
+
+#: Ideal gas constant in J / K * mol.
+R = 8.31446
+
+#: Avo's number.
+Na = 6.02214e23
+
+#: Planck constant in J / s.
+h = 6.62607e-34
+
+#: Speed of light in m / s.
 c = 2.99792458e8
-Md = 28.9645e-3   # dry air molar mass; kg mol-1
-Mw = 18.0153e-3   # water vapor molar mass; kg mol-1
-cp = 1.005e3      # specific heat at T=300K, surface press; J kg-1 K-1
-p0 = 1013.25
-# Derivative constants
-kb = R / Na  # Boltzmann constant; J K-1
-Rd = R / Md  # dry air gas constant; J K-1 kg-1
-Rm = R / Mw  # water vapor gas constant; J K-1 kg-1
-kappa = Rd / cp  # poisson constant
-# Stefan-boltzmann constant (see wikipedia); W m-2 K-4
+
+#: Dry air molar mass in kg / mol.
+Md = 28.9645e-3
+
+#: Water vapor molar mass in kg / mol.
+Mw = 18.0153e-3
+
+#: Specific heat at T = 300K in J / kg * K.
+cp = 1.005e3
+
+#: Surface pressure in Pa.
+p0 = 101325
+
+#: Boltzmann constant in J / K.
+kb = R / Na
+
+#: Dry air gas constant in J / kg * K.
+Rd = R / Md
+
+#: Water vapor gas constant in J / kg * K.
+Rm = R / Mw
+
+#: Poisson constant.
+kappa = Rd / cp
+
+#: Stefan-Boltzmann constant in W / m^2 * K^4.
 sigma = (2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))

@@ -8,8 +8,7 @@ and `Dennis Hartmann \
 
 Note
 ----
-The convention throughout this package (consistent with conventions
-in atmospheric science) is to use *linear* wave properties, i.e. the
+The convention for this package is to use *linear* wave properties, i.e. the
 wavelength in [units] per :math:`2\\pi` radians, and wavenumber
 :math:`2\\pi` radians per [units].
 """
@@ -19,7 +18,7 @@ import scipy.stats as stats
 import scipy.linalg as linalg
 import scipy.optimize as optimize
 import warnings
-from .utils import lead_flatten, lead_unflatten, trail_flatten, trail_unflatten
+from . import utils
 
 
 def roots(poly):
@@ -82,7 +81,7 @@ def rednoise(a, ntime, samples=1, mean=0, stdev=1):
     # Nested loop
     # data[1:,i] = a*data[:-1,i] + b*eps[:-1] # won't work because next state
     # function of previous state
-    data, shape = trail_flatten(data)
+    data, shape = utils.trail_flatten(data)
     data[0, :] = 0  # initialize
     for i in range(data.shape[-1]):
         eps = np.random.normal(loc=0, scale=1, size=ntime)
@@ -90,7 +89,7 @@ def rednoise(a, ntime, samples=1, mean=0, stdev=1):
             data[t, i] = a * data[t - 1, i] + b * eps[t - 1]
 
     # Return
-    data = trail_unflatten(data, shape)
+    data = utils.trail_unflatten(data, shape)
     if len(samples) == 1 and samples[0] == 1:
         data = data.squeeze()
     return mean + stdev * data  # rescale to have specified stdeviation/mean
@@ -194,7 +193,7 @@ def linefit(*args, axis=-1, build=False, stderr=False):
         x, y = args
     else:
         raise ValueError("Must input 'x' or 'x, y'.")
-    y, shape = lead_flatten(np.moveaxis(y, axis, -1))
+    y, shape = utils.lead_flatten(np.moveaxis(y, axis, -1))
     z, v = np.polyfit(x, y.T, deg=1, cov=True)
     z = np.fliplr(z.T)  # put a first, b next
     # Prepare output
@@ -221,7 +220,7 @@ def linefit(*args, axis=-1, build=False, stderr=False):
         # Replace regression dimension with singleton (slope)
         z = z[:, 1:]
         shape[-1] = 1  # axis now occupied by the slope
-    return np.moveaxis(lead_unflatten(z, shape), -1, axis)
+    return np.moveaxis(utils.lead_unflatten(z, shape), -1, axis)
 
 
 def rednoisefit(
@@ -273,7 +272,7 @@ def rednoisefit(
         performed).
     """
     # Initial stuff
-    data, shape = lead_flatten(np.moveaxis(data, axis, -1))
+    data, shape = utils.lead_flatten(np.moveaxis(data, axis, -1))
     shape = [*shape]
     # First get the autocorrelation
     if corr:  # already was passed!
@@ -320,8 +319,8 @@ def rednoisefit(
             taus[i, 0] = p  # just store the timescale
         if not lag1:
             sigmas[i, 0] = s
-    taus = np.moveaxis(lead_unflatten(taus, shape), -1, axis)
-    sigmas = np.moveaxis(lead_unflatten(sigmas, shape1), -1, axis)
+    taus = np.moveaxis(utils.lead_unflatten(taus, shape), -1, axis)
+    sigmas = np.moveaxis(utils.lead_unflatten(sigmas, shape1), -1, axis)
     return taus, sigmas
 
 
@@ -573,11 +572,11 @@ def eof(
     # Only flatten after apply weights (e.g. if have level and latitude
     # dimensions).
     shape_trail = data.shape[-n_dims.size:]
-    data, _ = trail_flatten(data, n_dims.size)
-    dataw, _ = trail_flatten(dataw, n_dims.size)
+    data, _ = utils.trail_flatten(data, n_dims.size)
+    dataw, _ = utils.trail_flatten(dataw, n_dims.size)
     shape_lead = data.shape[:-2]
-    data, _ = lead_flatten(data, data.ndim - 2)
-    dataw, _ = lead_flatten(dataw, dataw.ndim - 2)
+    data, _ = utils.lead_flatten(data, data.ndim - 2)
+    dataw, _ = utils.lead_flatten(dataw, dataw.ndim - 2)
 
     # Prepare output
     # Dimensions will be extraneous by eofs by time by space
@@ -639,21 +638,27 @@ def eof(
     # Return along the correct dimension
     # The 'lead's were *extraneous* dimensions; we got EOFs along them
     nlead = len(shape_lead)  # expand back to original; leave space for EOFs
-    pcs = lead_unflatten(pcs, [*shape_lead, neof, m, 1], nlead)
-    projs = lead_unflatten(projs, [*shape_lead, neof, 1, n], nlead)
-    evals = lead_unflatten(evals, [*shape_lead, neof, 1, 1], nlead)
-    nstar = lead_unflatten(nstar, [*shape_lead, 1, 1, 1], nlead)
+    pcs = utils.lead_unflatten(pcs, [*shape_lead, neof, m, 1], nlead)
+    projs = utils.lead_unflatten(projs, [*shape_lead, neof, 1, n], nlead)
+    evals = utils.lead_unflatten(evals, [*shape_lead, neof, 1, 1], nlead)
+    nstar = utils.lead_unflatten(nstar, [*shape_lead, 1, 1, 1], nlead)
 
     # The 'trail's were *spatial* dimensions, which were allowed to be more
     # than 1D
     ntrail = len(shape_trail)
     flat_trail = [1] * len(shape_trail)
-    pcs = trail_unflatten(pcs, [*shape_lead, neof, m, *flat_trail], ntrail)
-    projs = trail_unflatten(
+    pcs = utils.trail_unflatten(
+        pcs, [*shape_lead, neof, m, *flat_trail], ntrail
+    )
+    projs = utils.trail_unflatten(
         projs, [*shape_lead, neof, 1, *shape_trail], ntrail
     )
-    evals = trail_unflatten(evals, [*shape_lead, neof, 1, *flat_trail], ntrail)
-    nstar = trail_unflatten(nstar, [*shape_lead, 1, 1, *flat_trail], ntrail)
+    evals = utils.trail_unflatten(
+        evals, [*shape_lead, neof, 1, *flat_trail], ntrail
+    )
+    nstar = utils.trail_unflatten(
+        nstar, [*shape_lead, 1, 1, *flat_trail], ntrail
+    )
 
     # Permute 'eof' dimension onto the start (note we had to put it between
     # extraneous dimensions and time/space dimensions so we could perform
@@ -865,7 +870,7 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, pad_value=np.nan):
     n_half = (max(len(a), len(b)) - 1) // 2
     if axis < 0:
         axis = x.ndim + axis  # necessary for concatenate below
-    x, shape = lead_flatten(np.moveaxis(x, axis, -1))
+    x, shape = utils.lead_flatten(np.moveaxis(x, axis, -1))
     y = x.copy()  # then can filter multiple times
     ym = y.mean(axis=1, keepdims=True)
     y = y - ym  # remove mean
@@ -900,7 +905,7 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, pad_value=np.nan):
             y = np.concatenate((y_left, y, y_right), axis=-1)
 
     # Return
-    y = np.moveaxis(lead_unflatten(y, shape), -1, axis)
+    y = np.moveaxis(utils.lead_unflatten(y, shape), -1, axis)
     return y
 
 
@@ -1300,9 +1305,9 @@ def power(
     # Manual approach, have checked these and results are identical
     # Get copsectrum, quadrature spectrum, and powers for each window
     # shape is shape of *original* data
-    y1, shape = lead_flatten(np.moveaxis(y1, axis, -1))
+    y1, shape = utils.lead_flatten(np.moveaxis(y1, axis, -1))
     if y2 is not None:
-        y2, _ = lead_flatten(np.moveaxis(y2, axis, -1))
+        y2, _ = utils.lead_flatten(np.moveaxis(y2, axis, -1))
     extra = y1.shape[0]
     pm = nperseg // 2
     shape[-1] = pm  # new shape
@@ -1359,7 +1364,7 @@ def power(
 
     # Helper function
     def unshape(x):
-        x = lead_unflatten(x, shape)
+        x = utils.lead_unflatten(x, shape)
         x = np.moveaxis(x, -1, axis)
         return x
 
@@ -1496,7 +1501,7 @@ def power2d(
     def reshape(x):
         x = np.moveaxis(x, taxis, -1)  # put on -1, then will be moved to -2
         x = np.moveaxis(x, caxis - offset, -1)  # put on -1
-        x, shape = lead_flatten(x, nflat)  # flatten remaining dimensions
+        x, shape = utils.lead_flatten(x, nflat)  # flatten remaining dimensions
         return x, shape
 
     # Permute
@@ -1610,7 +1615,7 @@ def power2d(
     # Reshapes final result, and scales powers so we can take dimensional
     # average without needing to divide by 2
     def unshape(x):
-        x = lead_unflatten(x, shape, nflat)
+        x = utils.lead_unflatten(x, shape, nflat)
         # put caxis back, accounting for if taxis moves to left
         x = np.moveaxis(x, -1, caxis - offset)
         x = np.moveaxis(x, -1, taxis)  # put taxis back

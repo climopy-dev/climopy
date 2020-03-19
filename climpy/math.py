@@ -3,7 +3,6 @@
 Includes miscellaneous useful functions.
 """
 import numpy as np
-from .utils import *  # noqa
 
 
 def sin(x):
@@ -74,11 +73,6 @@ def year(dt):
 def month(dt):
     """Get month from numpy datetime64."""
     return dt.astype('datetime64[M]').astype(np.int32) % 12 + 1
-
-
-def day(dt):
-    """Get day of year from numpy datetime64."""
-    return dt.astype('datetime64[D]').astype(np.int32) % 365
 
 
 def match(*args):
