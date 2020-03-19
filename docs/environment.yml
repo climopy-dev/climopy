@@ -6,10 +6,8 @@ channels:
   - conda-forge
 dependencies:
   - python>=3.6
-  - ipykernel
   - numpy
   - scipy
-  - xarray
   - pip
   - pip:
     - ..
