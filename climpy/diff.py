@@ -295,7 +295,7 @@ def deriv2(
 
 def deriv_uneven(*args, **kwargs):
     """Alias for `deriv1_uneven`."""
-    return deriv_uneven(*args, **kwargs)
+    return deriv1_uneven(*args, **kwargs)
 
 
 def deriv1_uneven(x, y, axis=0, keepedges=False):

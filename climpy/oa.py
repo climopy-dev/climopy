@@ -717,7 +717,7 @@ def rolling(*args, **kwargs):
 
 def running(x, w, axis=-1, pad=True, pad_value=np.nan):
     """
-    Apply running filter along axis.
+    Apply running average to array.
 
     Parameters
     ----------
@@ -736,11 +736,6 @@ def running(x, w, axis=-1, pad=True, pad_value=np.nan):
     -------
     x : ndarray
         Data windowed along axis `axis`.
-
-    Other parameters
-    ----------------
-    **kwargs
-        Remaining keyword args passed to windowing function.
 
     Todo
     ----
@@ -834,7 +829,7 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, pad_value=np.nan):
         *a* coefficients (recursive component); default of ``1`` indicates
         a non-recursive filter.
     n : int, optional
-        Number of times to filter data; will go forward --> backward
+        Number of times to filter data. Will go forward --> backward
         --> forward...
     axis : int, optional
         Axis along which we filter data. Defaults to last axis.
