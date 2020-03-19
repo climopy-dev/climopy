@@ -25,6 +25,8 @@ dist
 *.egg-info
 
 # Notebook stuff
+# TODO: Remove this when we start using nbsphinx
+*.ipynb
 .ipynb_checkpoints
 
 # Python extras

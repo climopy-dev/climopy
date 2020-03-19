@@ -161,7 +161,11 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
 def waqlocal(lon, lat, q, flip=True, skip=10):
     """
     Return the local finite-amplitude wave activity. See
-    :cite:`huang_local_2016` for details.
+    :cite:`2016:huang` for details.
+
+    .. bibliography:: ../refs.bib
+        :cited:
+        :style: alpha
 
     Parameters
     ----------
@@ -177,8 +181,6 @@ def waqlocal(lon, lat, q, flip=True, skip=10):
         if your zonal average gradient is negative poleward.
     skip : int, optional
         Passed to `eqlat`.
-
-    .. bibliography:: ../refs.bib
     """
     # Graticule considerations
     if flip:
@@ -265,7 +267,11 @@ def waq(
 ):
     """
     Return the finite-amplitude wave activity. See
-    :cite:`nakamura_finite-amplitude_2010` for details.
+    :cite:`2010:nakamura` for details.
+
+    .. bibliography:: ../refs.bib
+        :cited:
+        :style: alpha
 
     Parameters
     ----------
@@ -281,11 +287,6 @@ def waq(
         if your zonal average gradient is negative poleward.
     skip : int, optional
         Passed to `eqlat`.
-
-    Input `omega` is (quantity being
-    integrated), and `skip` is interval of sorted `q` you choose.
-
-    .. bibliography:: ../refs.bib
     """
     # Graticule considerations
     if flip:

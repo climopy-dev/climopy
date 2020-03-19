@@ -10,28 +10,23 @@ This package is meant to help climate scientists complete a variety of data anal
 It provides handy functions for objective and statistical analysis methods, deriving physical quantities, and downloading archived observational and model data.
 The Github page is `here <https://github.com/lukelbd/climpy>`__.
 
-This is a work-in-progress -- currently, there is no formal release
-on PyPi. For the time being, you may install directly from Github using:
-
-.. code-block:: bash
-
-   pip install git+https://github.com/lukelbd/climpy.git#egg=climpy
-
-I may consider merging this project with `MetPy <https://unidata.github.io/MetPy/latest/index.html>`_ eventually. But for the time being, MetPy cannot perform many of the objective and statistical analysis tasks used by climate scientists.
-
-The dependencies are `xarray <http://xarray.pydata.org/en/stable/>`_, `numpy <http://www.numpy.org/>`_, and `scipy <https://www.scipy.org/>`_.
-To use the (optional) `ECMWF <https://www.ecmwf.int/>`_ `ERA-Interim <https://apps.ecmwf.int/datasets/data/interim-full-daily/levtype=sfc/>`_ downloading tool, you will also need to install the `ECMWF python API <https://confluence.ecmwf.int/display/WEBAPI/Access+ECMWF+Public+Datasets>`_.
-
 .. toctree::
-   :hidden:
-   :maxdepth: 4
+   :maxdepth: 1
    :caption: Getting Started
 
-   quickstart
+   install
+   why
 
 .. toctree::
-   :hidden:
-   :maxdepth: 4
+   :maxdepth: 1
+   :caption: User Guide
+
+   downloads
+   timeseries
+   spectral
+
+.. toctree::
+   :maxdepth: 2
    :caption: Reference
 
    api

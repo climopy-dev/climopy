@@ -1,6 +1,3 @@
-
-.. include:: ../CHANGELOG.rst
-
 =================
 Changelog history
 =================

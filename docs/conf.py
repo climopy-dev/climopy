@@ -65,10 +65,29 @@ extensions = [
 ]
 
 extlinks = {
-    'issue': ('https://github.com/lukelbd/proplot/issues/%s', 'GH#'),
-    'commit': ('https://github.com/lukelbd/proplot/commit/%s', '@'),
-    'pr': ('https://github.com/lukelbd/proplot/pull/%s', 'GH#'),
+    'issue': ('https://github.com/lukelbd/climpy/issues/%s', 'GH#'),
+    'commit': ('https://github.com/lukelbd/climpy/commit/%s', '@'),
+    'pr': ('https://github.com/lukelbd/climpy/pull/%s', 'GH#'),
 }
+
+# The name of the Pygments (syntax highlighting) style to use.
+# The light-dark theme toggler overloads this, but set default anyway
+pygments_style = 'none'
+
+# Create local pygments copies
+# Previously used: https://github.com/richleland/pygments-css
+# But do not want to depend on some random repository
+from pygments.formatters import HtmlFormatter  # noqa: E402
+from pygments.styles import get_all_styles  # noqa: E402
+path = os.path.join('_static', 'pygments')
+if not os.path.isdir(path):
+    os.mkdir(path)
+for style in get_all_styles():
+    path = os.path.join('_static', 'pygments', style + '.css')
+    if os.path.isfile(path):
+        continue
+    with open(path, 'w') as f:
+        f.write(HtmlFormatter(style=style).get_style_defs('.highlight'))
 
 # Generate stub pages whenever ::autosummary directive encountered
 # This way don't have to call sphinx-autogen manually
@@ -82,20 +101,6 @@ autosummary_generate = True
 # Also modify so 
 automodapi_toctreedirnm = 'api' # create much better URL for the page
 automodsumm_inherited_members = False
-# automod_templ_classes = """
-# Classes
-# {clshds}
-# .. automodsumm:: {modname}
-#     :classes-only:
-#     {clsfuncoptions}
-# """
-# automod_templ_funcs = """
-# Functions
-# {funchds}
-# .. automodsumm:: {modname}
-#     :functions-only:
-#     {clsfuncoptions}
-# """
 
 # Turn off code and image links for embedded mpl plots
 # plot_html_show_source_link = False
@@ -108,13 +113,13 @@ autoclass_content = 'both'
 
 # Set up mapping for other projects' docs
 intersphinx_mapping = {
-                       'matplotlib': ('https://matplotlib.org', None),
-                       'sphinx': ('http://www.sphinx-doc.org/en/stable/', None),
-                       'python': ('https://docs.python.org/3', None),
-                       'numpy': ('https://docs.scipy.org/doc/numpy', None),
-                       'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
-                       'xarray': ('http://xarray.pydata.org/en/stable', None)
-                       }
+    'matplotlib': ('https://matplotlib.org', None),
+    'sphinx': ('http://www.sphinx-doc.org/en/stable/', None),
+    'python': ('https://docs.python.org/3', None),
+    'numpy': ('https://docs.scipy.org/doc/numpy', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
+    'xarray': ('http://xarray.pydata.org/en/stable', None)
+}
 
 # If true, the current module name will be prepended to all description
 # unit titles (such as .. function::).
@@ -139,8 +144,6 @@ templates_path = ['_templates']
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
-#
-# source_suffix = ['.rst', '.md']
 source_suffix = '.rst'
 
 # The master toctree document.
@@ -156,8 +159,11 @@ language = None
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path .
-exclude_patterns = ['_build', '_templates', '_themes', 'sphinxext',
-                    'originals', 'quickstart', 'Thumbs.db', '.DS_Store']
+exclude_patterns = [
+    '_templates', '_themes', 'sphinxext',
+    '.DS_Store', '**.ipynb_checkpoints',
+    '*.ipynb',
+]
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
@@ -167,17 +173,20 @@ default_role = 'py:obj' # default family is py, but can also set default role so
 
 # -- Options for HTML output -------------------------------------------------
 
+# Logo
+html_logo = '_static/logo_square.png'
+
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-#
 # html_theme = 'alabaster'
 html_theme = 'sphinx_rtd_theme' # from: https://sphinx-rtd-theme.readthedocs.io/en/latest/installing.html
-
-# Theme options are theme-specific and customize the look and feel of a theme
-# further.  For a list of options available for each theme, see the
-# documentation.
-#
-# html_theme_options = {}
+html_theme_options = {
+    'logo_only': True,
+    'display_version': False,
+    'collapse_navigation': True,
+    'navigation_depth': 4,
+    'prev_next_buttons_location': 'bottom',  # top and bottom
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -198,12 +207,12 @@ html_static_path = ['_static']
 # docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
 # pixels large. Static folder is for CSS and image files.
 # For icons see: https://icons8.com/icon
-html_favicon = os.path.join('_static', 'globe.ico')
+html_favicon = os.path.join('_static', 'logo_blank.ico')
 
 # -- Options for HTMLHelp output ---------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'ClimPydoc'
+htmlhelp_basename = 'climpydoc'
 
 
 # -- Options for LaTeX output ------------------------------------------------
