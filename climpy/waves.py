@@ -182,7 +182,7 @@ def waq(
 
     References
     ----------
-    .. bibliography:: ../waq.bib
+    .. bibliography:: ../bibs/waq.bib
     """
     # Graticule considerations
     if flip:
@@ -311,7 +311,7 @@ def waqlocal(lon, lat, q, flip=True, skip=10):
 
     References
     ----------
-    .. bibliography:: ../waqlocal.bib
+    .. bibliography:: ../bibs/waqlocal.bib
     """
     # Graticule considerations
     if flip:

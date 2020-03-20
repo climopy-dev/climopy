@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-# Import critical stuff into top-level namespace
+import pkg_resources as _pkg
+
+# Import everything into top-level namespace
 from .math import *  # noqa
 from .spherical import *  # noqa
 from .downloads import *  # noqa
 from .diff import *  # noqa
 from .oa import *  # noqa
-from . import waves
-from . import stats
-from . import const
+from .waves import *  # noqa
+from .const import *  # noqa
 
-name = 'ClimPy'
+# SCM versioning
+name = 'climpy'
+try:
+    version = __version__ = _pkg.get_distribution(__name__).version
+except _pkg.DistributionNotFound:
+    version = __version__ = 'unknown'

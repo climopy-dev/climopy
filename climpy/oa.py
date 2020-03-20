@@ -97,7 +97,19 @@ def rednoise(a, ntime, samples=1, mean=0, stdev=1):
 
 def wilks(percentiles, alpha=0.10):
     """
-    Return the Wilks et al. threshold given an array of percentiles.
+    Return the precentile threshold from an array of percentiles that satisfies
+    the given false discovery rate. See :cite:`2006:wilks` for details.
+
+    Parameters
+    ----------
+    percentiles : ndarray
+        The percentiles.
+    alpha : float, optional
+        The false discovery rate.
+
+    References
+    ----------
+    .. bibliography:: ../bibs/wilks.bib
     """
     percentiles = np.asarray(percentiles)
     pvals = list(percentiles.flat)  # want in decimal
@@ -505,10 +517,10 @@ def eof(
     space : int or list of int, optional
         Axis or axes used as 'space' dimension.
     weights : ndarray, optional
-        Area/mass weights; must be broadcastable on multiplication with 'data'
-        weights will be normalized prior to application.
+        Area or mass weights; must be broadcastable on multiplication with
+        `data` weights. Will be normalized prior to application.
     percent : bool, optional
-        Whether to return raw eigenvalue(s), or *percent* of variance
+        Whether to return raw eigenvalue(s) or the *percentage* of variance
         explained by eigenvalue(s).
     normalize : bool, optional
         Whether to normalize the data by its standard deviation
@@ -1256,7 +1268,7 @@ def power(
 
     References
     ----------
-    .. bibliography:: ../power.bib
+    .. bibliography:: ../bibs/power.bib
     """
     # Initial stuff
     N = y1.shape[axis]  # window count
@@ -1456,7 +1468,7 @@ def power2d(
 
     References
     ----------
-    .. bibliography:: ../power.bib
+    .. bibliography:: ../bibs/power.bib
     """
     # Checks
     taxis, caxis = axes
