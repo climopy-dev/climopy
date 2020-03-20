@@ -26,6 +26,7 @@ are incomplete, and undiscovered bugs may exist.
    :caption: User Guide
 
    downloads
+   eofs
    timeseries
    spectral
 

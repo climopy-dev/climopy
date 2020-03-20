@@ -23,6 +23,7 @@
 #
 import os
 import sys
+import datetime
 
 # Add climpy to path for sphinx-automodapi
 sys.path.insert(0, os.path.abspath('..'))
@@ -30,9 +31,9 @@ sys.path.insert(0, os.path.abspath('..'))
 
 # -- Project information -----------------------------------------------------
 
-today = datetime.datetime.today()
+_today = datetime.datetime.today()
 project = 'ClimPy'
-copyright = f'{today.year}, Luke L. B. Davis'
+copyright = f'{_today.year}, Luke L. B. Davis'
 author = 'Luke L. B. Davis'
 
 # The short X.Y version

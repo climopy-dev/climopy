@@ -1,5 +1,5 @@
-Data downloads
-==============
+Downloading datasets
+====================
 
 Reanalysis downloads
 --------------------
