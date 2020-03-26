@@ -52,6 +52,35 @@ def diff(x, y, axis=0):
     )
 
 
+def _restrict_accuracy(n, accuracy, order=1):
+    """
+    Restrict the accuracy based on length of dimension.
+    """
+    absmin = order + 1  # minimum number of points for deriv
+    finitemin = 1 + 2 * ((order + 1) // 2)  # e.g. 1, 2 --> 3; 3, 4 --> 5
+    if n < absmin:  # allows odd-numbered derivs on half-levels
+        raise ValueError('Need at least 2 points on derivative axis.')
+    elif n < finitemin:
+        if accuracy > 0:
+            warnings.warn(
+                f'Setting accuracy to 0 for derivative on length-{n} axis.'
+            )
+            accuracy = 0
+    elif n < finitemin + 2:
+        if accuracy > 2:
+            warnings.warn(
+                f'Setting accuracy to 2 for derivative on length-{n} axis.'
+            )
+            accuracy = 2
+    elif n < finitemin + 4:
+        if accuracy > 4:
+            warnings.warn(
+                f'Setting accuracy to 4 for derivative on length-{n} axis.'
+            )
+            accuracy = 4
+    return accuracy
+
+
 def deriv(*args, **kwargs):
     """Alias for `deriv1`."""
     return deriv1(*args, **kwargs)
@@ -61,10 +90,11 @@ def deriv1(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
-    First order finite differencing. Can be accurate to :math:`h^2`,
+    First order centered finite differencing. Can be accurate to :math:`h^2`,
     :math:`h^4`, or :math:`h^6`. Reduces axis length by `accuracy`,
     except when `keepedges` = ``True``, in which case progressively
-    lower-`accuracy` derivatives are used for edges.
+    lower-`accuracy` derivatives are used near the edges, and the farthest
+    edges are padded with forward and backward finite differences.
 
     Parameters
     ----------
@@ -98,41 +128,21 @@ def deriv1(
     """
     # Simple Euler scheme
     h = _step(h)
-    ldiff, rdiff = (), ()
+    ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
 
     # Checks
     n = y.shape[axis]
-    if n < 2:
-        raise ValueError('Need at least 2 points on derivative axis.')
-    elif n < 3:
-        if accuracy > 0:
-            warnings.warn(
-                f'Setting accuracy to 0 for derivative on length-{n} axis.'
-            )
-            accuracy = 0
-    elif n < 5:
-        if accuracy > 2:
-            warnings.warn(
-                f'Setting accuracy to 2 for derivative on length-{n} axis.'
-            )
-            accuracy = 2
-    elif n < 7:
-        if accuracy > 4:
-            warnings.warn(
-                f'Setting accuracy to 4 for derivative on length-{n} axis.'
-            )
-            accuracy = 4
+    accuracy = _restrict_accuracy(n, accuracy, order=1)
 
     # Derivative
     y = np.array(y)  # for safety
     y = np.moveaxis(y, axis, -1)
     if accuracy == 0:
-        # keepleft and keepright are immaterial
         diff = (y[..., 1:] - y[..., :-1]) / h
     elif accuracy == 2:
-        diff = (1 / 2) * (y[..., 2:] - y[..., :-2]) / h
+        diff = (1 / 2) * (-y[..., :-2] + y[..., 2:]) / h
         if keepleft:
             ldiff = (
                 deriv1(h, y[..., :2], axis=-1, keepleft=True, accuracy=0),
@@ -141,11 +151,15 @@ def deriv1(
             rdiff = (
                 deriv1(h, y[..., -2:], axis=-1, keepright=True, accuracy=0),
             )
-        diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     elif accuracy == 4:
         diff = (
             (1 / 12)
-            * (-y[..., 4:] + 8 * y[..., 3:-1] - 8 * y[..., 1:-3] + y[..., :-4])
+            * (
+                y[..., :-4]
+                - 8 * y[..., 1:-3]
+                + 8 * y[..., 3:-1]
+                - y[..., 4:]
+            )
             / h
         )
         if keepleft:
@@ -156,17 +170,16 @@ def deriv1(
             rdiff = (
                 deriv1(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
             )
-        diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     elif accuracy == 6:
         diff = (
             (1 / 60)
             * (
-                y[..., 6:]
-                - 9 * y[..., 5:-1]
-                + 45 * y[..., 4:-2]
-                - 45 * y[..., 2:-4]
-                + 9 * y[..., 1:-5]
                 - y[..., :-6]
+                + 9 * y[..., 1:-5]
+                - 45 * y[..., 2:-4]
+                + 45 * y[..., 4:-2]
+                - 9 * y[..., 5:-1]
+                + y[..., 6:]
             )
             / h
         )
@@ -178,11 +191,11 @@ def deriv1(
             rdiff = (
                 deriv1(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
             )
-        diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     else:
         raise ValueError(
-            'Invalid accuracy; for now, choose form O(h^2), O(h^4), or O(h^6).'
+            'Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).'
         )
+    diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     return np.moveaxis(diff, -1, axis)
 
 
@@ -190,10 +203,11 @@ def deriv2(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
-    Second order finite differencing. Can be accurate to :math:`h^2`,
+    Second order centered finite differencing. Can be accurate to :math:`h^2`,
     :math:`h^4`, or :math:`h^6`. Reduces axis length by `accuracy`,
     except when `keepedges` = ``True``, in which case progressively
-    lower-`accuracy` derivatives are used for edges.
+    lower-`accuracy` derivatives are used near the edges, and the farthest
+    edges are padded with forward and backward finite differences.
 
     Notes
     -----
@@ -205,52 +219,32 @@ def deriv2(
     """
     # Simple Euler scheme
     h = _step(h)
-    ldiff, rdiff = (), ()
+    ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
 
     # Checks
     n = y.shape[axis]
-    if n < 2:
-        raise ValueError('Need at least 2 points on derivative axis.')
-    elif n < 3:
-        if accuracy > 0:
-            warnings.warn(
-                f'Setting accuracy to 0 for derivative on length-{n} axis.'
-            )
-            accuracy = 0
-    elif n < 5:
-        if accuracy > 2:
-            warnings.warn(
-                f'Setting accuracy to 2 for derivative on length-{n} axis.'
-            )
-            accuracy = 2
-    elif n < 7:
-        if accuracy > 4:
-            warnings.warn(
-                f'Setting accuracy to 4 for derivative on length-{n} axis.'
-            )
-            accuracy = 4
+    accuracy = _restrict_accuracy(n, accuracy, order=2)
 
     # Derivative
     y = np.array(y)  # for safety
     y = np.moveaxis(y, axis, -1)
     if accuracy == 2:
-        diff = (y[..., 2:] - 2 * y[..., 1:-1] + y[..., :-2]) / h ** 2
+        diff = (y[..., :-2] - 2 * y[..., 1:-1] + y[..., 2:]) / h ** 2
         if keepleft:  # just append the leftmost 2nd deriv
             ldiff = (diff[..., :1],)
         if keepright:  # just append the rightmost 2nd deriv
             rdiff = (diff[..., -1:],)
-        diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     elif accuracy == 4:
         diff = (
             (1 / 12)
             * (
-                -y[..., 4:]
-                + 16 * y[..., 3:-1]
-                - 30 * y[..., 2:-2]
-                + 16 * y[..., 1:-3]
                 - y[..., :-4]
+                + 16 * y[..., 1:-3]
+                - 30 * y[..., 2:-2]
+                + 16 * y[..., 3:-1]
+                - y[..., 4:]
             )
             / h ** 2
         )
@@ -262,18 +256,17 @@ def deriv2(
             rdiff = (
                 deriv2(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
             )
-        diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     elif accuracy == 6:
         diff = (
             (1 / 180)
             * (
-                2 * y[..., 6:]
-                - 27 * y[..., 5:-1]
-                + 270 * y[..., 4:-2]
-                - 490 * y[..., 3:-3]
-                + 270 * y[..., 2:-4]
+                2 * y[..., :-6]
                 - 27 * y[..., 1:-5]
-                + 2 * y[..., :-6]
+                + 270 * y[..., 2:-4]
+                - 490 * y[..., 3:-3]
+                + 270 * y[..., 4:-2]
+                - 27 * y[..., 5:-1]
+                + 2 * y[..., 6:]
             )
             / h ** 2
         )
@@ -285,11 +278,124 @@ def deriv2(
             rdiff = (
                 deriv2(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
             )
-        diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     else:
         raise ValueError(
-            'Invalid accuracy; for now, choose form O(h^2), O(h^4), or O(h^6).'
+            'Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).'
         )
+    diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
+    return np.moveaxis(diff, -1, axis)
+
+
+def deriv3(
+    h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
+):
+    """
+    Third order centered finite differencing. Can be accurate to :math:`h^2`,
+    :math:`h^4`, or :math:`h^6`. Reduces axis length by ``2 * accuracy``,
+    except when `keepedges` = ``True``, in which case progressively
+    lower-`accuracy` derivatives are used near the edges, and the farthest
+    edges are padded with forward and backward finite differences.
+
+    Notes
+    -----
+    For usage, see `deriv1`.
+
+    See Also
+    --------
+    deriv3_uneven
+    """
+    # Simple Euler scheme
+    h = _step(h)
+    ldiff = rdiff = ()
+    if keepedges:
+        keepleft = keepright = True
+
+    # Checks
+    n = y.shape[axis]
+    accuracy = _restrict_accuracy(n, accuracy, order=3)
+
+    # Derivative
+    y = np.array(y)  # for safety
+    y = np.moveaxis(y, axis, -1)
+    if accuracy == 0:
+        diff = (
+            -y[..., :-3]
+            + 3 * y[..., 1:-2]
+            - 3 * y[..., 2:-1]
+            + y[..., 3:]
+        ) / h ** 3
+        if keepleft:  # just append the leftmost 3rd deriv
+            ldiff = (diff[..., :1],)
+        if keepright:  # just append the rightmost 3rd deriv
+            rdiff = (diff[..., -1:],)
+    elif accuracy == 2:
+        diff = (
+            (1 / 2)
+            * (
+                - y[..., :-4]
+                + 2 * y[..., 1:-3]
+                - 2 * y[..., 3:-1]
+                + y[..., 4:]
+            )
+            / h ** 3
+        )
+        if keepleft:
+            ldiff = (
+                deriv3(h, y[..., :4], axis=-1, keepleft=True, accuracy=0),
+            )
+        if keepright:
+            rdiff = (
+                deriv3(h, y[..., -4:], axis=-1, keepright=True, accuracy=0),
+            )
+    elif accuracy == 4:
+        diff = (
+            (1 / 8)
+            * (
+                y[..., :-6]
+                - 8 * y[..., 1:-5]
+                + 13 * y[..., 2:-4]
+                - 13 * y[..., 4:-2]
+                + 8 * y[..., 5:-1]
+                - y[..., 6:]
+            )
+            / h ** 3
+        )
+        if keepleft:
+            ldiff = (
+                deriv3(h, y[..., :5], axis=-1, keepleft=True, accuracy=2),
+            )
+        if keepright:
+            rdiff = (
+                deriv3(h, y[..., -5:], axis=-1, keepright=True, accuracy=2),
+            )
+    elif accuracy == 6:
+        diff = (
+            (1 / 240)
+            * (
+                - 7 * y[..., :-8]
+                + 72 * y[..., 1:-7]
+                - 338 * y[..., 2:-6]
+                + 488 * y[..., 3:-5]
+                - 488 * y[..., 5:-3]
+                + 338 * y[..., 6:-2]
+                - 72 * y[..., 7:-1]
+                + 7 * y[..., 8:]
+            )
+            / h ** 3
+        )
+        if keepleft:
+            ldiff = (
+                deriv2(h, y[..., :7], axis=-1, keepleft=True, accuracy=4),
+            )
+        if keepright:
+            rdiff = (
+                deriv2(h, y[..., -7:], axis=-1, keepright=True, accuracy=4),
+            )
+    else:
+        raise ValueError(
+            'Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).'
+        )
+    diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     return np.moveaxis(diff, -1, axis)
 
 
@@ -319,7 +425,7 @@ def deriv1_uneven(x, y, axis=0, keepedges=False):
 
     Returns
     -------
-    float
+    ndarray
         The "derivative".
 
     Notes
