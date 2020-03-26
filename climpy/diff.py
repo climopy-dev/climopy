@@ -487,7 +487,7 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
         else:
             left, right = i - nhalf, i + nhalf + 1
         coeffs = _fornberg_coeffs(x[..., left:right], x[..., i], order=order)
-        diff[..., i] = np.sum(coeffs * y[..., left:right])
+        diff[..., i] = np.sum(coeffs * y[..., left:right], axis=-1)
 
     # Pad edges simply with edge derivatives
     if not keepedges:
