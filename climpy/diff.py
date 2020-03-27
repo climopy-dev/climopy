@@ -16,7 +16,7 @@ def _fornberg_coeffs(x, x0, order=1):
     Code was adapted from `this example \
 <https://numdifftools.readthedocs.io/en/latest/_modules/numdifftools/fornberg.html>`__.
     """
-    # NOTE: Order of coordinates does not matter (can be descending or
+    # NOTE: The order of coordinates does not matter (can be descending or
     # even non-monotonic evidently).
     x = np.asarray(x)
     n = x.shape[-1]
@@ -446,7 +446,7 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
 
     References
     ----------
-    .. bibliography:: ../bibs/diffs.bib
+    .. bibliography:: ../bibs/diff.bib
 
     See Also
     --------
@@ -480,12 +480,23 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
     diff = np.empty(y.shape) * np.nan
     offset = 0 if keepedges else nhalf
     for i in range(offset, n - offset):
+        # Get segment of x to pass to algorithm
+        # NOTE: To prevent overfitting we want to try to try to reduce segment
+        # length such that evenly spaced points yield standard lower-accuracy
+        # finite difference coefficients. If this is not possible, reduce
+        # to the bare minimum of points required for finite differencing, and
+        # the resulting coefficients will be the same independent of x0. This
+        # may pad the edges with identical finite differences.
         if i < nhalf:
-            left, right = 0, nblock
+            # left, right = 0, nblock  # causes overfitting!
+            left, right = 0, max(order + 1, i * 2 + 1)
         elif i > n - nhalf - 1:
-            left, right = n - nblock, n
+            # left, right = n - nblock, n  # causes overfitting!
+            left, right = n - max(order + 1, (n - 1 - i) * 2 + 1), n
         else:
             left, right = i - nhalf, i + nhalf + 1
+
+        # Get finite difference
         coeffs = _fornberg_coeffs(x[..., left:right], x[..., i], order=order)
         diff[..., i] = np.sum(coeffs * y[..., left:right], axis=-1)
 
