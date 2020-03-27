@@ -143,7 +143,7 @@ def deriv1(
 
     Returns
     -------
-    ndarray
+    diff : ndarray
         The "derivative". The length of axis `axis` may differ from `y`
         depending on the `keepleft`, `keepright`, and `keepedges` settings.
 
@@ -415,6 +415,69 @@ def deriv3(
     return np.moveaxis(diff, -1, axis)
 
 
+def _xy_standardize(x, y, axis=0):
+    """
+    Standardize the coordiantes.
+    """
+    x = np.atleast_1d(x).astype(float)
+    y = np.atleast_1d(y).astype(float)
+    ylen = y.shape[axis]
+    if x.size == 1:  # just used the step size
+        x = np.linspace(0, x[0] * (ylen - 1), ylen)
+    xlen = x.shape[axis] if x.ndim > 1 else x.size
+    if xlen != y.shape[axis]:
+        raise ValueError(
+            f'Got {xlen} x coordinates but {ylen} y coordinates '
+            f'along dimension {axis}.'
+        )
+    return x, y
+
+
+def deriv_half(x, y, order=1, axis=0):
+    """
+    Return an arbitrary order finite difference estimation simply by
+    taking a series of half-level differences. This will change both the
+    length of the data and the *x* coordinates of the data. It is
+    definitionally the most accurate method.
+
+    Parameters
+    ----------
+    x : float or ndarray
+        The step size, a 1-d coordinate vector, or a matrix matching
+        the shape of `y`.
+    y : ndarray
+        The data.
+    order : int, optional
+        The order of the derivative. Default is ``1``.
+    axis : int, optional
+        Axis along which derivative is taken.
+
+    Returns
+    -------
+    x : ndarray
+        The new *x* coordinates.
+    diff : ndarray
+        The "derivative".
+    """
+    # Standardize
+    x, y = _xy_standardize(x, y, axis)
+    if x.ndim > 1:
+        x = np.moveaxis(x, axis, -1)
+    y = np.moveaxis(y, axis, -1)
+
+    # Take derivatives on half levels
+    diff = y
+    for i in range(order):
+        diff = (diff[..., 1:] - diff[..., :-1]) / (x[..., 1:] - x[..., :-1])
+        x = (x[..., 1:] + x[..., :-1]) / 2.0
+
+    # Return derivative
+    if x.ndim > 1:
+        np.moveaxis(x, -1, axis)
+    diff = np.moveaxis(diff, -1, axis)
+    return x, diff
+
+
 def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
     Return an arbitrary order finite difference estimation for arbitrarily
@@ -441,7 +504,7 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
 
     Returns
     -------
-    ndarray
+    diff : ndarray
         The "derivative".
 
     References
@@ -453,17 +516,7 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
     diff, deriv1
     """
     # Standardize x and y
-    x = np.atleast_1d(x)
-    y = np.atleast_1d(y)
-    ylen = y.shape[axis]
-    if x.size == 1:  # just used the step size
-        x = np.linspace(0, x[0] * ylen - 1, ylen)
-    xlen = x.shape[axis] if x.ndim > 1 else x.size
-    if xlen != y.shape[axis]:
-        raise ValueError(
-            f'Got {xlen} x coordinates but {ylen} y coordinates '
-            f'along dimension {axis}.'
-        )
+    x, y = _xy_standardize(x, y, axis=axis)
     if x.ndim > 1:
         x = np.moveaxis(x, axis, -1)
     y = np.moveaxis(y, axis, -1)
