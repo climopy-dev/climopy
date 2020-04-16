@@ -1243,8 +1243,8 @@ def power(
 
     Windowing is carried out by applying the `wintype` weights to successive
     time segments of length `nperseg` (overlapping by one half the window
-    length), carryong out spectral decompositions on each weighted
-    segment, then taking the average of the result. Note that non-boxcar
+    length), taking spectral decompositions of each weighted segment, then
+    taking the average of the result for all segments. Note that non-boxcar
     windowing reduces the total power amplitude and results in loss of
     information. It may often be preferable to follow the example of
     :cite:`1991:randel` and smooth in *frequency* space with a Gaussian filter
