@@ -481,7 +481,7 @@ def deriv_half(x, y, order=1, axis=0):
 def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
     Return an arbitrary order finite difference estimation for arbitrarily
-    spaced coordinates using the :cite:`fornberg` method.
+    spaced coordinates using the :cite:`1988:fornberg` method.
 
     Parameters
     ----------
@@ -496,7 +496,7 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
         Axis along which derivative is taken.
     accuracy : {2, 4, 6, ...}, optional
         Accuracy of the finite difference method. This determines the
-        number of terms that go into the :cite:`fornberg` algorithm.
+        number of terms that go into the :cite:`1988:fornberg` algorithm.
     keepedges : bool, optional
         Whether to fill left, right, or both edge positions with progressively
         lower-`accuracy` finite difference estimates to prevent reducing
