@@ -336,71 +336,89 @@ def rednoisefit(
     return taus, sigmas
 
 
-def covar(*args, **kwargs):
-    """As in `corr`, but returns the covariance."""
-    return corr(*args, **kwargs, _normalize=False)
+_corr_math = r"""
+.. math::
+
+    \dfrac{\sum_{i=0}^{n-k}\left(x_t - \overline{x}\right)\left(y_{t+k} - \overline{y}\right)}{(n - k) s_x s_y}
+
+where :math:`\overline{x}` and :math:`\overline{y}` are the sample means and
+:math:`s_x` and :math:`s_y` are the sample standard deviations.
+"""
+_covar_math = r"""
+.. math::
+
+    \dfrac{\sum_{i=0}^{n-k}\left(x_t - \overline{x}\right)\left(y_{t+k} - \overline{y}\right)}{n - k}
+
+where :math:`\overline{x}` and :math:`\overline{y}` are the sample means.
+"""
+_corr_covar_docs = """
+Return the %(name)s or auto%(name)s spectrum at successive lags.
+
+Parameters
+----------
+z1 : ndarray
+    Input data.
+z2 : ndarray, optional
+    Second input data. Must be same shape as `z1`. Leave empty if
+    auto%(name)s is desired.
+axis : int, optional
+    Axis along which %(name)s is taken.
+lag : int, optional
+    Return %(name)s at the single lag `lag`.
+nlag : int, optional
+    Return lagged %(name)s from ``0`` timesteps up to `nlag` timesteps.
+
+Returns
+-------
+lags : ndarray
+    The lags.
+result : ndarray
+    The %(name)s as a function of lag.
+
+Note
+----
+This function uses the following formula to estimate %(name)s at lag :math:`k`:
+%(math)s
+"""
+cbook.snippets['corr'] = _corr_covar_docs % {
+    'name': 'correlation', 'math': _corr_math
+}
+cbook.snippets['covar'] = _corr_covar_docs % {
+    'name': 'covariance', 'math': _covar_math
+}
 
 
-def corr(
-    data1,
-    data2=None,
+@cbook.add_snippets
+def corr(*args, **kwargs):
+    """%(corr)s"""
+    return corr(*args, **kwargs, corr=True)
+
+
+@cbook.add_snippets
+def covar(
+    z1,
+    z2=None,
     dt=1,
     lag=None,
     nlag=None,
     verbose=False,
     axis=-1,
-    _normalize=True,
+    corr=False,
 ):
-    """
-    Gets the correlation spectrum at successive lags. For autocorrelation,
-    pass only a single ndarray.
-
-    Parameters
-    ----------
-    data1 : ndarray
-        Input data.
-    data2 : ndarray, optional
-        Second input data, if cross-correlation is desired. Must have same
-        shape as `data1`.
-    axis : int, optional
-        Axis along which correlation is taken.
-    lag : int, optional
-        Return correlation at the single lag `lag`.
-    nlag : int, optional
-        Return lag correlation up to `nlag` timesteps.
-
-    Returns
-    -------
-    lags : ndarray
-        The lags.
-    corrs : ndarray
-        The correlation as a function of lag.
-
-    Note
-    ----
-    Uses `this estimator \
-    <https://en.wikipedia.org/wiki/Autocorrelation#Estimation>`__:
-
-    .. code-block::
-
-        ((n-k)*sigma^2)^-1 * sum_i^(n-k)[X_t - mu][X_t+k - mu]
-
-    This includes lag-zero values by default. However if you just want a
-    single lag it will throw out those other values.
-    """
+    """%(covar)s"""
     # Preparation, and stdev/means
-    data1 = np.array(data1)
-    if data2 is None:
+    z1 = np.array(z1)
+    if z2 is None:
         autocorr = True
     else:
         autocorr = False
-        data2 = np.array(data2)
-        if data1.shape != data2.shape:
+        z2 = np.array(z2)
+        if z1.shape != z2.shape:
             raise ValueError(
-                f'Data 1 shape {data1.shape} and Data 2 shape {data2.shape} '
+                f'Data 1 shape {z1.shape} and Data 2 shape {z2.shape} '
                 'do not match.'
             )
-    naxis = data1.shape[axis]  # length
+    naxis = z1.shape[axis]  # length
 
     # Checks
     if not (nlag is None) ^ (lag is None):  # a wild xor appears!
@@ -423,30 +441,28 @@ def corr(
             )
     # Means and permute
     std1 = std2 = 1  # use for covariance
-    data1 = np.moveaxis(data1, axis, -1)
-    mean1 = data1.mean(axis=-1, keepdims=True)  # keep dims for broadcasting
+    z1 = np.moveaxis(z1, axis, -1)
+    mean1 = z1.mean(axis=-1, keepdims=True)  # keep dims for broadcasting
     if autocorr:
-        data2, mean2 = data1, mean1
+        z2, mean2 = z1, mean1
     else:
-        data2 = np.moveaxis(data2, axis, -1)
+        z2 = np.moveaxis(z2, axis, -1)
 
-        mean2 = data2.mean(axis=-1, keepdims=True)
+        mean2 = z2.mean(axis=-1, keepdims=True)
 
     # Standardize maybe
-    if _normalize:
-        # this is divided by the summation term, so should have annihilated
-        # axis
-        std1 = data1.std(axis=-1, keepdims=False)
+    if corr:
+        std1 = z1.std(axis=-1, keepdims=False)
         if autocorr:
             std2 = std1
         else:
-            std2 = data2.std(axis=-1, keepdims=False)
+            std2 = z2.std(axis=-1, keepdims=False)
 
     # This is just the variance, or one if autocorrelation mode is enabled
-    # corrs = np.ones((*data1.shape[:-1], 1))
+    # corrs = np.ones((*z1.shape[:-1], 1))
     if nlag is None and lag == 0:
         return np.moveaxis(
-            np.sum((data1 - mean1) * (data2 - mean2)) / (naxis * std1 * std2),
+            np.sum((z1 - mean1) * (z2 - mean2)) / (naxis * std1 * std2),
             -1,
             axis,
         )
@@ -456,7 +472,7 @@ def corr(
         lag = np.round(lag * dt).astype(int)
         return np.moveaxis(
             np.sum(
-                (data1[..., :-lag] - mean1) * (data2[..., lag:] - mean2),
+                (z1[..., :-lag] - mean1) * (z2[..., lag:] - mean2),
                 axis=-1,
                 keepdims=True,
             )
@@ -468,7 +484,7 @@ def corr(
     # Correlation up to n timestep-lags after 0-correlation
     else:
         # First figure out lags
-        # Negative lag means data2 leads data1 (e.g. z corr m, left-hand side
+        # Negative lag means z2 leads z1 (e.g. z corr m, left-hand side
         # is m leads z).
         # e.g. 20 day lag, at synoptic timesteps
         nlag = np.round(nlag / dt).astype(int)
@@ -480,14 +496,14 @@ def corr(
             lags = range(0, nlag + 1)
         # Get correlation
         # will include the zero-lag autocorrelation
-        corrs = np.empty((*data1.shape[:-1], n))
+        corrs = np.empty((*z1.shape[:-1], n))
         for i, lag in enumerate(lags):
             if lag == 0:
-                prod = (data1 - mean1) * (data2 - mean2)
+                prod = (z1 - mean1) * (z2 - mean2)
             elif lag < 0:  # input 1 *trails* input 2
-                prod = (data1[..., -lag:] - mean1) * (data2[..., :lag] - mean2)
+                prod = (z1[..., -lag:] - mean1) * (z2[..., :lag] - mean2)
             else:
-                prod = (data1[..., :-lag] - mean1) * (data2[..., lag:] - mean2)
+                prod = (z1[..., :-lag] - mean1) * (z2[..., lag:] - mean2)
             corrs[..., i] = prod.sum(axis=-1) / ((naxis - lag) * std1 * std2)
         return np.array(lags) * dt, np.moveaxis(corrs, -1, axis)
 
@@ -1279,8 +1295,8 @@ def power(
         Coherence and phase difference, respectively.
         Returned if `z2` is not ``None`` and `coherence` is ``True``.
 
-    Notes
-    -----
+    Note
+    ----
     %(power.notes)s
 
     References
@@ -1476,8 +1492,8 @@ def power2d(
         Coherence and phase difference, respectively.
         Returned if `z2` is not ``None`` and `coherence` is ``True``.
 
-    Notes
-    -----
+    Note
+    ----
     %(power.notes)s
 
     References
