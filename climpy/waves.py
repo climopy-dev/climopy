@@ -9,7 +9,7 @@ import numpy as np
 from . import const, utils
 
 
-class Graticule(object):
+class _Graticule(object):
     """
     Class for storing longitude and latitude grid properties. Assumes
     a global grid with borders halfway between each grid center.
@@ -105,7 +105,7 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
     """
     # Initial stuff
     # Delivers grid areas, as function of latitude
-    areas = Graticule(lon, lat).areas
+    areas = _Graticule(lon, lat).areas
 
     # Flatten
     q, shape = utils.lead_flatten(q, 2)  # gives current q, and former shape
@@ -191,7 +191,7 @@ def waq(
             omega = -np.flip(omega, axis=1)
         if sigma is not None:
             sigma = np.flipd(sigma, axis=1)
-    grid = Graticule(lon, lat)
+    grid = _Graticule(lon, lat)
     areas, dphi, phib = grid.areas, grid.dphi, grid.phib
 
     # Flatten (eqlat can do this, but not necessary here)
@@ -316,7 +316,7 @@ def waqlocal(lon, lat, q, flip=True, skip=10):
     # Graticule considerations
     if flip:
         lat, q = -np.flipud(lat), -np.flip(q, axis=1)
-    phib = Graticule(lon, lat).phib
+    phib = _Graticule(lon, lat).phib
     integral = const.a * phib[None, :]
 
     # Flatten (eqlat can do this, but not necessary here)

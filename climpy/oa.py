@@ -9,8 +9,8 @@ and `Dennis Hartmann \
 Note
 ----
 The convention for this package is to use *linear* wave properties, i.e. the
-wavelength in [units] per :math:`2\\pi` radians, and wavenumber
-:math:`2\\pi` radians per [units].
+wavelength in <units> per :math:`2\\pi` radians, and wavenumber
+:math:`2\\pi` radians per <units>.
 """
 import numpy as np
 import scipy.signal as signal
@@ -18,7 +18,7 @@ import scipy.stats as stats
 import scipy.linalg as linalg
 import scipy.optimize as optimize
 import warnings
-from . import utils
+from . import cbook, utils
 
 
 def roots(poly):
@@ -862,8 +862,8 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, pad_value=np.nan):
     y : ndarray
         Data filtered along axis `axis`.
 
-    Notes
-    -----
+    Note
+    ----
     * Consider adding empirical method for trimming either side of recursive
       filter that trims up to where impulse response is negligible.
     * If `x` has odd number of obs along axis, lfilter will trim
@@ -919,11 +919,9 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, pad_value=np.nan):
 
 def response(dx, b, a=1, n=1000, simple=False):
     """
-    Calculate response function given the a and b coefficients for some
-    analog filter. Note we *need to make the exponent frequencies into
-    rad/physical units* for results to make sense.
-
-    Dennis Notes: https://atmos.washington.edu/~dennis/552_Notes_ftp.html
+    Calculate the response function given the a and b coefficients for some
+    analog filter. For details, see Dennis Hartmann's objective analysis
+    `course notes <https://atmos.washington.edu/~dennis/552_Notes_ftp.html>`__.
 
     Note
     ----
@@ -944,6 +942,8 @@ def response(dx, b, a=1, n=1000, simple=False):
     x = np.linspace(0, np.pi, n)
 
     # Simple calculation given 'b' coefficients, from Libby's notes
+    # Note we *need to make the exponent frequencies into
+    # rad/physical units* for results to make sense.
     if simple:
         if not len(a) == 1 and a[0] == 1:
             raise ValueError(
@@ -965,7 +965,7 @@ def response(dx, b, a=1, n=1000, simple=False):
         )
 
     # More complex freqz filter, generalized for arbitrary recursive filters,
-    # with extra allowance for working in physical (non-timestep) space
+    # with extra allowance for working with physical units.
     # Last entry will be Nyquist, i.e. 1/(dx*2)
     else:
         _, y = signal.freqz(b, a, x)
@@ -1056,8 +1056,8 @@ def lanczos(dx, width, cutoff):
     a : ndarray
         Denominator coeffs.
 
-    Notes
-    -----
+    Note
+    ----
     * The smoothing should only be *approximate* (see Hartmann notes), response
       function never exactly perfect like with Butterworth filter.
     * The `cutoff` parameter must be provided in *time step units*. Change
@@ -1180,6 +1180,60 @@ def window(wintype, n):
     return win
 
 
+cbook.snippets['power.bibliography'] = '.. bibliography:: ../bibs/power.bib'
+cbook.snippets['power.params'] = """
+coherence : bool, optional
+    Ignored if `z2` is ``None``. If ``False`` (the default), `power`
+    returns the co-power spectrum, quadrature spectrum, and individual
+    power spectra. If ``True``, `power` returns the coherence
+    and phase difference.
+wintype : str or (str, float), optional
+    The window specification, passed to `get_window`. The resulting
+    weights are used to window the data before carrying out spectral
+    decompositions. See notes for details.
+nperseg : int, optional
+    The window or segment length, passed to `get_window`. If ``None``,
+    windowing is not carried out. See notes for details.
+"""
+cbook.snippets['power.notes'] = """
+The Fourier coefficients are scaled so that total variance is equal to one
+half the sum of the right-hand coefficients. This is more natural for the
+real-valued datasets typically used by physical scientists, and matches
+the convention from Elizabeth Barnes's objective analysis `course notes \
+<http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`__.
+This differs from the numpy convention, which scales the coefficients so
+that total variance is equal to the sum of squares of all coefficients,
+or twice the right-hand coefficients.
+
+Windowing is carried out by applying the `wintype` weights to successive
+time segments of length `nperseg` (overlapping by one half the window
+length), taking spectral decompositions of each weighted segment, then
+taking the average of the result for all segments. Note that non-boxcar
+windowing reduces the total power amplitude and results in loss of
+information. It may often be preferable to follow the example of
+:cite:`1991:randel` and smooth in *frequency* space with a Gaussian filter
+after the decomposition has been carried out.
+
+The below example shows that the extent of power reduction resulting from
+non-boxcar windowing depends on the character of the signal.
+
+.. code-block:: python
+
+    import numpy as np
+    import climpy
+    w = climpy.window('hanning', 200)
+    y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
+    y2 = np.random.rand(200) # complex signal
+    for y in (y1, y2):
+        yvar = y.var()
+        Y = (np.abs(np.fft.fft(y)[1:] / y.size) ** 2).sum()
+        Yw = (np.abs(np.fft.fft(y * w)[1:] / y.size) ** 2).sum()
+        print('Boxcar', Y / yvar)
+        print('Hanning', Yw / yvar)
+"""
+
+
+@cbook.add_snippets
 def power(
     y1,
     y2=None,
@@ -1204,16 +1258,11 @@ def power(
         Second input data, if cross-spectrum is desired.
         Must have same shape as `y1`.
     dx : float, optional
-        Time dimension step size in physical units. Used to scale the `f`
-        coordinates returned by this function.
+        Time dimension step size in physical units. Used to scale `f`.
     cyclic : bool, optional
-        Whether data is cyclic along axis. When ``True``, the *nperseg*
+        Whether data is cyclic along axis. If ``True``, the *nperseg*
         argument will be overridden
-    coherence : bool, optional
-        Ignored when `z2` is ``None``. If ``False`` (the default), `power`
-        returns the co-power spectrum, quadrature spectrum, and individual
-        power spectra. If ``True``, `power` returns the coherence
-        and phase difference.
+    %(power.params)s
 
     Returns
     -------
@@ -1221,55 +1270,22 @@ def power(
         Frequencies in units <x units>**-1. Scaled with `dx`.
     P : ndarray, optional
         Power spectrum in units <data units>**2.
-        Returned when `z2` is ``None``.
+        Returned if `z2` is ``None``.
     P, Q, Pz1, Pz2 : ndarray, optional
         Co-power spectrum, quadrature spectrum, power spectrum for `z1`, and
         power spectrum for `z2`, respectively.
-        Returned when `z2` is not ``None`` and `coherence` is ``False``.
+        Returned if `z2` is not ``None`` and `coherence` is ``False``.
     Coh, Phi : ndarray, optional
         Coherence and phase difference, respectively.
-        Returned when `z2` is not ``None`` and `coherence` is ``True``.
+        Returned if `z2` is not ``None`` and `coherence` is ``True``.
 
     Notes
     -----
-    The Fourier coefficients are scaled so that total variance is equal to one
-    half the sum of the right-hand coefficients. This is more natural for the
-    real-valued datasets typically used by physical scientists, and matches
-    the convention from Elizabeth Barnes's objective analysis `course notes \
-<http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`__.
-    This differs from the numpy convention, which scales the coefficients so
-    that total variance is equal to the sum of squares of all coefficients,
-    or twice the right-hand coefficients.
-
-    Windowing is carried out by applying the `wintype` weights to successive
-    time segments of length `nperseg` (overlapping by one half the window
-    length), taking spectral decompositions of each weighted segment, then
-    taking the average of the result for all segments. Note that non-boxcar
-    windowing reduces the total power amplitude and results in loss of
-    information. It may often be preferable to follow the example of
-    :cite:`1991:randel` and smooth in *frequency* space with a Gaussian filter
-    after the decomposition has been carried out.
-
-    The below example shows that the extent of power reduction resulting from
-    non-boxcar windowing depends on the character of the signal.
-
-    .. code-block:: python
-
-        import numpy as np
-        import climpy
-        w = climpy.window('hanning', 200)
-        y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
-        y2 = np.random.rand(200) # complex signal
-        for y in (y1, y2):
-            yvar = ((y - y.mean()) ** 2).mean()
-            Y = (np.abs(np.fft.fft(y)[1:] / y.size) ** 2).sum()
-            Yw = (np.abs(np.fft.fft(y * w)[1:] / y.size) ** 2).sum()
-            print('Boxcar', Y / yvar)
-            print('Hanning', Yw / yvar)
+    %(power.notes)s
 
     References
     ----------
-    .. bibliography:: ../bibs/power.bib
+    %(power.bibliography)s
     """
     # Initial stuff
     N = y1.shape[axis]  # window count
@@ -1410,6 +1426,7 @@ def power(
             return f / dx, CO, Q, Py1, Py2
 
 
+@cbook.add_snippets
 def power2d(
     z1,
     z2=None,
@@ -1434,51 +1451,38 @@ def power2d(
         Second input data, if cross-spectrum is desired. Must have same
         shape as `z1`.
     dx : float, optional
-        Time dimension step size in physical units. Used to scale the `fx`
-        coordinates returned by this function.
+        Time dimension step size in physical units. Used to scale `fx`.
     dy : float, optional
-        Cyclic dimension step size in physical units. Used to scale the `fy`
-        coordinates returned by this function.
+        Cyclic dimension step size in physical units. Used to scale `fy`.
     axes : (int, int), optional
         Locations of the "time" and "cyclic" axes, respectively.
         By default the second-to-last and last axes are used.
-    coherence : bool, optional
-        Ignored when `z2` is ``None``. If ``False`` (the default), `power2d`
-        returns the co-power spectrum, quadrature spectrum, and individual
-        power spectra. If ``True``, `power2d` returns the coherence
-        and phase difference.
-    wintype : str or (str, float), optional
-        The window specification, passed to `get_window`. The resulting
-        weights are used to window the data before carrying out spectral
-        decompositions. See notes for details.
-    nperseg : int, optional
-        The window or segment length, passed to `get_window`. If ``None``,
-        windowing is not carried out. See notes for details.
+    %(power.params)s
 
     Returns
     -------
     fx : ndarray
-        Time dimension frequencies in <x units>**-1. Scaled with `dx`.
+        Time dimension frequencies in units <x units>**-1. Scaled with `dx`.
     fy : ndarray
-        Cyclic dimension wavenumbers in <y units>**-1. Scaled with `dy`.
+        Cyclic dimension wavenumbers in units <y units>**-1. Scaled with `dy`.
     P : ndarray, optional
         Power spectrum in units <data units>**2.
-        Returned when `z2` is ``None``.
+        Returned if `z2` is ``None``.
     P, Q, Pz1, Pz2 : ndarray, optional
         Co-power spectrum, quadrature spectrum, power spectrum for `z1`, and
         power spectrum for `z2`, respectively.
-        Returned when `z2` is not ``None`` and `coherence` is ``False``.
+        Returned if `z2` is not ``None`` and `coherence` is ``False``.
     Coh, Phi : ndarray, optional
         Coherence and phase difference, respectively.
-        Returned when `z2` is not ``None`` and `coherence` is ``True``.
+        Returned if `z2` is not ``None`` and `coherence` is ``True``.
 
     Notes
     -----
-    See notes for `power`.
+    %(power.notes)s
 
     References
     ----------
-    .. bibliography:: ../bibs/power.bib
+    %(power.bibliography)s
     """
     # Checks
     taxis, caxis = axes

@@ -6,6 +6,7 @@ Various finite difference schemes.
 # cumsums.
 import warnings
 import numpy as np
+from . import cbook
 
 
 def _fornberg_coeffs(x, x0, order=1):
@@ -44,14 +45,33 @@ def _fornberg_coeffs(x, x0, order=1):
     return weights[..., -1]
 
 
-def integrate(x, y, y0=0, axis=0):
-    """Integrates stuff."""
+def integral(x, y, y0=0, axis=0):
+    """
+    Return the integral approximation along an arbitrary axis.
+
+    Parameters
+    ----------
+    x : ndarray
+        A 1-d coordinate vector. Must match the shape of `y` on axis `axis`.
+    y : ndarray
+        The data.
+    y0 : float or ndarray, optional
+        Constant offset added to the integral. Must be scalar or match the
+        shape of `y`.
+    axis : int, optional
+        Axis along which integral is taken.
+
+    Returns
+    -------
+    ndarray
+        The "integral".
+    """
     dx = x[1:] - x[:-1]
     dx = np.concatenate((dx[:1], dx))
     shape = [1] * y.ndim
     shape[axis] = dx.size
     dx = np.reshape(dx, shape)  # add singletons
-    return y0 + (y * dx).cumsum()
+    return y0 + (y * dx).cumsum(axis=axis)
 
 
 def _step(h):
@@ -71,7 +91,7 @@ def diff(x, y, axis=0):
 
     See Also
     --------
-    deriv1, deriv1_uneven
+    deriv1, deriv_uneven
     """
     if x.ndim > 1:  # if want x interpreted as vector
         xaxis = axis
@@ -116,41 +136,47 @@ def _accuracy_check(n, accuracy, order=1):
     return accuracy
 
 
+cbook.snippets['deriv.params'] = """
+h : float or ndarray
+    The step size. If non-singleton, the step size is `h[1] - h[0]`.
+y : ndarray
+    The data.
+axis : int, optional
+    Axis along which derivative is taken.
+accuracy : {0, 2, 4, 6}, optional
+    Accuracy of finite difference approximation. ``0`` corresponds
+    to differentiation onto half-levels. ``2``, ``4``, and ``6`` correspond
+    to centered accuracies of :math:`h^2`, :math:`h^4`, and :math:`h^6`,
+    respectively.  See `this wikipedia page \
+<https://en.wikipedia.org/wiki/Finite_difference_coefficient>`__
+    for the table of coefficients for each accuracy.
+keepleft, keepright, keepedges : bool, optional
+    Whether to fill left, right, or both edge positions with progressively
+    lower-`accuracy` finite difference estimates to prevent reducing
+    the dimension size along axis `axis`.
+"""
+cbook.snippets['deriv.returns'] = """
+diff : ndarray
+    The "derivative". The length of axis `axis` may differ from `y`
+    depending on the `keepleft`, `keepright`, and `keepedges` settings.
+"""
+
+
+@cbook.add_snippets
 def deriv1(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
-    Return an estimate of the first derivative using first order centered
-    finite differences up to any arbitrary axis.
+    Return an estimate of the first derivative along an arbitrary axis using
+    first order centered finite differencing.
 
     Parameters
     ----------
-    h : float or ndarray
-        Step size. If ndarray, step size is taken as `h[1] - h[0]`.
-    y : ndarray
-        The data.
-    axis : int, optional
-        Axis along which derivative is taken.
-    accuracy : {0, 2, 4, 6}, optional
-        Accuracy of Euler centered-finite difference method. ``0`` corresponds
-        to differentiation onto half-levels, as in `diff`. ``2``, ``4``, and
-        ``6`` correspond to accuracies of :math:`h^2`, :math:`h^4`, and
-        :math:`h^6`, respectively.
-    keepleft, keepright, keepedges : bool, optional
-        Whether to fill left, right, or both edge positions with progressively
-        lower-`accuracy` finite difference estimates to prevent reducing
-        the dimension size along axis `axis`.
+    %(deriv.params)s
 
     Returns
     -------
-    diff : ndarray
-        The "derivative". The length of axis `axis` may differ from `y`
-        depending on the `keepleft`, `keepright`, and `keepedges` settings.
-
-    Notes
-    -----
-    This was developed from the `wikipedia definition
-    <https://en.wikipedia.org/wiki/Finite_difference_coefficient>`_.
+    %(deriv.returns)s
 
     See Also
     --------
@@ -229,12 +255,21 @@ def deriv1(
     return np.moveaxis(diff, -1, axis)
 
 
+@cbook.add_snippets
 def deriv2(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
-    Return an estimate of the second derivative using second order centered
-    finite differences up to any arbitrary axis. See `deriv1` for usage.
+    Return an estimate of the second derivative along an arbitrary axis using
+    second order centered finite differencing.
+
+    Parameters
+    ----------
+    %(deriv.params)s
+
+    Returns
+    -------
+    %(deriv.returns)s
 
     See Also
     --------
@@ -309,12 +344,21 @@ def deriv2(
     return np.moveaxis(diff, -1, axis)
 
 
+@cbook.add_snippets
 def deriv3(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
-    Return an estimate of the third derivative using third order centered
-    finite differences up to any arbitrary axis. See `deriv1` for usage.
+    Return an estimate of the third derivative along an arbitrary axis using
+    third order centered finite differencing.
+
+    Parameters
+    ----------
+    %(deriv.params)s
+
+    Returns
+    -------
+    %(deriv.returns)s
 
     See Also
     --------
@@ -435,16 +479,16 @@ def _xy_standardize(x, y, axis=0):
 
 def deriv_half(x, y, order=1, axis=0):
     """
-    Return an arbitrary order finite difference estimation simply by
-    taking a series of half-level differences. This will change both the
-    length of the data and the *x* coordinates of the data. While this may be
-    inconvenient, it is definitionally the most accurate method.
+    Return an arbitrary order finite difference estimation by taking successive
+    half-level differences. This will change both the length of the data and
+    the *x* coordinates of the data. While this is not always practical, it
+    is definitively the most accurate finite difference method.
 
     Parameters
     ----------
     x : float or ndarray
-        The step size, a 1-d coordinate vector, or a matrix matching
-        the shape of `y`.
+        The step size, a 1-d coordinate vector, or an array of coordinates
+        matching the shape of `y`.
     y : ndarray
         The data.
     order : int, optional

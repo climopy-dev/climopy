@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Includes miscellaneous useful functions.
+Includes miscellaneous mathematical functions.
 """
 import numpy as np
 

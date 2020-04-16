@@ -41,8 +41,8 @@ Wave diagnostics
 .. automodsumm:: climpy.waves
    :toctree: api
 
-Basic math
-----------
+Miscellaneous math
+------------------
 
 .. automodule:: climpy.math
 
