@@ -1149,15 +1149,13 @@ def butterworth(dx, order, cutoff, btype='low'):
 
 def window(wintype, n):
     """
-    Retrieves weighting function window, identical to get_window(). Note
-    the raw window weights must be normalized, or will screw up the power
-    of your FFT coefficients.  For windows that require extra parameters,
-    window must be a tuple of window-name, parameter.
+    Retrieve the `~scipy.signal.get_window` weighting function window.
 
     Parameters
     ----------
     wintype : str or (str, float) tuple
-        The window name.
+        The window name or ``(name, param1, ...)`` tuple containing the window
+        name and required parameter(s).
     n : int
         The window length.
 
@@ -1165,6 +1163,9 @@ def window(wintype, n):
     -------
     win : ndarray
         The window coefficients.
+
+    power of your FFT coefficients. If your window requires some parameter,
+    `wintype` must be a ``(name, parameter1, ...)`` tuple.
     """
     # Default error messages are shit, make them better
     if wintype == 'welch':
@@ -1192,8 +1193,8 @@ def power(
     detrend='constant',
 ):
     """
-    Gets the spectral decomposition for particular windowing technique.
-    Uses simple numpy fft.
+    Return the spectral decomposition of a real-valued dataset along an
+    arbitrary axis with arbitrary windowing behavior.
 
     Parameters
     ----------
@@ -1203,8 +1204,8 @@ def power(
         Second input data, if cross-spectrum is desired.
         Must have same shape as `y1`.
     dx : float, optional
-        Timestep in physical units, used for scaling the
-        frequency-coordinates.
+        Time dimension step size in physical units. Used to scale the `f`
+        coordinates returned by this function.
     cyclic : bool, optional
         Whether data is cyclic along axis. When ``True``, the *nperseg*
         argument will be overridden
@@ -1217,40 +1218,40 @@ def power(
     Returns
     -------
     f : ndarray
-        Wavenumbers, in [x units]**-1.
-    P : ndarray
-        Present when `z2` is ``None``. Power spectrum, in
-        units [data units]**2.
-    P, Q, Pz1, Pz2 : ndarray
-        Present when `z2` is not ``None``, `coherence` = ``False``. Co-power
-        spectrum, quadrature spectrum, power spectrum for `z1`, and
+        Frequencies in units <x units>**-1. Scaled with `dx`.
+    P : ndarray, optional
+        Power spectrum in units <data units>**2.
+        Returned when `z2` is ``None``.
+    P, Q, Pz1, Pz2 : ndarray, optional
+        Co-power spectrum, quadrature spectrum, power spectrum for `z1`, and
         power spectrum for `z2`, respectively.
-    Coh, Phi : ndarray
-        Present when `z2` is not ``None``, `coherence` = ``True``.
+        Returned when `z2` is not ``None`` and `coherence` is ``False``.
+    Coh, Phi : ndarray, optional
         Coherence and phase difference, respectively.
+        Returned when `z2` is not ``None`` and `coherence` is ``True``.
 
-    Note
-    ----
-    The scaling conventions coefficient definitions change between
-    references and packages! Elizabeth Barnes's `notes \
-<http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`__
-    define variance as equal to one half the sum of right-hand square
-    coefficients, but the numpy tools define variance as the sum of squares
-    of all coefficients (or twice the right-hand coefficients). Complex
-    DFT convention in general `seems to require \
-<https://stackoverflow.com/a/19976162/4970632>`__
-    normalizing by 1/N after the FFT.
+    Notes
+    -----
+    The Fourier coefficients are scaled so that total variance is equal to one
+    half the sum of the right-hand coefficients. This is more natural for the
+    real-valued datasets typically used by physical scientists, and matches
+    the convention from Elizabeth Barnes's objective analysis `course notes \
+<http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`__.
+    This differs from the numpy convention, which scales the coefficients so
+    that total variance is equal to the sum of squares of all coefficients,
+    or twice the right-hand coefficients.
 
-    Also note that windowing reduces the power amplitudes and results in loss
-    of information! The necessary amplitude correction factor also varies
-    depending on the frequency and the signal analysed.
-    It is perhaps to follow the example of :cite:`1991:randel` and smooth in
-    frequency space with a Gaussian filter, which should not reduce power.
+    Windowing is carried out by applying the `wintype` weights to successive
+    time segments of length `nperseg` (overlapping by one half the window
+    length), carryong out spectral decompositions on each weighted
+    segment, then taking the average of the result. Note that non-boxcar
+    windowing reduces the total power amplitude and results in loss of
+    information. It may often be preferable to follow the example of
+    :cite:`1991:randel` and smooth in *frequency* space with a Gaussian filter
+    after the decomposition has been carried out.
 
-    Example
-    -------
-    The below example shows that the extent of power reduction due to windowing
-    depends on the signal.
+    The below example shows that the extent of power reduction resulting from
+    non-boxcar windowing depends on the character of the signal.
 
     .. code-block:: python
 
@@ -1415,15 +1416,15 @@ def power2d(
     dx=1,
     dy=1,
     coherence=False,
-    nperseg=100,
+    nperseg=None,
     wintype='boxcar',
     center=np.pi,
     axes=(-2, -1),
 ):
     """
-    Performs 2-d spectral decomposition, with windowing along only *one*
-    dimension, in style of :cite:`1991:randel`. Therefore assumption is we
-    have *cyclic* data along one dimension, the 'x' dimension.
+    Return the 2-d spectral decomposition of a real-valued dataset with
+    one *time* dimension and one *cyclic* dimension along arbitrary axes with
+    arbitrary windowing behavior. For details, see :cite:`1991:randel`.
 
     Parameters
     ----------
@@ -1433,11 +1434,11 @@ def power2d(
         Second input data, if cross-spectrum is desired. Must have same
         shape as `z1`.
     dx : float, optional
-        Timestep in physical units, used for scaling the
-        frequency-coordinates.
+        Time dimension step size in physical units. Used to scale the `fx`
+        coordinates returned by this function.
     dy : float, optional
-        Physical units of cyclic dimension step, used for scaling the
-        frequency-coordinates.
+        Cyclic dimension step size in physical units. Used to scale the `fy`
+        coordinates returned by this function.
     axes : (int, int), optional
         Locations of the "time" and "cyclic" axes, respectively.
         By default the second-to-last and last axes are used.
@@ -1446,24 +1447,33 @@ def power2d(
         returns the co-power spectrum, quadrature spectrum, and individual
         power spectra. If ``True``, `power2d` returns the coherence
         and phase difference.
+    wintype : str or (str, float), optional
+        The window specification, passed to `get_window`. The resulting
+        weights are used to window the data before carrying out spectral
+        decompositions. See notes for details.
+    nperseg : int, optional
+        The window or segment length, passed to `get_window`. If ``None``,
+        windowing is not carried out. See notes for details.
 
     Returns
     -------
-    f : ndarray
-        Wavenumbers, in [x units]**-1.
-    P : ndarray
-        Present when `z2` is ``None``. Power spectrum, in
-        units [data units]**2.
-    P, Q, Pz1, Pz2 : ndarray
-        Present when `z2` is not ``None``, `coherence` = ``False``. Co-power
-        spectrum, quadrature spectrum, power spectrum for `z1`, and
+    fx : ndarray
+        Time dimension frequencies in <x units>**-1. Scaled with `dx`.
+    fy : ndarray
+        Cyclic dimension wavenumbers in <y units>**-1. Scaled with `dy`.
+    P : ndarray, optional
+        Power spectrum in units <data units>**2.
+        Returned when `z2` is ``None``.
+    P, Q, Pz1, Pz2 : ndarray, optional
+        Co-power spectrum, quadrature spectrum, power spectrum for `z1`, and
         power spectrum for `z2`, respectively.
-    Coh, Phi : ndarray
-        Present when `z2` is not ``None``, `coherence` = ``True``.
+        Returned when `z2` is not ``None`` and `coherence` is ``False``.
+    Coh, Phi : ndarray, optional
         Coherence and phase difference, respectively.
+        Returned when `z2` is not ``None`` and `coherence` is ``True``.
 
-    Note
-    ----
+    Notes
+    -----
     See notes for `power`.
 
     References
@@ -1502,13 +1512,14 @@ def power2d(
         )
 
     # Helper function
-    # Will put the *non-cyclic* axis on position 1, *cyclic* axis on position 2
-    # Mirrors convention for row-major geophysical data array storage, time
-    # by pressure by lat by lon (the cyclic one).
     offset = int(taxis < caxis)  # TODO: does this work, or is stuff messed up?
     nflat = z1.ndim - 2  # we overwrite z1, so must save this value!
-
-    def reshape(x):
+    def reshape(x):  # noqa: E301
+        """
+        Put the *non-cyclic* axis on position 1, *cyclic* axis on position 2
+        Mirrors convention for row-major geophysical data array storage where
+        data is usually time by pressure by lat by lon (the cyclic one).
+        """
         x = np.moveaxis(x, taxis, -1)  # put on -1, then will be moved to -2
         x = np.moveaxis(x, caxis - offset, -1)  # put on -1
         x, shape = utils.lead_flatten(x, nflat)  # flatten remaining dimensions
@@ -1519,6 +1530,7 @@ def power2d(
     extra = z1.shape[0]
     if z2 is not None:
         z2, _ = reshape(z2)
+
     # For output data
     N = z1.shape[1]  # non-cyclic dimension
     M = z1.shape[2]  # cyclic dimension
@@ -1527,14 +1539,13 @@ def power2d(
     shape[-1] = M // 2
 
     # Helper function
-    # Gets 2D Fourier decomp, reorders negative frequencies on non-cyclic
-    # axis so frequencies there are monotonically ascending.
-    # wsum = (win ** 2).sum()
     win = window(wintype, nperseg)  # for time domain
-
-    def freqs(x, pm):
-        # Detrend
-        # Or don't, since we shave the constant part anyway?
+    def freqs(x, pm):  # noqa: E301
+        """
+        Get 2D Fourier decomp and reorder negative frequencies on non-cyclic
+        axis so frequencies there are monotonically ascending.
+        """
+        # Do not detrend since we shave constant part anyway
         # x = signal.detrend(x, type='constant', axis=1) # remove mean
         # x = signal.detrend(x, type=detrend, axis=0) # remove trend or mean
 
@@ -1564,11 +1575,12 @@ def power2d(
 
     # The window *centers* for time windowing
     # jump by half window length
-    loc = np.arange(pm, N - pm + 0.1, pm).astype(int)
-    if len(loc) == 0:
+    win_idxs = np.arange(pm, N - pm + 0.1, pm).astype(int)
+    if len(win_idxs) == 0:
         raise ValueError('Window length too big.')
+
     # Get the spectra
-    Pz1 = np.nan * np.empty((extra, loc.size, *shape[-2:]))  # power
+    Pz1 = np.nan * np.empty((extra, win_idxs.size, *shape[-2:]))  # power array
     if z2 is not None:
         CO = Pz1.copy()
         Q = Pz1.copy()
@@ -1580,21 +1592,21 @@ def power2d(
         ):
             warnings.warn('Skipping array with missing values.')
             continue
+
         # 2D transform for each window on non-cyclic dimension
-        for i, l in enumerate(loc):
+        for i, idx in enumerate(win_idxs):
             if z2 is None:
                 # Note since we got the rfft (not fft) in one direction, only
                 # have half the coefficients (they are symmetric); means for
                 # correct variance, have to double the power.
-                Fz1 = freqs(z1[j, l - pm:l + pm, :], pm)
+                Fz1 = freqs(z1[j, idx - pm:idx + pm, :], pm)
                 Pz1[j, i, :, :] = np.abs(Fz1) ** 2
                 Pz1[j, i, :, :-1] *= 2
             else:
                 # Frequencies
-                Fz1 = freqs(z1[j, l - pm:l + pm, :], pm)
-                Fz2 = freqs(z2[j, l - pm:l + pm, :], pm)
-                # Powers
-                # analagous to Libby's notes, for complex space
+                Fz1 = freqs(z1[j, idx - pm:idx + pm, :], pm)
+                Fz2 = freqs(z2[j, idx - pm:idx + pm, :], pm)
+                # Powers, analagous to Libby's notes for complex space
                 Phi1 = np.arctan2(Fz1.imag, Fz1.real)
                 Phi2 = np.arctan2(Fz2.imag, Fz2.real)
                 CO[j, i, :, :] = (
@@ -1606,9 +1618,8 @@ def power2d(
                 for array in (CO, Q, Pz1, Pz2):
                     array[j, i, :, :-1] *= 2
 
-    # Frequencies
-    # Make sure Nyquist frequency is appropriately signed on either side of
-    # array
+    # Frequencies. Make sure Nyquist frequency is appropriately signed on
+    # either side of the array.
     fx = np.fft.fftfreq(2 * pm)  # just the positive-direction Fourier coefs
     fx = np.concatenate(
         (
@@ -1622,12 +1633,13 @@ def power2d(
     fy = np.fft.rfftfreq(M)[1:]
 
     # Helper function
-    # Reshapes final result, and scales powers so we can take dimensional
-    # average without needing to divide by 2
     def unshape(x):
+        """
+        Reshape final result and scale powers so we can take dimensional
+        average without needing to divide by 2.
+        """
         x = utils.lead_unflatten(x, shape, nflat)
-        # put caxis back, accounting for if taxis moves to left
-        x = np.moveaxis(x, -1, caxis - offset)
+        x = np.moveaxis(x, -1, caxis - offset)  # acount for taxis moving left
         x = np.moveaxis(x, -1, taxis)  # put taxis back
         return x
 

@@ -437,8 +437,8 @@ def deriv_half(x, y, order=1, axis=0):
     """
     Return an arbitrary order finite difference estimation simply by
     taking a series of half-level differences. This will change both the
-    length of the data and the *x* coordinates of the data. It is
-    definitionally the most accurate method.
+    length of the data and the *x* coordinates of the data. While this may be
+    inconvenient, it is definitionally the most accurate method.
 
     Parameters
     ----------
