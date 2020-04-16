@@ -73,6 +73,10 @@ extlinks = {
     'pr': ('https://github.com/lukelbd/climpy/pull/%s', 'GH#'),
 }
 
+# Do not run doctest tests, these are just to show syntax and expected
+# output may be graphical
+doctest_test_doctest_blocks = ''
+
 # Generate stub pages whenever ::autosummary directive encountered
 # This way don't have to call sphinx-autogen manually
 autosummary_generate = True
@@ -169,7 +173,9 @@ for style in get_all_styles():
         f.write(HtmlFormatter(style=style).get_style_defs('.highlight'))
 
 # Role
-default_role = 'py:obj' # default family is py, but can also set default role so don't need :func:`name`, :module:`name`, etc.
+# default family is py, but can also set default role so don't need
+# :func:`name`, :module:`name`, etc.
+default_role = 'py:obj'
 
 # -- Options for HTML output -------------------------------------------------
 
