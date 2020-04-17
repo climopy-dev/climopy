@@ -84,29 +84,6 @@ def _step(h):
         return h[1] - h[0]
 
 
-def diff(x, y, axis=0):
-    """
-    Return the first order finite difference onto half levels, i.e.
-    :math:`y_1 - y_0 / h` along axis `axis`. Reduces the axis length by 1.
-
-    See Also
-    --------
-    deriv1, deriv_uneven
-    """
-    if x.ndim > 1:  # if want x interpreted as vector
-        xaxis = axis
-    else:
-        xaxis = 0
-    if x.shape[xaxis] != y.shape[axis]:
-        raise ValueError(
-            'x and y dimensions do not match along derivative axis.'
-        )
-    y = np.moveaxis(y, axis, -1)
-    x = np.moveaxis(x, xaxis, -1)
-    diff = (y[..., 1:] - y[..., :-1]) / (x[..., 1:] - x[..., :-1])
-    return np.moveaxis(diff, -1, axis)
-
-
 def _accuracy_check(n, accuracy, order=1):
     """
     Restrict the accuracy based on length of dimension.
@@ -180,7 +157,7 @@ def deriv1(
 
     See Also
     --------
-    diff, deriv_uneven
+    deriv_half, deriv_uneven
     """
     # Simple Euler scheme
     h = _step(h)
@@ -477,24 +454,30 @@ def _xy_standardize(x, y, axis=0):
     return x, y
 
 
+cbook.snippets['deriv_uneven.params'] = """
+x : float or ndarray
+    The step size, a 1-d coordinate vector, or an array of coordinates
+    matching the shape of `y`.
+y : ndarray
+    The data.
+order : int, optional
+    The order of the derivative. Default is ``1``.
+axis : int, optional
+    Axis along which derivative is taken.
+"""
+
+
+@cbook.add_snippets
 def deriv_half(x, y, order=1, axis=0):
     """
-    Return an arbitrary order finite difference estimation by taking successive
+    Return an arbitrary order finite difference approximation by taking successive
     half-level differences. This will change both the length of the data and
     the *x* coordinates of the data. While this is not always practical, it
-    is definitively the most accurate finite difference method.
+    retains data resolution better than the centered methods.
 
     Parameters
     ----------
-    x : float or ndarray
-        The step size, a 1-d coordinate vector, or an array of coordinates
-        matching the shape of `y`.
-    y : ndarray
-        The data.
-    order : int, optional
-        The order of the derivative. Default is ``1``.
-    axis : int, optional
-        Axis along which derivative is taken.
+    %(deriv_uneven.params)s
 
     Returns
     -------
@@ -522,25 +505,19 @@ def deriv_half(x, y, order=1, axis=0):
     return x, diff
 
 
+@cbook.add_snippets
 def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
-    Return an arbitrary order finite difference estimation for arbitrarily
-    spaced coordinates using the :cite:`1988:fornberg` method.
+    Return an arbitrary order centered finite difference approximation for
+    arbitrarily spaced coordinates using the :cite:`1988:fornberg` method.
 
     Parameters
     ----------
-    x : float or ndarray
-        The step size, a 1-d coordinate vector, or a matrix matching
-        the shape of `y`.
-    y : ndarray
-        The data.
-    order : int, optional
-        The order of the derivative. Default is ``1``.
-    axis : int, optional
-        Axis along which derivative is taken.
+    %(deriv_uneven.params)s
     accuracy : {2, 4, 6, ...}, optional
-        Accuracy of the finite difference method. This determines the
+        Accuracy of the finite difference approximation. This determines the
         number of terms that go into the :cite:`1988:fornberg` algorithm.
+        Using too many terms can result in overfitting.
     keepedges : bool, optional
         Whether to fill left, right, or both edge positions with progressively
         lower-`accuracy` finite difference estimates to prevent reducing
@@ -557,7 +534,7 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
 
     See Also
     --------
-    diff, deriv1
+    deriv1, deriv_half
     """
     # Standardize x and y
     x, y = _xy_standardize(x, y, axis=axis)
