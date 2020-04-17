@@ -45,13 +45,17 @@ def gaussian(N=1000, mean=0, stdev=None, sigma=1):
     return x, pdf
 
 
-def rednoise(a, ntime, samples=1, mean=0, stdev=1):
-    """
-    Creates artificial red noise time series, i.e. a weighted sum
-    of random perturbations.
+def rednoise(a, ntime, nsamples=1, mean=0, stdev=1):
+    r"""
+    Return one or more artificial red noise time series with prescribed mean
+    and standard deviation. The time series are generated with the following
+    equation:
 
-    Equation is: x(t) = a*x(t-dt) + b*eps(t)
-    where a is the lag-1 autocorrelation and b is a scaling term.
+    .. math::
+
+        x(t) = a \cdot x(t - \Delta t) + b \cdot \epsilon(t)
+
+    where *a* is the lag-1 autocorrelation and *b* is a scaling term.
 
     Parameters
     ---------
@@ -59,23 +63,24 @@ def rednoise(a, ntime, samples=1, mean=0, stdev=1):
         The autocorrelation.
     ntime : int
         Number of timesteps.
-    samples : int or list of int, optional
-        Draw ``np.prod(samples)``. Final result will have
-        shape `ntime` x `samples`.
+    nsamples : int or list of int, optional
+        Axis size or list of axis sizes for the "sample" dimension(s).
+        Shape of the `data` array will be ``(ntime,)`` if `nsamples` is
+        not provided, ``(ntime, nsamples)`` if `nsamples` is scalar, or
+        ``(ntime, *nsamples)`` if `nsamples` is a list of axis sizes.
     mean, stdev : float, optional
         The mean and standard deviation for the red noise
         time series.
 
-    Note
-    ----
-    The output will have shape `ntime` by `nsamples`.
-    This function enforces that the first timestep always equals the
-    'starting' position.
+    Returns
+    -------
+    data : ndarray
+        The red noise data.
     """
     # Initial stuff
     ntime -= 1  # exclude the initial timestep
-    samples = np.atleast_1d(samples)
-    data = np.empty((ntime + 1, *samples))  # user can make N-D array
+    nsamples = np.atleast_1d(nsamples)
+    data = np.empty((ntime + 1, *nsamples))  # user can make N-D array
     b = (1 - a ** 2) ** 0.5  # from OA class
 
     # Nested loop
@@ -90,7 +95,7 @@ def rednoise(a, ntime, samples=1, mean=0, stdev=1):
 
     # Return
     data = utils.trail_unflatten(data, shape)
-    if len(samples) == 1 and samples[0] == 1:
+    if len(nsamples) == 1 and nsamples[0] == 1:
         data = data.squeeze()
     return mean + stdev * data  # rescale to have specified stdeviation/mean
 
@@ -235,105 +240,83 @@ def linefit(*args, axis=-1, build=False, stderr=False):
     return np.moveaxis(utils.lead_unflatten(z, shape), -1, axis)
 
 
-def rednoisefit(
-    data,
-    dt=1,
-    corr=False,
-    nlag=None,
-    axis=-1,
-    lag1=False,
-    series=False,
-    verbose=False,
-):
-    """
-    Calculates a best-fit red noise autocorrelation spectrum.
-    Goes up to nlag-timestep autocorrelation.
+def rednoise_fit(auto, dt=1, nlag=None, axis=-1):
+    r"""
+    Return the :math:`e`-folding autocorrelation timescale for the input
+    autocorrelation spectrum along an arbitrary axis. Depending on the length
+    of `axis`, the timescale is obtained with either of the following two
+    approaches:
+
+        1. Find the :math:`e`-folding timescale for the pure red noise
+           autocorrelation spectrum :math:`\exp(-x\Delta t / \tau)` with the
+           least-squares best fit to the provided spectrum.
+        2. Take the lag-1 autocorrelation, assume the process *is* pure
+           red noise, and invert the autocorrelation spectrum equation at
+           lag 1 to solve for :math:`\tau = \Delta t / \log a_1`.
+
+    The first apporach is used when the length of `axis` is less than ``2``.
 
     Parameters
     ----------
-    data : ndarray
-        The input data.
+    auto : ndarray
+        The autocorrelation spectra.
     dt : float, optional
-        The timestep for your time series, used to scale the final timescale.
-    corr : bool, optional
-        Whether the input data indicates correlation at a series of lags.
-    nlag : int, optional
-        Number of lags to use for least-squares fit to red noise spectrum.
-        Ignored if `lag1` is ``True``.
-    lag1 : bool, optional
-        If ``True``, estimate red noise spectrum from the lag-1
-        autocorrelation.
-    series : bool, optional
-        Return the *e*-folding timescale associated with the red noise
-        spectrum (``False``, default), or the red noise spectrum itself
-        (``True``)?
+        The timestep. This is used to scale the final timescale.
+    axis : int, optional
+        Axis along which the autocorrelation timescale is inferred. Data
+        should consist of autocorrelation spectra generated with `corr`. If the
+        length is ``1`` or ``2``, the timescale is estimated from the final
+        element, assumed to be the lag-1 autocorrelation. Otherwise, the
+        timescale is estimated from a least-squares curve fit to a red noise
+        spectrum.
 
     Returns
     -------
     taus : ndarray
-        If `series` is ``False``, this is an array of timescales. Its shape
-        is the same as `data`, with the time dimension replaced with a
-        singleton dimesion.
-
-        If `series` is ``True``, this is a reconstructed red noise
-        autocorrelation spectrum. Its shape is the same as `data`.
-        Present when `series` is ``False``. The *e*-folding timescales.
+        The autocorrelation timescales along `axis`. The shape is the same
+        as `data` but with `axis` reduced to length ``1``.
     sigmas : ndarray
-        The standard error for the curve fit timescale estimate. If `lag1`
-        is ``True``, this is an array of zeros (no curve fitting was
-        performed).
+        The standard errors for the curve fits. If the timescale was inferred
+        using the lag-1 equation, this is an array of zeros.
     """
     # Initial stuff
-    data, shape = utils.lead_flatten(np.moveaxis(data, axis, -1))
+    auto, shape = utils.lead_flatten(np.moveaxis(auto, axis, -1))
+    curve = lambda t, tau: np.exp(-t * dt / tau)
+    nextra = auto.shape[0]  # extras
+    nlag = auto.shape[1]
+    shape_flat = [nextra, 1]  # final flattened shape
     shape = [*shape]
-    # First get the autocorrelation
-    if corr:  # already was passed!
-        auto = data
-    elif nlag is None:
-        raise ValueError(
-            f"Must declare \"nlag\" argument; number of points to use for fit."
-        )
-    else:
-        _, auto = globals()['corr'](data, nlag=nlag, axis=-1, verbose=verbose)
-    # Shape stuff
-    ne = auto.shape[0]  # extras
-    nt = auto.shape[1]
-    shape1 = [*shape]  # copy; this is where sigma is stored
-    shape1[-1] = 1
-    if series:
-        ndim = nt
-    else:
-        ndim = 1
-        shape = shape1  # same size as sigma array
-    # Iterate
-    time = np.arange(0, nt)  # time series for curve fit
-    taus = np.empty((ne, ndim))
-    sigmas = np.zeros((ne, 1))
-    for i in range(ne):  # iterate along first dimension
-        # Negative inverse natural log of lag-1 autocorrelation
-        if lag1:
-            p = -dt / np.log(auto[i, 1])
-            s = 0  # no sigma, because no estimate
+    shape[axis] = 1  # final unflattened shape
 
-        # Standard error from covariance matrix; this is general solution,
-        # but in this case have 1D array
+    # Iterate
+    lags = np.arange(0, nlag)  # lags for the curve fit
+    taus = np.empty(shape_flat)
+    sigmas = np.zeros(shape_flat)
+    for i in range(nextra):  # iterate along first dimension
+        if nlag <= 2:
+            p = -dt / np.log(auto[i, -1])
+            s = 0  # no sigma, because no estimate
         else:
-            p, s = optimize.curve_fit(
-                lambda t, tau: np.exp(-t * dt / tau), time, auto[i, :]
-            )
+            p, s = optimize.curve_fit(curve, lags, auto[i, :])
             s = np.sqrt(np.diag(s))
             p, s = p[0], s[0]  # take only first param
-
-        # Return
-        if series:
-            taus[i, :] = np.exp(-dt * time / p)  # best-fit spectrum
-        else:
-            taus[i, 0] = p  # just store the timescale
-        if not lag1:
+        # np.exp(-dt * lags / p)  # best-fit spectrum
+        taus[i, 0] = p  # just store the timescale
+        if nlag > 2:
             sigmas[i, 0] = s
+
+    # Move back axes
     taus = np.moveaxis(utils.lead_unflatten(taus, shape), -1, axis)
-    sigmas = np.moveaxis(utils.lead_unflatten(sigmas, shape1), -1, axis)
+    sigmas = np.moveaxis(utils.lead_unflatten(sigmas, shape), -1, axis)
     return taus, sigmas
+
+
+def rednoise_spectrum():
+    """
+    Return the red noise autocorrelation spectra for the given input
+    autocorrelation timescales.
+    """
+    raise NotImplementedError
 
 
 _corr_math = r"""
@@ -935,23 +918,22 @@ def filter(x, b, a=1, n=1, axis=-1, fix=True, pad=True, pad_value=np.nan):
 
 def response(dx, b, a=1, n=1000, simple=False):
     """
-    Calculate the response function given the a and b coefficients for some
+    Calculate the response function given the *a* and *b* coefficients for some
     analog filter. For details, see Dennis Hartmann's objective analysis
     `course notes <https://atmos.washington.edu/~dennis/552_Notes_ftp.html>`__.
 
     Note
     ----
-    The response function formula is depicted as follows:
+    The response function formula can be depicted as follows:
 
     .. code-block::
 
-                jw               -jw            -jmw
-        jw  B(e)    b[0] + b[1]e + .... + b[m]e
-        H(e) = ---- = ------------------------------------
-                jw               -jw            -jnw
-            A(e)    a[0] + a[1]e + .... + a[n]e
+                     jw               -jw               -jmw
+            jw   B(e)     b[0] + b[1]e    + .... + b[m]e
+        H(e)   = ------ = ----------------------------------
+                     jw               -jw               -jnw
+                 A(e)     a[0] + a[1]e    + .... + a[n]e
 
-    and below we calculate simultaneously for vector of input omegas.
     """
     # Parse input
     a = np.atleast_1d(a)
