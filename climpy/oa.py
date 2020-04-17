@@ -331,6 +331,10 @@ def rednoise_spectrum():
     See Also
     --------
     rednoise, rednoise_fit
+
+    Warning
+    -------
+    Not yet implemented.
     """
     raise NotImplementedError
 
@@ -991,6 +995,10 @@ def response(dx, b, a=1, n=1000, simple=False):
 def impulse():
     """
     Displays the *impulse* response function for a recursive filter.
+
+    Warning
+    -------
+    Not yet implemented.
     """
     # R2_q = 1./(1. + (omega/omega_c)**(2*N))
     raise NotImplementedError
@@ -1701,8 +1709,8 @@ def power2d(
 
 def autopower():
     """
-    Wrapper around `power1d`, that generates co-spectral
-    statistics and whatnot at **successive lags**.
+    Wrapper around `power` that generates co-spectral
+    statistics and whatnot at *successive lags*.
 
     Warning
     -------
@@ -1715,8 +1723,8 @@ def autopower():
 
 def autopower2d():
     """
-    Wrapper around `power2d`, that generates co-spectral
-    statistics and whatnot at **successive lags**.
+    Wrapper around `power2d` that generates co-spectral
+    statistics and whatnot at *successive lags*.
 
     Warning
     -------
