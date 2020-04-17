@@ -76,6 +76,10 @@ def rednoise(a, ntime, nsamples=1, mean=0, stdev=1):
     -------
     data : ndarray
         The red noise data.
+
+    See Also
+    --------
+    rednoise_fit, rednoise_spectrum
     """
     # Initial stuff
     ntime -= 1  # exclude the initial timestep
@@ -243,32 +247,36 @@ def linefit(*args, axis=-1, build=False, stderr=False):
 def rednoise_fit(auto, dt=1, nlag=None, axis=-1):
     r"""
     Return the :math:`e`-folding autocorrelation timescale for the input
-    autocorrelation spectrum along an arbitrary axis. Depending on the length
+    autocorrelation spectra along an arbitrary axis. Depending on the length
     of `axis`, the timescale is obtained with either of the following two
     approaches:
 
-        1. Find the :math:`e`-folding timescale for the pure red noise
-           autocorrelation spectrum :math:`\exp(-x\Delta t / \tau)` with the
-           least-squares best fit to the provided spectrum.
-        2. Take the lag-1 autocorrelation, assume the process *is* pure
-           red noise, and invert the autocorrelation spectrum equation at
-           lag 1 to solve for :math:`\tau = \Delta t / \log a_1`.
+        1. Find the :math:`e`-folding timescale(s) for the pure red noise
+           autocorrelation spectra :math:`\exp(-x\Delta t / \tau)` with the
+           least-squares best fit to the provided spectra.
+        2. Assume the process *is* pure red noise and invert the
+           red noise autocorrelation spectrum at lag 1 to solve for
+           :math:`\tau = \Delta t / \log a_1`.
 
-    The first apporach is used when the length of `axis` is less than ``2``.
+    Approach 2 is used if the length of the data along axis `axis` is ``1``,
+    or the data is scalar. In these cases, the data is assumed to represent
+    just the lag-1 autocorrelation(s).
 
     Parameters
     ----------
     auto : ndarray
         The autocorrelation spectra.
     dt : float, optional
-        The timestep. This is used to scale the final timescale.
+        The timestep. This is used to scale timescales into physical units.
     axis : int, optional
+        The "lag" dimension. Each slice along this axis should represent an
+        autocorrelation spectrum generated with `corr`.
         Axis along which the autocorrelation timescale is inferred. Data
-        should consist of autocorrelation spectra generated with `corr`. If the
-        length is ``1`` or ``2``, the timescale is estimated from the final
-        element, assumed to be the lag-1 autocorrelation. Otherwise, the
-        timescale is estimated from a least-squares curve fit to a red noise
-        spectrum.
+        should consist of autocorrelation spectra generated with `corr`. If
+        the length is ``1``, the data are assumed to be lag-1 autocorrelations
+        and the timescale is computed from the red noise equation.
+        Otherwise, the timescale is estimated from a least-squares curve fit
+        to a red noise spectrum.
 
     Returns
     -------
@@ -278,6 +286,10 @@ def rednoise_fit(auto, dt=1, nlag=None, axis=-1):
     sigmas : ndarray
         The standard errors for the curve fits. If the timescale was inferred
         using the lag-1 equation, this is an array of zeros.
+
+    See Also
+    --------
+    corr, rednoise, rednoise_spectrum
     """
     # Initial stuff
     auto, shape = utils.lead_flatten(np.moveaxis(auto, axis, -1))
@@ -293,7 +305,7 @@ def rednoise_fit(auto, dt=1, nlag=None, axis=-1):
     taus = np.empty(shape_flat)
     sigmas = np.zeros(shape_flat)
     for i in range(nextra):  # iterate along first dimension
-        if nlag <= 2:
+        if nlag <= 1:
             p = -dt / np.log(auto[i, -1])
             s = 0  # no sigma, because no estimate
         else:
@@ -302,7 +314,7 @@ def rednoise_fit(auto, dt=1, nlag=None, axis=-1):
             p, s = p[0], s[0]  # take only first param
         # np.exp(-dt * lags / p)  # best-fit spectrum
         taus[i, 0] = p  # just store the timescale
-        if nlag > 2:
+        if nlag > 1:
             sigmas[i, 0] = s
 
     # Move back axes
@@ -315,6 +327,10 @@ def rednoise_spectrum():
     """
     Return the red noise autocorrelation spectra for the given input
     autocorrelation timescales.
+
+    See Also
+    --------
+    rednoise, rednoise_fit
     """
     raise NotImplementedError
 
