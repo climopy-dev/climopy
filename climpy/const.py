@@ -86,9 +86,14 @@ Rd = R / Md
 #: :math:`(\mathrm{J} \cdot \mathrm{kg}^{-1} \cdot \mathrm{K}^{-1})`.
 Rm = R / Mw
 
+#: Heat capacity for an atmospheric column at sea level
+#: :math:`(\mathrm{J} \cdot \mathrm{m}^{-2} \cdot \mathrm{K}^{-1})`.
+#: Equivalent to :math:`c_p p_0 / g`.
+c_column = cp * p0 / g
+
 #: `Poisson constant\
 #: <http://glossary.ametsoc.org/wiki/Poisson_constant>`__
-#: for dry air.
+#: for dry air. Equivalent to :math:`R_d / c_p`.
 kappa = Rd / cp
 
 #: `Boltzmann constant\
