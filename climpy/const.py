@@ -53,7 +53,7 @@ cp = 1.0057e3
 
 #: `Specific heat capacity\
 #: <http://glossary.ametsoc.org/wiki/Specific_heat_capacity>`__
-#: at constant pressure for dry air at :math:`0^{\circ}\mathrm{C}`
+#: at constant volume for dry air at :math:`0^{\circ}\mathrm{C}`
 #: :math:`(\mathrm{J} \cdot \mathrm{kg}^{-1} \cdot \mathrm{K}^{-1})`.
 cv = 0.719e3
 
