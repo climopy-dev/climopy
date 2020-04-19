@@ -82,7 +82,7 @@ pi = math.pi
 #: Seconds per day.
 sec_per_day = 3600 * 24
 
-#: :math:`tau` (6.28318...)
+#: :math:`\tau` (6.28318...)
 tau = 2.0 * pi
 
 #: Dry air gas constant
