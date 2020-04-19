@@ -57,6 +57,10 @@ cp = 1.0057e3
 #: :math:`(\mathrm{J} \cdot \mathrm{kg}^{-1} \cdot \mathrm{K}^{-1})`.
 cv = 0.719e3
 
+#: `Euler's number\
+#: <https://en.wikipedia.org/wiki/E_(mathematical_constant)>`__
+e = math.e
+
 #: `Standard acceleration due to gravity\
 #: <https://en.wikipedia.org/wiki/Standard_gravity>`__
 #: :math:`(\mathrm{m} \cdot \mathrm{s}^{-2})`.
@@ -77,6 +81,9 @@ pi = math.pi
 
 #: Seconds per day.
 sec_per_day = 3600 * 24
+
+#: :math:`tau` (6.28318...)
+tau = 2.0 * pi
 
 #: Dry air gas constant
 #: :math:`(\mathrm{J} \cdot \mathrm{kg}^{-1} \cdot \mathrm{K}^{-1})`.
