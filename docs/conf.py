@@ -102,6 +102,7 @@ autoclass_content = 'both'
 # Set up mapping for other projects' docs
 intersphinx_mapping = {
     'matplotlib': ('https://matplotlib.org', None),
+    'pint': ('https://pint.readthedocs.io/en/stable/', None),
     'sphinx': ('http://www.sphinx-doc.org/en/stable/', None),
     'python': ('https://docs.python.org/3', None),
     'numpy': ('https://docs.scipy.org/doc/numpy', None),

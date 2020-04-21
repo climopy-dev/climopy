@@ -1,5 +1,6 @@
 # Requirements
-# For now this is not version specific
+# No version specific requirements for now
 numpy
 scipy
+pint
 xarray

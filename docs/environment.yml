@@ -14,8 +14,9 @@ dependencies:
   - pip
   - pip:
     - ..
+    - pint
     - pyqt5
-    - nbsphinx
     - proplot
+    - nbsphinx
     - sphinx_rtd_theme
     - git+https://github.com/lukelbd/sphinx-automodapi@v0.6.proplot-mods
