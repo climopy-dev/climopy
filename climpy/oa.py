@@ -20,6 +20,25 @@ import scipy.optimize as optimize
 import warnings
 from . import cbook, utils
 
+__all__ = [
+    'autopower', 'autopower2d',
+    'butterworth',
+    'corr', 'covar',
+    'eof', 'eot', 'reof',
+    'filter', 'gaussian',
+    'harmonics', 'highpower', 'impulse',
+    'lanczos',
+    'linefit',
+    'power', 'power2d',
+    'response',
+    'roots',
+    'rednoise', 'rednoise_fit', 'rednoise_spectrum',
+    'rolling', 'running',
+    'waves',
+    'wilks',
+    'window',
+]
+
 
 def roots(poly):
     """

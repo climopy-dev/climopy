@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-Various utilities for mathematical operations on the sphere.
+Mathematical operations on the surface of the sphere.
 """
 import numpy as np
 from . import const, diff
+
+__all__ = [
+    'geopad', 'geomean', 'geogradient', 'geolaplacian',
+    'haversine',
+]
 
 
 def geopad(lon, lat, data, nlon=1, nlat=0):

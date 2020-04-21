@@ -8,6 +8,12 @@ import warnings
 import numpy as np
 from . import cbook
 
+__all__ = [
+    'integral',
+    'deriv1', 'deriv2', 'deriv3',
+    'deriv_half', 'deriv_uneven',
+]
+
 
 def _fornberg_coeffs(x, x0, order=1):
     """

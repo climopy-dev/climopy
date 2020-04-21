@@ -4,6 +4,14 @@ Includes miscellaneous mathematical functions.
 """
 import numpy as np
 
+__all__ = [
+    'sin', 'cos', 'tan',
+    'csc', 'sec', 'cot',
+    'arcsin', 'arccos', 'arctan',
+    'arccsc', 'arcsec', 'arccot',
+    'year', 'month', 'match', 'intersection',
+]
+
 
 def sin(x):
     """Sine in degrees."""

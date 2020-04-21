@@ -8,6 +8,10 @@ and detecting blocking patterns. Incorporates code developed by `Clare Huang \
 import numpy as np
 from . import const, utils
 
+__all__ = [
+    'eqlat', 'waq', 'waqlocal',
+]
+
 
 class _Graticule(object):
     """
