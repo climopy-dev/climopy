@@ -4,16 +4,55 @@ Helper functions used internally by climpy.
 import inspect
 import pint
 
-#: The `pint.UnitRegistry` used throughout climpy. Adds a definition for
-#: potential vorticity units and more flexible aliases for the Kelvin, degree
-#: Celsius, degree Fahrenheit, and the common spherical coordinate variables
-#: "degree North" and "degree East".
-ureg = pint.UnitRegistry()
+#: Dictionary of docstring snippets added with `add_snippets`.
+snippets = {}
+
+#: The `pint.UnitRegistry` used throughout climpy. Adds the potential vorticity
+#: unit with ``potential_vorticity_unit = 10^6 K m^2 kg^-1 s^-1 = PVU``,
+#: the "bar" unit with ``bar = 10^5 Pa = b``,
+#: the "inch of mercury" unit with
+#: ``inch_mercury = 3386.389 Pa = inch_Hg = in_mercury = in_Hg``
+#: flexible aliases for the Kelvin, degree Celsius, degree Fahrenheit,
+#: and the spherical coordinate "degree North" and "degree East" units.
+ureg = pint.UnitRegistry(preprocessors=[
+    lambda s: s.replace('%%', ' permille '),
+    lambda s: s.replace('%', ' percent '),
+])
+
+# Percent definitions (see https://github.com/hgrecco/pint/issues/185)
+ureg.define(pint.unit.UnitDefinition(
+    'permille', '%%', (), pint.converters.ScaleConverter(0.001),
+))
+ureg.define(pint.unit.UnitDefinition(
+    'percent', '%', (), pint.converters.ScaleConverter(0.01),
+))
+
+# Canonical unit definitions
+ureg.define('bar = 10^5 Pa = b')
 ureg.define('potential_vorticity_unit = 10^6 K m^2 kg^-1 s^-1 = PVU')
 ureg.define(
-    '@alias kelvin = '
-    'Kelvin = K = degree_kelvin = degree_Kelvin = '
-    'deg_k = deg_K = degk = degK'
+    'inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = '
+    'in_Hg = inch_Hg = inches_Hg = inches_mercury'
+)
+ureg.define(
+    'degree_North = degree = °N = degree_north = degrees_North = degrees_north = '
+    'degree_N = degrees_N = deg_North = deg_north = deg_N = '
+    'degN = degreeN = degreesN = degNorth = degreeNorth = degreesNorth'
+)
+ureg.define(
+    'degree_East = degree = °E = degree_east = degrees_East = degrees_east = '
+    'degree_E = degrees_E = deg_East = deg_east = deg_E = '
+    'degE = degreeE = degreesE = degEast = degreeEast = degreesEast'
+)
+
+# Additional aliases
+ureg.define(
+    '@alias meter = metre = geopotential_meter = geopotential_metre = gpm'
+)
+ureg.define(
+    '@alias kelvin = Kelvin = K = '
+    'degree_kelvin = degree_Kelvin = degrees_kelvin = degrees_Kelvin = '
+    'deg_K = deg_k = degK = degk'
 )
 ureg.define(
     '@alias degree_Celsius = degree_celsius = '
@@ -29,23 +68,6 @@ ureg.define(
     'deg_Fahrenheit = deg_fahrenheit = '
     'deg_F = deg_f = degF = degf'
 )
-ureg.define(
-    '@alias degree = degree_North = degree_north = '
-    'degrees_North = degrees_north = '
-    'deg_North = deg_north = '
-    'degree_N = degree_n = degrees_N = degrees_n = '
-    'deg_N = deg_n = degN = degn'
-)
-ureg.define(
-    '@alias degree = degree_East = degree_east = '
-    'degrees_East = degrees_east = '
-    'deg_East = deg_east = '
-    'degree_E = degree_e = degrees_E = degrees_e = '
-    'deg_E = deg_e = degE = dege'
-)
-
-#: Dictionary of docstring snippets added with `add_snippets`.
-snippets = {}
 
 
 def add_snippets(func):
