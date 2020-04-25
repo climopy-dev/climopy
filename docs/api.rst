@@ -1,6 +1,16 @@
 API Reference
 =============
 
+Unit registry
+-------------
+
+.. currentmodule:: climpy
+
+.. autosummary::
+   :toctree: api
+
+   ureg
+
 Dataset downloads
 -----------------
 

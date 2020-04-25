@@ -4,14 +4,14 @@ A variety of physical constants.
 # WARNING: Putting hyperlink on first line seems to break the sphinx docstring
 # because colon is interpreted as start of docstring. Must appear on line 2.
 import math
-from .cbook import ureg
+from . import ureg
 Quant = ureg.Quantity
 
 __all__ = [
     'G', 'H', 'Md', 'Mw', 'Na', 'Omega', 'R',
     'a', 'c', 'cp', 'cv', 'e', 'g', 'h', 'p0', 'pi', 'tau',
     'Rd', 'Rm',
-    'ccolumn', 'kappa', 'kb', 'sigma',
+    'kappa', 'kb', 'sigma',
 ]
 
 #: `Gravitational constant\
@@ -98,11 +98,6 @@ Rd = R / Md
 #: Water vapor gas constant
 #: :math:`(\mathrm{J} \cdot \mathrm{kg}^{-1} \cdot \mathrm{K}^{-1})`.
 Rm = R / Mw
-
-#: Heat capacity for an atmospheric column at sea level
-#: :math:`(\mathrm{J} \cdot \mathrm{m}^{-2} \cdot \mathrm{K}^{-1})`.
-#: Equivalent to :math:`c_p p_0 / g`.
-ccolumn = (cp * p0 / g).to('J m^-2 K^-1')
 
 #: `Poisson constant\
 #: <http://glossary.ametsoc.org/wiki/Poisson_constant>`__
