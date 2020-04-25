@@ -84,7 +84,7 @@ from .diff import *  # noqa
 from .oa import *  # noqa
 from .waves import *  # noqa
 from .const import *  # noqa
-from . import cbook
+from . import internals
 
 # SCM versioning
 name = 'climpy'

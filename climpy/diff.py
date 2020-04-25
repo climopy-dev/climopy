@@ -6,7 +6,7 @@ Various finite difference schemes.
 # cumsums.
 import warnings
 import numpy as np
-from . import cbook
+from . import internals
 
 __all__ = [
     'integral',
@@ -119,7 +119,7 @@ def _accuracy_check(n, accuracy, order=1):
     return accuracy
 
 
-cbook.snippets['deriv.params'] = """
+internals.snippets['deriv.params'] = """
 h : float or ndarray
     The step size. If non-singleton, the step size is `h[1] - h[0]`.
 y : ndarray
@@ -138,14 +138,14 @@ keepleft, keepright, keepedges : bool, optional
     lower-`accuracy` finite difference estimates to prevent reducing
     the dimension size along axis `axis`.
 """
-cbook.snippets['deriv.returns'] = """
+internals.snippets['deriv.returns'] = """
 diff : ndarray
     The "derivative". The length of axis `axis` may differ from `y`
     depending on the `keepleft`, `keepright`, and `keepedges` settings.
 """
 
 
-@cbook.add_snippets
+@internals.add_snippets
 def deriv1(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
@@ -238,7 +238,7 @@ def deriv1(
     return np.moveaxis(diff, -1, axis)
 
 
-@cbook.add_snippets
+@internals.add_snippets
 def deriv2(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
@@ -327,7 +327,7 @@ def deriv2(
     return np.moveaxis(diff, -1, axis)
 
 
-@cbook.add_snippets
+@internals.add_snippets
 def deriv3(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
@@ -460,7 +460,7 @@ def _xy_standardize(x, y, axis=0):
     return x, y
 
 
-cbook.snippets['deriv_uneven.params'] = """
+internals.snippets['deriv_uneven.params'] = """
 x : float or ndarray
     The step size, a 1-d coordinate vector, or an array of coordinates
     matching the shape of `y`.
@@ -473,7 +473,7 @@ axis : int, optional
 """
 
 
-@cbook.add_snippets
+@internals.add_snippets
 def deriv_half(x, y, order=1, axis=0):
     """
     Return an arbitrary order finite difference approximation by taking successive
@@ -511,7 +511,7 @@ def deriv_half(x, y, order=1, axis=0):
     return x, diff
 
 
-@cbook.add_snippets
+@internals.add_snippets
 def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
     Return an arbitrary order centered finite difference approximation for

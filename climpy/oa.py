@@ -18,7 +18,7 @@ import scipy.stats as stats
 import scipy.linalg as linalg
 import scipy.optimize as optimize
 import warnings
-from . import cbook, utils
+from . import internals, utils
 
 __all__ = [
     'autopower', 'autopower2d',
@@ -402,21 +402,21 @@ Note
 This function uses the following formula to estimate %(name)s at lag :math:`k`:
 %(math)s
 """
-cbook.snippets['corr'] = _corr_covar_docs % {
+internals.snippets['corr'] = _corr_covar_docs % {
     'name': 'correlation', 'math': _corr_math
 }
-cbook.snippets['covar'] = _corr_covar_docs % {
+internals.snippets['covar'] = _corr_covar_docs % {
     'name': 'covariance', 'math': _covar_math
 }
 
 
-@cbook.add_snippets
+@internals.add_snippets
 def corr(*args, **kwargs):
     """%(corr)s"""
     return corr(*args, **kwargs, corr=True)
 
 
-@cbook.add_snippets
+@internals.add_snippets
 def covar(
     z1,
     z2=None,
@@ -1221,8 +1221,8 @@ def window(wintype, n):
     return win
 
 
-cbook.snippets['power.bibliography'] = '.. bibliography:: ../bibs/power.bib'
-cbook.snippets['power.params'] = """
+internals.snippets['power.bibliography'] = '.. bibliography:: ../bibs/power.bib'
+internals.snippets['power.params'] = """
 coherence : bool, optional
     Ignored if `z2` is ``None``. If ``False`` (the default), `power`
     returns the co-power spectrum, quadrature spectrum, and individual
@@ -1236,7 +1236,7 @@ nperseg : int, optional
     The window or segment length, passed to `get_window`. If ``None``,
     windowing is not carried out. See notes for details.
 """
-cbook.snippets['power.notes'] = """
+internals.snippets['power.notes'] = """
 The Fourier coefficients are scaled so that total variance is equal to one
 half the sum of the right-hand coefficients. This is more natural for the
 real-valued datasets typically used by physical scientists, and matches
@@ -1274,7 +1274,7 @@ non-boxcar windowing depends on the character of the signal.
 """
 
 
-@cbook.add_snippets
+@internals.add_snippets
 def power(
     y1,
     y2=None,
@@ -1467,7 +1467,7 @@ def power(
             return f / dx, CO, Q, Py1, Py2
 
 
-@cbook.add_snippets
+@internals.add_snippets
 def power2d(
     z1,
     z2=None,
