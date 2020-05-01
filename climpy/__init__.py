@@ -35,8 +35,9 @@ ureg.define(_pint.unit.UnitDefinition(
 ))
 
 # Canonical unit definitions
-ureg.define('bar = 10^5 Pa = b')
-ureg.define('potential_vorticity_unit = 10^6 K m^2 kg^-1 s^-1 = PVU')
+ureg.define('bar = 10^5 Pa = b')  # automatically adds milli, hecta, etc.
+ureg.define('potential_vorticity_unit = 10^-6 K m^2 s^-1 kg^-1 = PVU')
+ureg.define('vorticity_unit = 10^-5 s^-1 = 10^-5 s^-1 = VU')
 ureg.define(
     'inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = '
     'in_Hg = inch_Hg = inches_Hg = inches_mercury'
