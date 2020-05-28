@@ -9,7 +9,7 @@ import pkg_resources as _pkg
 #: the meter, Kelvin, degree Celsius, and degree Fahrenheit.
 #: Also adds definitions for the bar, percent, permille, potential vorticity
 #: unit, inches mercury, and the "degree North" and "degree East" coordinate
-#: variables. The units are defined as shown below.
+#: variables. The units are defined as follows:
 #:
 #: .. code-block:: txt
 #:
@@ -21,23 +21,35 @@ import pkg_resources as _pkg
 #:    degree_North = degree = °N = degree_north = degN = deg_N = ...
 #:    degree_East = degree = °E = degree_east = degE = deg_E = ...
 #:
-ureg = _pint.UnitRegistry(preprocessors=[
-    lambda s: s.replace('%%', ' permille '),
-    lambda s: s.replace('%', ' percent '),
-])
+ureg = _pint.UnitRegistry(
+    preprocessors=[
+        lambda s: s.replace('%%', ' permille '),
+        lambda s: s.replace('%', ' percent '),
+    ]
+)
 
 # Percent definitions (see https://github.com/hgrecco/pint/issues/185)
-ureg.define(_pint.unit.UnitDefinition(
-    'permille', '%%', (), _pint.converters.ScaleConverter(0.001),
-))
-ureg.define(_pint.unit.UnitDefinition(
-    'percent', '%', (), _pint.converters.ScaleConverter(0.01),
-))
+ureg.define(
+    _pint.unit.UnitDefinition(
+        'permille', '%%', (), _pint.converters.ScaleConverter(0.001),
+    )
+)
+ureg.define(
+    _pint.unit.UnitDefinition(
+        'percent', '%', (), _pint.converters.ScaleConverter(0.01),
+    )
+)
 
 # Canonical unit definitions
-ureg.define('bar = 10^5 Pa = b')  # automatically adds milli, hecta, etc.
-ureg.define('potential_vorticity_unit = 10^-6 K m^2 s^-1 kg^-1 = PVU')
-ureg.define('vorticity_unit = 10^-5 s^-1 = 10^-5 s^-1 = VU')
+ureg.define(  # automatically adds milli, hecta, etc.
+    'bar = 10^5 Pa = b'
+)
+ureg.define(
+    'potential_vorticity_unit = 10^-6 K m^2 s^-1 kg^-1 = PVU'
+)
+ureg.define(
+    'vorticity_unit = 10^-5 s^-1 = 10^-5 s^-1 = VU'
+)
 ureg.define(
     'inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = '
     'in_Hg = inch_Hg = inches_Hg = inches_mercury'

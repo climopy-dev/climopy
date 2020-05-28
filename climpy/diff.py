@@ -4,15 +4,46 @@ Various finite difference schemes.
 """
 # TODO: Add integration schemes! Will be simple to implement, they are just
 # cumsums.
+import functools
 import warnings
 import numpy as np
-from . import internals
+from . import ureg, internals
 
 __all__ = [
     'integral',
     'deriv1', 'deriv2', 'deriv3',
     'deriv_half', 'deriv_uneven',
 ]
+
+
+def _fix_units(order=1):
+    """
+    Handle pint units for *x* and *y* coordinates. The `order` specifies the exponent
+    to which the "x" units in the denominator are raised. If the function accepts
+    an `order` this will be used instead.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(x, y, *args, **kwargs):
+            nonlocal order
+            order = kwargs.get('order', order)
+            xquant = isinstance(x, ureg.Quantity)
+            yquant = isinstance(y, ureg.Quantity)
+            if xquant and yquant:
+                x, xunits = x.magnitude, x.units
+                y, yunits = y.magnitude, y.units
+            elif xquant:
+                x = x.magnitude
+                warnings.warn(f'Got units for x but no units for y. Ignoring units.')
+            elif yquant:
+                y = y.magnitude
+                warnings.warn(f'Got units for y but no units for x. Ignoring units.')
+            result = func(x, y, *args, **kwargs)
+            if xquant and yquant:
+                result *= yunits * xunits ** -order
+            return result
+        return wrapper
+    return decorator
 
 
 def _fornberg_coeffs(x, x0, order=1):
@@ -51,6 +82,7 @@ def _fornberg_coeffs(x, x0, order=1):
     return weights[..., -1]
 
 
+@_fix_units(order=-1)  # integral, i.e. actually *multiply* x by y
 def integral(x, y, y0=0, axis=0):
     """
     Return the integral approximation along an arbitrary axis.
@@ -145,6 +177,7 @@ diff : ndarray
 """
 
 
+@_fix_units(order=1)
 @internals.add_snippets
 def deriv1(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
@@ -176,7 +209,7 @@ def deriv1(
     accuracy = _accuracy_check(n, accuracy, order=1)
 
     # Derivative
-    y = np.array(y)  # for safety
+    y = np.asarray(y)  # for safety
     y = np.moveaxis(y, axis, -1)
     if accuracy == 0:
         diff = (y[..., 1:] - y[..., :-1]) / h
@@ -238,6 +271,7 @@ def deriv1(
     return np.moveaxis(diff, -1, axis)
 
 
+@_fix_units(order=2)
 @internals.add_snippets
 def deriv2(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
@@ -269,7 +303,7 @@ def deriv2(
     accuracy = _accuracy_check(n, accuracy, order=2)
 
     # Derivative
-    y = np.array(y)  # for safety
+    y = np.asarray(y)  # for safety
     y = np.moveaxis(y, axis, -1)
     if accuracy == 2:
         diff = (y[..., :-2] - 2 * y[..., 1:-1] + y[..., 2:]) / h ** 2
@@ -327,6 +361,7 @@ def deriv2(
     return np.moveaxis(diff, -1, axis)
 
 
+@_fix_units(order=3)
 @internals.add_snippets
 def deriv3(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
@@ -358,7 +393,7 @@ def deriv3(
     accuracy = _accuracy_check(n, accuracy, order=3)
 
     # Derivative
-    y = np.array(y)  # for safety
+    y = np.asarray(y)  # for safety
     y = np.moveaxis(y, axis, -1)
     if accuracy == 0:
         diff = (
@@ -473,6 +508,7 @@ axis : int, optional
 """
 
 
+@_fix_units(order=1)  # NOTE: wrapper will use order passed to function if it exists
 @internals.add_snippets
 def deriv_half(x, y, order=1, axis=0):
     """
@@ -511,6 +547,7 @@ def deriv_half(x, y, order=1, axis=0):
     return x, diff
 
 
+@_fix_units(order=1)
 @internals.add_snippets
 def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
