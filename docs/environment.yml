@@ -6,11 +6,12 @@ channels:
   - conda-forge
 dependencies:
   - python>=3.6
-  - ipykernel
   - matplotlib
   - numpy
-  - pandoc
+  - scipy
   - xarray
+  - pandoc
+  - ipykernel
   - pip
   - pip:
     - ..
@@ -20,4 +21,4 @@ dependencies:
     - nbsphinx
     - sphinx_rtd_theme
     - sphinxcontrib-bibtex
-    - git+https://github.com/lukelbd/sphinx-automodapi@v0.6.proplot-mods
+    - git+https://github.com/lukelbd/sphinx-automodapi@v0.8.proplot-mods
