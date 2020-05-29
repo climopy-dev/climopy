@@ -9,7 +9,7 @@ Quant = ureg.Quantity
 
 __all__ = [
     'G', 'H', 'Md', 'Mw', 'Na', 'Omega', 'R',
-    'a', 'c', 'cp', 'cv', 'e', 'g', 'h', 'p0', 'pi', 'tau',
+    'a', 'c', 'cp', 'cv', 'e', 'g', 'h', 'p0', 'psfc', 'pi', 'tau',
     'Rd', 'Rm',
     'kappa', 'kb', 'sigma',
 ]
@@ -83,7 +83,10 @@ h = Quant(6.62607e-34, 'J s')
 #: Earth `mean sea-level pressure\
 #: <https://en.wikipedia.org/wiki/Atmospheric_pressure#Mean_sea-level_pressure>`__
 #: :math:`(\mathrm{Pa})`.
-p0 = Quant(101325, 'Pa')
+psfc = Quant(101325.0, 'Pa')
+
+#: Standard reference pressure :math:`(\mathrm{Pa})`
+p0 = Quant(1e5, 'Pa')
 
 #: :math:`\pi` (3.14159...)
 pi = math.pi
