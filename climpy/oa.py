@@ -516,6 +516,7 @@ def covar(
         else:
             n = nlag + 1
             lags = range(0, nlag + 1)
+
         # Get correlation
         # will include the zero-lag autocorrelation
         corrs = np.empty((*z1.shape[:-1], n))

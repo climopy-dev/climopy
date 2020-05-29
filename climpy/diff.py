@@ -25,8 +25,6 @@ def _fix_units(order=1):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(x, y, *args, **kwargs):
-            nonlocal order
-            order = kwargs.get('order', order)
             xquant = isinstance(x, ureg.Quantity)
             yquant = isinstance(y, ureg.Quantity)
             if xquant and yquant:
@@ -40,7 +38,7 @@ def _fix_units(order=1):
                 warnings.warn(f'Got units for y but no units for x. Ignoring units.')
             result = func(x, y, *args, **kwargs)
             if xquant and yquant:
-                result *= yunits * xunits ** -order
+                result *= yunits * xunits ** -kwargs.get('order', order)
             return result
         return wrapper
     return decorator
