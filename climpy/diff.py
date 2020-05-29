@@ -15,6 +15,9 @@ __all__ = [
     'deriv_half', 'deriv_uneven',
 ]
 
+# Used below
+sentinel = object()
+
 
 def _fix_units(order=1):
     """
@@ -27,19 +30,26 @@ def _fix_units(order=1):
         def wrapper(x, y, *args, **kwargs):
             xquant = isinstance(x, ureg.Quantity)
             yquant = isinstance(y, ureg.Quantity)
-            if xquant and yquant:
+            if xquant:
                 x, xunits = x.magnitude, x.units
+            elif yquant:
+                xunits = ureg.dimensionless
+            if yquant:
                 y, yunits = y.magnitude, y.units
             elif xquant:
-                x = x.magnitude
-                warnings.warn(f'Got units for x but no units for y. Ignoring units.')
-            elif yquant:
-                y = y.magnitude
-                warnings.warn(f'Got units for y but no units for x. Ignoring units.')
-            result = func(x, y, *args, **kwargs)
-            if xquant and yquant:
-                result *= yunits * xunits ** -kwargs.get('order', order)
-            return result
+                yunits = ureg.dimensionless
+            diff = func(x, y, *args, **kwargs)
+            x = sentinel
+            if isinstance(diff, tuple):  # return value of deriv_half
+                x, diff = diff
+            if xquant or yquant:
+                diff *= yunits * xunits ** -kwargs.get('order', order)
+                if x is not sentinel:
+                    x *= xunits
+            if x is not sentinel:
+                return x, diff
+            else:
+                return diff
         return wrapper
     return decorator
 
@@ -102,11 +112,15 @@ def integral(x, y, y0=0, axis=0):
     ndarray
         The "integral".
     """
-    dx = x[1:] - x[:-1]
-    dx = np.concatenate((dx[:1], dx))
-    shape = [1] * y.ndim
-    shape[axis] = dx.size
-    dx = np.reshape(dx, shape)  # add singletons
+    x = np.atleast_1d(x)
+    if x.size == 1:
+        dx = x.item()
+    else:
+        dx = x[1:] - x[:-1]
+        dx = np.concatenate((dx[:1], dx))
+        shape = [1] * y.ndim
+        shape[axis] = dx.size
+        dx = np.reshape(dx, shape)  # add singleton dimensions
     return y0 + (y * dx).cumsum(axis=axis)
 
 
