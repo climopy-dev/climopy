@@ -53,7 +53,7 @@ release = ''
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
     'sphinx.ext.autodoc',
-    'sphinx.ext.doctest',
+    'sphinx.ext.doctest',  # >>> examples
     'sphinx.ext.extlinks',  # for :pr:, :issue:, :commit:
     'sphinx.ext.autosectionlabel',  # use :ref:`Heading` for any heading
     'sphinx.ext.todo',

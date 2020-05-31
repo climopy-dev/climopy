@@ -90,7 +90,7 @@ ureg.define(
 )
 
 # Import everything into top-level namespace
-from .math import *  # noqa
+from .utils import *  # noqa
 from .spherical import *  # noqa
 from .downloads import *  # noqa
 from .diff import *  # noqa

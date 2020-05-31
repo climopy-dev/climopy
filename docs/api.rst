@@ -51,12 +51,12 @@ Wave diagnostics
 .. automodsumm:: climpy.waves
    :toctree: api
 
-Miscellaneous math
-------------------
+Miscellaneous utilities
+-----------------------
 
-.. automodule:: climpy.math
+.. automodule:: climpy.utils
 
-.. automodsumm:: climpy.math
+.. automodsumm:: climpy.utils
    :toctree: api
 
 Physical constants
