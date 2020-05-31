@@ -17,8 +17,8 @@ import scipy.signal as signal
 import scipy.stats as stats
 import scipy.linalg as linalg
 import scipy.optimize as optimize
-import warnings
-from . import internals, utils
+from .internals import docstring, warnings
+from .internals.flatten import _FlattenContext
 
 __all__ = [
     'autopower', 'autopower2d',

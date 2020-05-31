@@ -5,9 +5,9 @@ Various finite difference schemes.
 # TODO: Add integration schemes! Will be simple to implement, they are just
 # cumsums.
 import functools
-import warnings
 import numpy as np
-from . import ureg, internals
+from . import ureg
+from .internals import docstring, warnings
 
 __all__ = [
     'integral',
