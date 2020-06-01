@@ -1381,10 +1381,8 @@ def _decomp_2d(pm, win, x, detrend='constant'):
     Get 2D Fourier decomp and reorder negative frequencies on non-cyclic
     axis so frequencies there are monotonically ascending.
     """
-    # Detrend
     x = signal.detrend(x, type=detrend, axis=0)  # remove trend or mean from "time"
     x = signal.detrend(x, type='constant', axis=1)  # remove mean from "longitude"
-
     # Use 1D numpy.fft.rfft (identical)
     # Follows Libby's recipe, where instead real is cosine and imag is
     # sine. Note only need to divide by 2 when conjugates are included.
@@ -1399,7 +1397,6 @@ def _decomp_2d(pm, win, x, detrend='constant'):
     #     ),
     #     axis=0,
     # )
-
     # Use 2D numpy.fft.rfft2
     # NOTE: Read documentation regarding normalization. Default leaves
     # forward transform unnormalized, reverse normalized by 1 / n. The ortho

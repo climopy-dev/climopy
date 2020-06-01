@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-Helper functions used to perform analysis tasks "along an axis" for
-arbitrary n-dimensional arrays. The "lead flatten" functions are more
-efficient for row-major (C-style) arrays, the "trail flatten" functions
-are more efficient for column-major (Fortran-style) arrays.
+Array tools. Includes context object used to perform tasks "along an axis"
+for arbitrary n-dimensional arrays.
 """
 import numpy as np
 import logging

@@ -8,7 +8,7 @@ import functools
 import numpy as np
 import xarray as xr
 from . import ureg
-from .internals import docstring, warnings
+from .internals import docstring, quack, warnings
 
 __all__ = [
     'integral',
@@ -68,90 +68,6 @@ order : int, optional
 """
 
 
-def _preserve_xarray_metadata(func):
-    """
-    Permit passing DataArrays to the function and specifying axes
-    with 'dim' rather than 'axis'.
-    """
-    @functools.wraps(func)
-    def wrapper(x, y, *args, keep_attrs=False, **kwargs):
-        # Get data
-        ix, iy = x, y
-        xarray = isinstance(x, xr.DataArray)
-        yarray = isinstance(y, xr.DataArray)
-        if xarray:
-            ix = x.data
-        if yarray:
-            iy = y.data
-            # Translate 'dim' arguments into axis number
-            dim = kwargs.pop('dim', None)
-            axis = kwargs.get('axis', None)
-            if dim is not None and axis is not None:
-                warnings._warn_climpy(
-                )
-            y 
-
-        # Call main function
-        idiff = func(ix, iy, *args, **kwargs)
-        ix = sentinel
-        if isinstance(idiff, tuple):  # return value of deriv_half
-            ix, idiff = idiff
-
-        # Build back DataArrays
-        # TODO: Finish this
-        if yarray:
-            diff = y.copy()  # keep attributes and everything
-            diff.data[:] = idiff
-            if not keep_attrs:
-                diff.attrs.clear()
-        if x is not sentinel:
-            return rx, ry
-        else:
-            return ry
-
-    return wrapper
-
-
-def _fix_pint_units(order=1):
-    """
-    Handle pint units for *x* and *y* coordinates. The `order` specifies the exponent
-    to which the "x" units in the denominator are raised. If the function accepts
-    an `order` this will be used instead.
-    """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(x, y, *args, **kwargs):
-            # Strip quantites and get units
-            xquant = isinstance(x, ureg.Quantity)
-            yquant = isinstance(y, ureg.Quantity)
-            if xquant:
-                x, xunits = x.magnitude, x.units
-            elif yquant:
-                xunits = ureg.dimensionless
-            if yquant:
-                y, yunits = y.magnitude, y.units
-            elif xquant:
-                yunits = ureg.dimensionless
-
-            # Call main function
-            diff = func(x, y, *args, **kwargs)
-            x = sentinel
-            if isinstance(diff, tuple):  # return value of deriv_half
-                x, diff = diff
-
-            # Re-apply original units
-            if xquant or yquant:
-                diff *= yunits * xunits ** -kwargs.get('order', order)
-                if x is not sentinel:
-                    x *= xunits
-            if x is not sentinel:
-                return x, diff
-            else:
-                return diff
-        return wrapper
-    return decorator
-
-
 def _fornberg_coeffs(x, x0, order=1):
     """
     Retrieve the Fornberg (1988) coefficients for estimating derivatives
@@ -188,7 +104,7 @@ def _fornberg_coeffs(x, x0, order=1):
     return weights[..., -1]
 
 
-@_fix_pint_units(order=-1)  # integral, i.e. actually *multiply* x by y
+@quack._pint_wrapper(('=x', '=y'), '=x * y')
 @docstring.add_snippets
 def integral(x, y, y0=0, axis=0):
     """
@@ -261,7 +177,7 @@ def _accuracy_check(n, accuracy, order=1):
     return accuracy
 
 
-@_fix_pint_units(order=1)
+@quack._pint_wrapper(('=x', '=y'), '=y / x')
 @docstring.add_snippets
 def deriv1(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
@@ -357,7 +273,7 @@ def deriv1(
     return np.moveaxis(diff, -1, axis)
 
 
-@_fix_pint_units(order=2)
+@quack._pint_wrapper(('=x', '=y'), '=y / x ** 2')
 @docstring.add_snippets
 def deriv2(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
@@ -449,7 +365,7 @@ def deriv2(
     return np.moveaxis(diff, -1, axis)
 
 
-@_fix_pint_units(order=3)
+@quack._pint_wrapper(('=x', '=y'), '=y / x ** 3')
 @docstring.add_snippets
 def deriv3(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
@@ -585,7 +501,7 @@ def _xy_standardize(x, y, axis=0):
     return x, y
 
 
-@_fix_pint_units(order=1)  # NOTE: wrapper will use order passed to function if it exists
+@quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.add_snippets
 def deriv_half(x, y, order=1, axis=0):
     """
@@ -625,7 +541,7 @@ def deriv_half(x, y, order=1, axis=0):
     return x, diff
 
 
-@_fix_pint_units(order=1)
+@quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.add_snippets
 def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
