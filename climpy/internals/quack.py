@@ -5,7 +5,7 @@ Wrappers that permit duck-type array input to various functions.
 import re
 import functools
 import itertools
-import numpy as np
+# import numpy as np
 import xarray as xr
 import pint.util as putil
 from .. import ureg
@@ -14,47 +14,66 @@ from . import warnings
 # Regex to find terms surrounded by curly braces that can be filled with str.format()
 REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside brackets
 
-# Sentinel
-sentinel = object()
 
+def _xarray_xy_wrapper(func):
+    """
+    Simple wrapper that permits passing either two vectors or a dataarray
+    to the function. In the latter case coordinates are inferred from the
+    array along axis `axis` or dimension `dim` (keyword args).
 
-def _xarray_wrapper(func):
+    Example
+    -------
+
+    >>> import numpy as np
+    ... import xarray as xr
+    ... x = np.arange(5)
+    ... y = np.random.rand(5)
+    ... data = xr.DataArray(y, dims=('x',), coords={'x': x})
+    ... func(x, y, **kwargs)
+    ... func(data, **kwargs)
+
     """
-    Permit passing DataArrays to the function and specifying axes
-    with 'dim' rather than 'axis'.
-    """
-    def wrapper(x, y, *args, keep_attrs=False, **kwargs):
-        # Get data
-        ix, iy = x, y
-        xarray = isinstance(x, xr.DataArray)
-        yarray = isinstance(y, xr.DataArray)
-        if xarray:
-            ix = x.data
-        if yarray:
-            iy = y.data
+    def wrapper(*args, keep_attrs=False, **kwargs):
+        # Transform DataArray input
+        is_dataarray = len(args) == 1 and isinstance(args[0], xr.DataArray)
+        if is_dataarray:
             # Translate 'dim' arguments into axis number
             dim = kwargs.pop('dim', None)
             axis = kwargs.get('axis', None)
             if dim is not None and axis is not None:
-                warnings._warn_climpy()
+                warnings._warn_climpy('Ambiguous axis specification.')
+                dim = None
+
+            # Get data and coordinates
+            input = args[0]
+            if axis is not None:
+                dim = input.dims[axis]
+            args = (input.coords[dim], input.data)
 
         # Call main function
-        idiff = func(ix, iy, *args, **kwargs)
-        ix = sentinel
-        if isinstance(idiff, tuple):  # return value of deriv_half
-            ix, idiff = idiff
+        result = func(*args, **kwargs)
 
-        # Build back DataArrays
-        # TODO: Finish this
-        if yarray:
-            diff = y.copy()  # keep attributes and everything
-            diff.data[:] = idiff
-            if not keep_attrs:
-                diff.attrs.clear()
-        if x is not sentinel:
-            return rx, ry
-        else:
-            return ry
+        # Add back metadata. Function should return 'y' value of coordinates
+        # unchanged or 'x', 'y' pair if coordinates changed.
+        if is_dataarray:
+            # Repair output coordinates
+            output = result
+            coords = dict(input.coords)
+            if isinstance(result, tuple):  # return value of deriv_half
+                coord, output = result
+                attrs = {}
+                if hasattr(coord, 'units'):
+                    attrs['units'] = format(coord.units, '~')  # short-form units
+                coord = xr.DataArray(coord, name=dim, dims=(dim,), attrs=attrs)
+                coords[dim] = coord
+
+            # Create output array
+            attrs = {}
+            if keep_attrs:
+                attrs = output.attrs.copy()
+            result = xr.DataArray(output, dims=output.dims, coords=coords, attrs=attrs)
+
+        return result
 
     return wrapper
 
