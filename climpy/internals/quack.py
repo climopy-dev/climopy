@@ -5,7 +5,7 @@ Wrappers that permit duck-type array input to various functions.
 import re
 import functools
 import itertools
-# import numpy as np
+import numpy as np
 import xarray as xr
 import pint.util as putil
 from .. import ureg
@@ -27,7 +27,7 @@ def _xarray_xy_wrapper(func):
     >>> import numpy as np
     ... import xarray as xr
     ... x = np.arange(5)
-    ... y = np.random.rand(5)
+    ... y = np.random.rand(5, 6, 7)
     ... data = xr.DataArray(y, dims=('x',), coords={'x': x})
     ... func(x, y, **kwargs)
     ... func(data, **kwargs)
@@ -48,7 +48,10 @@ def _xarray_xy_wrapper(func):
             input = args[0]
             if axis is not None:
                 dim = input.dims[axis]
-            args = (input.coords[dim], input.data)
+            try:  # apply units! TODO: add 'data' attribute
+                args = (input.phys.coords[dim].data, input.phys.data)
+            except AttributeError:
+                args = (input.coords[dim].data, input.data)
 
         # Call main function
         result = func(*args, **kwargs)
@@ -70,8 +73,8 @@ def _xarray_xy_wrapper(func):
             # Create output array
             attrs = {}
             if keep_attrs:
-                attrs = output.attrs.copy()
-            result = xr.DataArray(output, dims=output.dims, coords=coords, attrs=attrs)
+                attrs = input.attrs.copy()
+            result = xr.DataArray(output, dims=input.dims, coords=coords, attrs=attrs)
 
         return result
 
@@ -191,7 +194,7 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
             # Quantify output, but *only* if input was quantities
             pairs = tuple(_to_units_container(arg) for arg in units_out_fmt)
             no_quantities = not any(isinstance(arg, ureg.Quantity) for arg in args)
-            units = (
+            units = tuple(
                 _replace_units(unit, args_by_name) if is_ref else unit
                 for (unit, is_ref) in pairs
             )
@@ -305,8 +308,12 @@ def _replace_units(original_units, values_by_name):
     Convert a unit compatible type to a UnitsContainer.
     """
     q = 1
-    for arg_name, exponent in original_units.items():
-        q = q * values_by_name[arg_name] ** exponent
+    with np.errstate(divide='ignore', invalid='ignore'):
+        # NOTE: Multiply quantities successively here just to pull out units
+        # after everything is done. But avoid broadcasting errors as shown.
+        for arg_name, exponent in original_units.items():
+            q = q * values_by_name[arg_name] ** exponent
+            q = getattr(q, 'magnitude', q).flat[0] * getattr(q, 'units', 1)
     return getattr(q, '_units', putil.UnitsContainer({}))
 
 

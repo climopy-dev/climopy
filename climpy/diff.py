@@ -508,7 +508,7 @@ def _xy_standardize(x, y, axis=0):
 
 
 @quack._xarray_xy_wrapper
-@quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
+@quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
 @docstring.add_snippets
 def deriv_half(x, y, order=1, axis=0):
     """
