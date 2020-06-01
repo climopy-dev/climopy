@@ -136,12 +136,13 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
     # TODO: Use C-style time x plev x lat x lon instead as prototypical dimensionality
     mass = sigma is not None
     arrays = (q, sigma) if mass else (q,)
-    with _ArrayContext(*arrays, nflat_left=2, nflat_right=(q.ndim - 2)) as context:
+    with _ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
         # Get flattened arrays
         if not mass:
             q = context.data
         else:
-            # Get cumulative mass from pole
+            # Get cumulative mass from equator to pole at each latitude
+            # and add them together
             q, sigma = context.data
             mass = sigma * areas[..., None]
             masscum = mass.cumsum(axis=1).sum(axis=0, keepdims=True)
@@ -177,8 +178,6 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
                     bands[0, n, k] = np.interp(mass, masscumk, lat)
 
         # Unshape data
-        context._nflat_left = None
-        context._shapes[0][:2] = [1, N]
         context.replace_data(bands, q_bands)
 
     # Return unflattened data
@@ -217,7 +216,7 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
         arrays.append(omega)
     if has_sigma:
         arrays.append(sigma)
-    with _ArrayContext(*arrays, nflat_left=2, nflat_right=(q.ndim - 2)) as context:
+    with _ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
         # Get flattened data
         if has_omega and has_sigma:
             q, omega, sigma = context.data
@@ -229,10 +228,10 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
             q = context.data
 
         # Get equivalent latiitudes
-        bands, q_bands = eqlat(lon, lat, q[None, ...], sigma=sigma, skip=skip)
+        bands, q_bands = eqlat(lon, lat, q, sigma=sigma, skip=skip)
         M = lat.size  # number of latitudes onto which we interpolate
         N = bands.shape[1]  # number of equivalent latitudes
-        K = q.shape[1]  # number of extra dimensions
+        K = q.shape[2]  # number of extra dimensions
 
         # Get activity
         waq = np.empty((1, M, K))
@@ -307,8 +306,6 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
                 waq[0, :, k] = np.interp(lat, bands[0, ~nanfilt, k], waq_k[~nanfilt])
 
         # Reapply data
-        context._shapes[0][:2] = [1, M]
-        context._nflat_left = None
         context.replace_data(waq)
 
     # Return
@@ -358,7 +355,7 @@ def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
         arrays.append(sigma)
 
     # Flatten (eqlat can do this, but not necessary here)
-    with _ArrayContext(*arrays, nflat_left=2, nflat_right=(q.ndim - 2)) as context:
+    with _ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
         # Get flattened data
         if has_omega and has_sigma:
             q, omega, sigma = context.data
@@ -370,11 +367,11 @@ def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
             q = context.data
 
         # Get equivalent latiitudes
-        bands, q_bands = eqlat(lon, lat, q[None, ...], sigma=sigma, skip=skip)
+        bands, q_bands = eqlat(lon, lat, q, sigma=sigma, skip=skip)
         L = lon.size
         M = lat.size
         N = bands.shape[1]  # number of equivalent latitudes
-        K = q.shape[1]  # number of extra dimensions
+        K = q.shape[2]  # number of extra dimensions
 
         # Get local wave activity measure, as simple line integrals
         waq = np.empty((L, M, K))
@@ -434,8 +431,6 @@ def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
             waq[l, :, k] = np.interp(lat, bands[0, :, k], waq_k[l, :])
 
         # Replace context data
-        context._shapes[0][:2] = [1, M]
-        context._nflat_left = None
         context.replace_data(waq)
 
     # Return
