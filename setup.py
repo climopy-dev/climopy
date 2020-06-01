@@ -12,8 +12,6 @@ classifiers = [
     'Operating System :: OS Independent',
     'Intended Audience :: Science/Research',
     'Programming Language :: Python :: 3 :: Only',
-    'Programming Language :: Python :: 3.6',
-    'Programming Language :: Python :: 3.7',
     'Programming Language :: Python :: 3.8',
 ]
 
@@ -30,7 +28,7 @@ setup(
     author_email='lukelbd@gmail.com',
     maintainer='Luke Davis',
     maintainer_email='lukelbd@gmail.com',
-    python_requires='>=3.6.0',
+    python_requires='>=3.8.0',
     project_urls={
         'Bug Tracker': 'https://github.com/lukelbd/climpy/issues',
         'Documentation': 'https://climpy.readthedocs.io',
