@@ -13,14 +13,16 @@ import logging
 formatter = logging.Formatter('%(name)s (%(levelname)s): %(message)s')
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
-logger = logging.getLogger('FlattenContext')
+logger = logging.getLogger('ArrayContext')
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 
-class _FlattenContext(object):
+class _ArrayContext(object):
     """
-    Temporarily reshape the input dataset(s).
+    Temporarily reshape the input dataset(s). This is needed so we can do
+    objective analysis tasks "along an axis." Some tasks can be done by just
+    moving axes and using array[..., :] notation but this is not always possible.
     """
     def __init__(
         self, *args,
@@ -44,8 +46,8 @@ class _FlattenContext(object):
         -------
         The general usage is as follows:
 
-        >>> from climpy.internals import flatten
-            with _FlattenContext(data1, data2, **kwargs) as context:
+        >>> from climpy.internals import array
+            with array._ArrayContext(data1, data2, **kwargs) as context:
                 # Get flattened data
                 data1, data2 = context.data
                 # Make new similarly shaped data
@@ -57,7 +59,7 @@ class _FlattenContext(object):
 
         Here is a worked example used with the EOF algorithm:
 
-        >>> from climpy.internals import flatten
+        >>> from climpy.internals import array
             import xarray as xr
             import numpy as np
             # Generate neof, member, run, time, plev, lat array
@@ -66,7 +68,7 @@ class _FlattenContext(object):
                 dims=('member', 'run', 'time', 'plev', 'lat'),
             )
             array = dataarray.data
-            with flatten._FlattenContext(
+            with array._ArrayContext(
                 array,
                 push_left=(0, 1), nflat_left=2,
                 push_right=(2, 3, 4), nflat_right=2,

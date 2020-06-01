@@ -6,6 +6,7 @@ Various finite difference schemes.
 # cumsums.
 import functools
 import numpy as np
+import xarray as xr
 from . import ureg
 from .internals import docstring, warnings
 
@@ -18,8 +19,100 @@ __all__ = [
 # Used below
 sentinel = object()
 
+# Docstring snippets
+_axis_dim = """
+axis : int, optional
+    Axis along which derivative is taken.
+dim : str, optional
+    *For `xarray.DataArray` input only*.
+    Named dimension along which the %s is taken.
+"""
+docstring.snippets['deriv.axis'] = _axis_dim % 'derivative'
+docstring.snippets['integral.axis'] = _axis_dim % 'integral'
 
-def _fix_units(order=1):
+docstring.snippets['deriv.args'] = """
+h : float or array-like
+    The step size. If non-singleton, the step size is `h[1] - h[0]`.
+y : array-like
+    The data.
+"""
+
+docstring.snippets['deriv.kwargs'] = """
+accuracy : {{0, 2, 4, 6}}, optional
+    Accuracy of finite difference approximation. ``0`` corresponds
+    to differentiation onto half-levels. ``2``, ``4``, and ``6`` correspond
+    to centered accuracies of :math:`h^2`, :math:`h^4`, and :math:`h^6`,
+    respectively.  See `this wikipedia page \
+<https://en.wikipedia.org/wiki/Finite_difference_coefficient>`__
+    for the table of coefficients for each accuracy.
+keepleft, keepright, keepedges : bool, optional
+    Whether to fill left, right, or both edge positions with progressively
+    lower-`accuracy` finite difference estimates to prevent reducing
+    the dimension size along axis `axis`.
+"""
+
+docstring.snippets['deriv.returns'] = """
+diff : array-like
+    The "derivative". The length of axis `axis` may differ from `y`
+    depending on the `keepleft`, `keepright`, and `keepedges` settings.
+"""
+
+docstring.snippets['uneven.params'] = """
+x : float or array-like
+    The step size, a 1-d coordinate vector, or an array of coordinates
+    matching the shape of `y`.
+y : array-like
+    The data.
+order : int, optional
+    The order of the derivative. Default is ``1``.
+"""
+
+
+def _preserve_xarray_metadata(func):
+    """
+    Permit passing DataArrays to the function and specifying axes
+    with 'dim' rather than 'axis'.
+    """
+    @functools.wraps(func)
+    def wrapper(x, y, *args, keep_attrs=False, **kwargs):
+        # Get data
+        ix, iy = x, y
+        xarray = isinstance(x, xr.DataArray)
+        yarray = isinstance(y, xr.DataArray)
+        if xarray:
+            ix = x.data
+        if yarray:
+            iy = y.data
+            # Translate 'dim' arguments into axis number
+            dim = kwargs.pop('dim', None)
+            axis = kwargs.get('axis', None)
+            if dim is not None and axis is not None:
+                warnings._warn_climpy(
+                )
+            y 
+
+        # Call main function
+        idiff = func(ix, iy, *args, **kwargs)
+        ix = sentinel
+        if isinstance(idiff, tuple):  # return value of deriv_half
+            ix, idiff = idiff
+
+        # Build back DataArrays
+        # TODO: Finish this
+        if yarray:
+            diff = y.copy()  # keep attributes and everything
+            diff.data[:] = idiff
+            if not keep_attrs:
+                diff.attrs.clear()
+        if x is not sentinel:
+            return rx, ry
+        else:
+            return ry
+
+    return wrapper
+
+
+def _fix_pint_units(order=1):
     """
     Handle pint units for *x* and *y* coordinates. The `order` specifies the exponent
     to which the "x" units in the denominator are raised. If the function accepts
@@ -28,6 +121,7 @@ def _fix_units(order=1):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(x, y, *args, **kwargs):
+            # Strip quantites and get units
             xquant = isinstance(x, ureg.Quantity)
             yquant = isinstance(y, ureg.Quantity)
             if xquant:
@@ -38,10 +132,14 @@ def _fix_units(order=1):
                 y, yunits = y.magnitude, y.units
             elif xquant:
                 yunits = ureg.dimensionless
+
+            # Call main function
             diff = func(x, y, *args, **kwargs)
             x = sentinel
             if isinstance(diff, tuple):  # return value of deriv_half
                 x, diff = diff
+
+            # Re-apply original units
             if xquant or yquant:
                 diff *= yunits * xunits ** -kwargs.get('order', order)
                 if x is not sentinel:
@@ -90,26 +188,26 @@ def _fornberg_coeffs(x, x0, order=1):
     return weights[..., -1]
 
 
-@_fix_units(order=-1)  # integral, i.e. actually *multiply* x by y
+@_fix_pint_units(order=-1)  # integral, i.e. actually *multiply* x by y
+@docstring.add_snippets
 def integral(x, y, y0=0, axis=0):
     """
     Return the integral approximation along an arbitrary axis.
 
     Parameters
     ----------
-    x : ndarray
+    x : array-like
         A 1-d coordinate vector. Must match the shape of `y` on axis `axis`.
-    y : ndarray
+    y : array-like
         The data.
-    y0 : float or ndarray, optional
+    y0 : float or array-like, optional
         Constant offset added to the integral. Must be scalar or match the
         shape of `y`.
-    axis : int, optional
-        Axis along which integral is taken.
+    %(integral.axis)s
 
     Returns
     -------
-    ndarray
+    array-like
         The "integral".
     """
     x = np.atleast_1d(x)
@@ -124,13 +222,13 @@ def integral(x, y, y0=0, axis=0):
     return y0 + (y * dx).cumsum(axis=axis)
 
 
-def _step(h):
+def _get_step(h):
     """Determines scalar step h."""
     h = np.atleast_1d(h)
     if len(h) == 1:
         return h[0]
     else:
-        warnings.warn('Using difference between first 2 points for step size.')
+        warnings._warn_climpy('Using difference between first 2 points for step size.')
         return h[1] - h[0]
 
 
@@ -144,53 +242,27 @@ def _accuracy_check(n, accuracy, order=1):
         raise ValueError('Need at least 2 points on derivative axis.')
     elif n < finitemin:
         if accuracy > 0:
-            warnings.warn(
+            warnings._warn_climpy(
                 f'Setting accuracy to 0 for derivative on length-{n} axis.'
             )
             accuracy = 0
     elif n < finitemin + 2:
         if accuracy > 2:
-            warnings.warn(
+            warnings._warn_climpy(
                 f'Setting accuracy to 2 for derivative on length-{n} axis.'
             )
             accuracy = 2
     elif n < finitemin + 4:
         if accuracy > 4:
-            warnings.warn(
+            warnings._warn_climpy(
                 f'Setting accuracy to 4 for derivative on length-{n} axis.'
             )
             accuracy = 4
     return accuracy
 
 
-internals.snippets['deriv.params'] = """
-h : float or ndarray
-    The step size. If non-singleton, the step size is `h[1] - h[0]`.
-y : ndarray
-    The data.
-axis : int, optional
-    Axis along which derivative is taken.
-accuracy : {0, 2, 4, 6}, optional
-    Accuracy of finite difference approximation. ``0`` corresponds
-    to differentiation onto half-levels. ``2``, ``4``, and ``6`` correspond
-    to centered accuracies of :math:`h^2`, :math:`h^4`, and :math:`h^6`,
-    respectively.  See `this wikipedia page \
-<https://en.wikipedia.org/wiki/Finite_difference_coefficient>`__
-    for the table of coefficients for each accuracy.
-keepleft, keepright, keepedges : bool, optional
-    Whether to fill left, right, or both edge positions with progressively
-    lower-`accuracy` finite difference estimates to prevent reducing
-    the dimension size along axis `axis`.
-"""
-internals.snippets['deriv.returns'] = """
-diff : ndarray
-    The "derivative". The length of axis `axis` may differ from `y`
-    depending on the `keepleft`, `keepright`, and `keepedges` settings.
-"""
-
-
-@_fix_units(order=1)
-@internals.add_snippets
+@_fix_pint_units(order=1)
+@docstring.add_snippets
 def deriv1(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
@@ -200,7 +272,9 @@ def deriv1(
 
     Parameters
     ----------
-    %(deriv.params)s
+    %(deriv.args)s
+    %(deriv.axis)s
+    %(deriv.kwargs)s
 
     Returns
     -------
@@ -211,7 +285,7 @@ def deriv1(
     deriv_half, deriv_uneven
     """
     # Simple Euler scheme
-    h = _step(h)
+    h = _get_step(h)
     ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
@@ -283,8 +357,8 @@ def deriv1(
     return np.moveaxis(diff, -1, axis)
 
 
-@_fix_units(order=2)
-@internals.add_snippets
+@_fix_pint_units(order=2)
+@docstring.add_snippets
 def deriv2(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
@@ -294,7 +368,9 @@ def deriv2(
 
     Parameters
     ----------
-    %(deriv.params)s
+    %(deriv.args)s
+    %(deriv.axis)s
+    %(deriv.kwargs)s
 
     Returns
     -------
@@ -305,7 +381,7 @@ def deriv2(
     deriv1, deriv_uneven
     """
     # Simple Euler scheme
-    h = _step(h)
+    h = _get_step(h)
     ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
@@ -373,8 +449,8 @@ def deriv2(
     return np.moveaxis(diff, -1, axis)
 
 
-@_fix_units(order=3)
-@internals.add_snippets
+@_fix_pint_units(order=3)
+@docstring.add_snippets
 def deriv3(
     h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
@@ -384,7 +460,9 @@ def deriv3(
 
     Parameters
     ----------
-    %(deriv.params)s
+    %(deriv.args)s
+    %(deriv.axis)s
+    %(deriv.kwargs)s
 
     Returns
     -------
@@ -395,7 +473,7 @@ def deriv3(
     deriv1, deriv_uneven
     """
     # Simple Euler scheme
-    h = _step(h)
+    h = _get_step(h)
     ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
@@ -507,21 +585,8 @@ def _xy_standardize(x, y, axis=0):
     return x, y
 
 
-internals.snippets['deriv_uneven.params'] = """
-x : float or ndarray
-    The step size, a 1-d coordinate vector, or an array of coordinates
-    matching the shape of `y`.
-y : ndarray
-    The data.
-order : int, optional
-    The order of the derivative. Default is ``1``.
-axis : int, optional
-    Axis along which derivative is taken.
-"""
-
-
-@_fix_units(order=1)  # NOTE: wrapper will use order passed to function if it exists
-@internals.add_snippets
+@_fix_pint_units(order=1)  # NOTE: wrapper will use order passed to function if it exists
+@docstring.add_snippets
 def deriv_half(x, y, order=1, axis=0):
     """
     Return an arbitrary order finite difference approximation by taking successive
@@ -531,13 +596,14 @@ def deriv_half(x, y, order=1, axis=0):
 
     Parameters
     ----------
-    %(deriv_uneven.params)s
+    %(uneven.params)s
+    %(deriv.axis)s
 
     Returns
     -------
-    x : ndarray
+    x : array-like
         The new *x* coordinates.
-    diff : ndarray
+    diff : array-like
         The "derivative".
     """
     # Standardize
@@ -559,8 +625,8 @@ def deriv_half(x, y, order=1, axis=0):
     return x, diff
 
 
-@_fix_units(order=1)
-@internals.add_snippets
+@_fix_pint_units(order=1)
+@docstring.add_snippets
 def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
     Return an arbitrary order centered finite difference approximation for
@@ -568,7 +634,8 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
 
     Parameters
     ----------
-    %(deriv_uneven.params)s
+    %(uneven.params)s
+    %(deriv.axis)s
     accuracy : {2, 4, 6, ...}, optional
         Accuracy of the finite difference approximation. This determines the
         number of terms that go into the :cite:`1988:fornberg` algorithm.
@@ -580,7 +647,7 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
 
     Returns
     -------
-    diff : ndarray
+    diff : array-like
         The "derivative".
 
     References
