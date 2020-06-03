@@ -3,6 +3,8 @@
 Warnings used internally by climpy.
 """
 import warnings
+import pint
+warnings.simplefilter('error', category=pint.UnitStrippedWarning)
 
 
 def _warn_climpy(message):

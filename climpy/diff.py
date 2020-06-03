@@ -88,7 +88,7 @@ def _fornberg_coeffs(x, x0, order=1):
     weights[..., 0, 0] = 1
     hprod_prev = 1
     for i in range(1, n):
-        # set terms up
+        # Set terms up
         idxs = np.arange(0, min(i, order) + 1)
         hprod = np.prod(x[..., i] - x[..., :i], axis=-1)
         h0 = x[..., i] - x0
@@ -96,12 +96,12 @@ def _fornberg_coeffs(x, x0, order=1):
         for ii in range(i):
             w = weights[..., ii, idxs]
             w_prev = weights[..., ii, idxs - 1]
-            # for m := 0 to min(n, M) part
+            # The 'for m := 0 to min(n, M)' part
             h = x[..., i] - x[..., ii]
             weights[..., ii, idxs] = (h0 * w - idxs * w_prev) / h
-        # for m := 0 to min(n, M) part
-        # note we use w and w_prev from last loop iteration here
-        weights[..., i, idxs] = (idxs * w_prev - h0_prev * w) * (hprod_prev / hprod)  # noqa: E501
+        # The 'for m := 0 to min(n, M)' part
+        # Note we use w and w_prev from last loop iteration here
+        weights[..., i, idxs] = (idxs * w_prev - h0_prev * w) * (hprod_prev / hprod)
         hprod_prev = hprod
     return weights[..., -1]
 
@@ -109,7 +109,7 @@ def _fornberg_coeffs(x, x0, order=1):
 @quack._xarray_xy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=x * y')
 @docstring.add_snippets
-def integral(x, y, y0=0, axis=0):
+def integral(x, y, /, y0=0, axis=0):
     """
     Return the integral approximation along an arbitrary axis.
 
@@ -184,7 +184,7 @@ def _accuracy_check(n, accuracy, order=1):
 @quack._pint_wrapper(('=x', '=y'), '=y / x')
 @docstring.add_snippets
 def deriv1(
-    h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
+    h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
     Return an estimate of the first derivative along an arbitrary axis using
@@ -281,7 +281,7 @@ def deriv1(
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** 2')
 @docstring.add_snippets
 def deriv2(
-    h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
+    h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
     Return an estimate of the second derivative along an arbitrary axis using
@@ -374,7 +374,7 @@ def deriv2(
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** 3')
 @docstring.add_snippets
 def deriv3(
-    h, y, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
+    h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
     Return an estimate of the third derivative along an arbitrary axis using
@@ -489,7 +489,7 @@ def deriv3(
     return np.moveaxis(diff, -1, axis)
 
 
-def _xy_standardize(x, y, axis=0):
+def _xy_standardize(x, y, /, axis=0):
     """
     Standardize the coordiantes.
     """
@@ -510,7 +510,7 @@ def _xy_standardize(x, y, axis=0):
 @quack._xarray_xy_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
 @docstring.add_snippets
-def deriv_half(x, y, order=1, axis=0):
+def deriv_half(x, y, /, order=1, axis=0):
     """
     Return an arbitrary order finite difference approximation by taking successive
     half-level differences. This will change both the length of the data and
@@ -549,9 +549,9 @@ def deriv_half(x, y, order=1, axis=0):
 
 
 @quack._xarray_xy_wrapper
-@quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
+@quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
 @docstring.add_snippets
-def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
+def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
     Return an arbitrary order centered finite difference approximation for
     arbitrarily spaced coordinates using the :cite:`1988:fornberg` method.
@@ -622,5 +622,9 @@ def deriv_uneven(x, y, order=1, axis=0, accuracy=2, keepedges=False):
 
     # Pad edges simply with edge derivatives
     if not keepedges:
+        x = x[..., nhalf:-nhalf]
         diff = diff[..., nhalf:-nhalf]
-    return np.moveaxis(diff, -1, axis)
+    if x.ndim > 1:
+        x = np.moveaxis(x, -1, axis)
+    diff = np.moveaxis(diff, -1, axis)
+    return x, diff

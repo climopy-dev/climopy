@@ -17,8 +17,15 @@ REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside 
 
 def _xarray_xy_wrapper(func):
     """
-    Simple wrapper that permits passing either two vectors or a dataarray
-    to the function. In the latter case coordinates are inferred from the
+    Simple wrapper that permits passing *x* coordinates and *y* coordinates
+    as data arrays. If two DataArrays are passed, the `axis` along which derivatives
+    are taken is determined automatically from the dimension names of the
+    x-coordinates and y-coordinates.
+
+    to the function. In the latter case the `dims` of the x-coordinates must
+    match some dimension on the y-coordinate DataArray.
+
+    In the latter case coordinates are inferred from the
     array along axis `axis` or dimension `dim` (keyword args).
 
     Example
@@ -34,47 +41,94 @@ def _xarray_xy_wrapper(func):
 
     """
     def wrapper(*args, keep_attrs=False, **kwargs):
-        # Transform DataArray input
-        is_dataarray = len(args) == 1 and isinstance(args[0], xr.DataArray)
-        if is_dataarray:
+        is_dataarray = any(isinstance(arg, xr.DataArray) for arg in args)
+        if len(args) != 2:
+            raise ValueError('Two input arguments required.')
+        if not is_dataarray:
+            # Just pull out data
+            x, y = args
+        else:
             # Translate 'dim' arguments into axis number
+            # TODO: Make DataArray quantify, iquantify, standardize, istandardize
+            # methods that do things *in-place* vs *return copy*.
             dim = kwargs.pop('dim', None)
-            axis = kwargs.get('axis', None)
+            axis = kwargs.pop('axis', None)
             if dim is not None and axis is not None:
-                warnings._warn_climpy('Ambiguous axis specification.')
                 dim = None
+                warnings._warn_climpy('Ambiguous axis specification.')
 
-            # Get data and coordinates
-            input = args[0]
-            if axis is not None:
-                dim = input.dims[axis]
-            try:  # apply units! TODO: add 'data' attribute
-                args = (input.phys.coords[dim].data, input.phys.data)
-            except AttributeError:
-                args = (input.coords[dim].data, input.data)
+            # Get raw data to be passed to function
+            x, y = args  # *both* or *one* of these is dataarray
+            x_dataarray = y_dataarray = None
+            if isinstance(x, xr.DataArray):
+                x_dataarray = x
+                try:  # apply units! TODO: add 'data' attribute
+                    x = x_dataarray.phys.quantity
+                except AttributeError:
+                    x = x_dataarray.data
+            if isinstance(y, xr.DataArray):
+                y_dataarray = y
+                try:
+                    y = y_dataarray.phys.quantity
+                except AttributeError:
+                    y = y_dataarray.data
+
+            # If both are dataarrays, infer axis from dimension names
+            if x_dataarray is not None and y_dataarray is not None:
+                if axis is not None or dim is not None:
+                    warnings._warn_climpy(
+                        f'Ignoring axis={axis} and dim={dim}. Axis is '
+                        'inferred automatically from the dimensions.'
+                    )
+                dim = x_dataarray.dims[0]  # enforce singleton later on
+                axis = y_dataarray.dims.index(dim)
 
         # Call main function
-        result = func(*args, **kwargs)
+        result = func(x, y, **kwargs)
 
         # Add back metadata. Function should return 'y' value of coordinates
         # unchanged or 'x', 'y' pair if coordinates changed.
-        if is_dataarray:
-            # Repair output coordinates
-            output = result
-            coords = dict(input.coords)
-            if isinstance(result, tuple):  # return value of deriv_half
-                coord, output = result
-                attrs = {}
-                if hasattr(coord, 'units'):
-                    attrs['units'] = format(coord.units, '~')  # short-form units
-                coord = xr.DataArray(coord, name=dim, dims=(dim,), attrs=attrs)
-                coords[dim] = coord
+        if is_dataarray:  # input 'x' or 'y' was DataArray
+            pair = isinstance(result, tuple)
+            if pair:  # return value of deriv_half
+                x_out, y_out = result
+            else:
+                y_out = result
+
+            # Create output x DataArray
+            # NOTE: Always keep attributes because assumption is output
+            # 'x' coordinate units or physical characteristic has not changed.
+            if pair and x_dataarray is not None:
+                x_out = xr.DataArray(
+                    x_out,
+                    name=x_dataarray.name,
+                    dims=x_dataarray.dims, # WARNING: could be ND, e.g. deriv_uneven
+                    attrs=dict(x_dataarray.attrs),
+                    coords=dict(x_dataarray.coords),
+                )
+
+            # Create output y DataArray
+            if y_dataarray is not None:
+                attrs = dict(y_dataarray.attrs) if keep_attrs else {}
+                coords = dict(y_dataarray.coords)
+                if pair and x_dataarray is not None and x_dataarray.ndim == 1:
+                    # Assign coordinates with stripped pint units
+                    coord = x_out.copy()
+                    try:
+                        coord.data = coord.data.magnitude
+                    except AttributeError:
+                        pass
+                    coords[dim] = coord
+                y_out = xr.DataArray(
+                    y_out,
+                    name=y_dataarray.name,
+                    dims=y_dataarray.dims,
+                    attrs=attrs,
+                    coords=coords,
+                )
 
             # Create output array
-            attrs = {}
-            if keep_attrs:
-                attrs = input.attrs.copy()
-            result = xr.DataArray(output, dims=input.dims, coords=coords, attrs=attrs)
+            result = (x_out, y_out) if pair else (y_out,)
 
         return result
 
@@ -186,12 +240,19 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
             converter = _parse_pint_args(units_in_fmt)
             args_new, args_by_name = converter(args, strict)
 
-            # Call main function
+            # Call main function and check output
             result = func(*args_new, **kwargs)
-            if not is_container_out:
-                result = (result,)
+            if not is_container_out and isinstance(result, tuple):
+                raise ValueError(f'Got tuple of return values, expected one value.')
+            if is_container_out and (
+                not isinstance(result, tuple) or len(result) != len(units_out)
+            ):
+                n = len(units_out)
+                raise ValueError(f'Expected {n}-tuple of return values, got {result=}.')
 
             # Quantify output, but *only* if input was quantities
+            if not is_container_out:
+                result = (result,)
             pairs = tuple(_to_units_container(arg) for arg in units_out_fmt)
             no_quantities = not any(isinstance(arg, ureg.Quantity) for arg in args)
             units = tuple(
