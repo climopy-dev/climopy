@@ -94,7 +94,8 @@ from .utils import *  # noqa
 from .spherical import *  # noqa
 from .downloads import *  # noqa
 from .diff import *  # noqa
-from .oa import *  # noqa
+from .var import *  # noqa
+from .spectral import *  # noqa
 from .waves import *  # noqa
 from .const import *  # noqa
 from . import internals

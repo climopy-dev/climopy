@@ -38,9 +38,9 @@ Spectral analysis
 Variability analysis
 --------------------
 
-.. automodule:: climpy.oa
+.. automodule:: climpy.var
 
-.. automodsumm:: climpy.oa
+.. automodsumm:: climpy.var
    :toctree: api
 
 Spherical coordinates

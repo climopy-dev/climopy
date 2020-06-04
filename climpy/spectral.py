@@ -23,19 +23,16 @@ __all__ = [
     'autopower2d',
     'butterworth',
     'filter',
-    'gaussian',
-    'harmonics', 'highpower',
-    'hist',
+    'harmonics',
+    'highpower',
     'impulse',
     'lanczos',
-    'linefit',
-    'power', 'power2d',
+    'power',
+    'power2d',
     'response',
-    'roots',
-    'rednoise', 'rednoise_fit', 'rednoise_spectrum',
-    'rolling', 'running',
+    'rolling',
+    'running',
     'waves',
-    'wilks',
     'window',
 ]
 
@@ -718,6 +715,8 @@ def power2d(
         return (fx / dx, fy / dy, *context.data)
     else:
         return (fx / dx, fy / dy, context.data)
+
+
 def response(dx, b, a=1, n=1000, simple=False):
     """
     Calculate the response function given the *a* and *b* coefficients for some
