@@ -27,8 +27,24 @@ Finite differences
 .. automodsumm:: climpy.diff
    :toctree: api
 
-Objective analysis
-------------------
+Statistical analysis
+--------------------
+
+.. automodule:: climpy.stats
+
+.. automodsumm:: climpy.stats
+   :toctree: api
+
+Spectral analysis
+-----------------
+
+.. automodule:: climpy.spectral
+
+.. automodsumm:: climpy.spectral
+   :toctree: api
+
+Variance analysis
+-----------------
 
 .. automodule:: climpy.oa
 

@@ -5,10 +5,9 @@ Various finite difference schemes.
 # TODO: Add integration schemes! Will be simple to implement, they are just cumsums.
 import numpy as np
 from .internals import docstring, quack, warnings
-from .internals.array import _ArrayContext
 
 __all__ = [
-    'interp', 'integral',
+    'integral',
     'deriv1', 'deriv2', 'deriv3',
     'deriv_half', 'deriv_uneven',
 ]
@@ -24,6 +23,8 @@ dim : str, optional
     *For `xarray.DataArray` input only*.
     Named dimension along which the %(action)s.
 """
+
+docstring.snippets['hist.axis'] = _axis_dim % {'action': 'histogram is computed'}
 
 docstring.snippets['deriv.axis'] = _axis_dim % {'action': 'derivative is taken'}
 
@@ -113,67 +114,6 @@ def _fornberg_coeffs(x, x0, order=1):
 
 
 @quack._xarray_xy_wrapper
-@quack._pint_wrapper(('=x', '=x', '=y'), '=y')
-@docstring.add_snippets
-def interp(xc, x, y, /, axis=1):
-    """
-    Interpolate to new coordinates along an arbitrary axis.
-
-    Parameters
-    ----------
-    xc : array-like
-        A scalar or 1-d vector of the destination coordinates.
-    x : array-like
-        A 1-d coordinate vector. Must match the shape of `y` on axis `axis`.
-    y : array-like
-        The data.
-    %(interp.axis)s
-    """
-    # Check input
-    # TODO: Make general x-y compatibility checking function
-    xc = np.atleast_1d(xc)
-    if axis < 0:
-        axis += y.ndim
-    if not 0 <= axis < y.ndim:
-        raise ValueError(f'Invalid {axis=} for {y.shape=}.')
-    if x.ndim != xc.ndim:
-        raise ValueError(f'{x.ndim=} incompatible with {xc.ndim}')
-    if (
-        x.ndim == 1 and x.shape[axis] != y.shape[axis]
-        or x.ndim > 1 and x.shape != y.shape
-    ):
-        raise ValueError(f'{x.shape=} incompatible with {y.shape=}.')
-    if xc.ndim > 1 and any(
-        i != j for a, (i, j) in enumerate(zip(xc.shape, y.shape)) if a != axis
-    ):
-        raise ValueError(f'{xc.shape=} incompatible with {y.shape=} and {axis=}.')
-
-    # Interpolate
-    args = (xc, x, y) if x.ndim > 1 else (y,)
-    with _ArrayContext(*args, push_right=axis) as context:
-        # Retrieve data
-        if x.ndim > 1:
-            xc, x, y = context.data
-        else:
-            y = context.data
-
-        # Interpolate
-        yc = np.empty((y.shape[0], xc.shape[1]))
-        for k in range(y.shape[0]):
-            idx = np.searchsorted(x[k, :], xc[k, :], axis=-1)
-            idx[idx == 0] += 1  # extrapolate
-            idx[idx == x.shape[1]] -= 1  # extrapolate
-            yc[k, :] = y[k, idx - 1] + (y[k, idx] - y[k, idx - 1]) * (
-                (xc[k, :] - x[k, idx - 1]) / (x[k, idx] - x[k, idx - 1])
-            )
-
-        # Reset data
-        context.replace_data(yc)
-
-    return context.data
-
-
-@quack._xarray_xy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=x * y')
 @docstring.add_snippets
 def integral(x, y, /, y0=0, axis=0):
@@ -208,16 +148,6 @@ def integral(x, y, /, y0=0, axis=0):
     return y0 + (y * dx).cumsum(axis=axis)
 
 
-def _get_step(h):
-    """Determines scalar step h."""
-    h = np.atleast_1d(h)
-    if len(h) == 1:
-        return h[0]
-    else:
-        warnings._warn_climpy('Using difference between first 2 points for step size.')
-        return h[1] - h[0]
-
-
 def _accuracy_check(n, accuracy, order=1):
     """
     Restrict the accuracy based on length of dimension.
@@ -245,6 +175,18 @@ def _accuracy_check(n, accuracy, order=1):
             )
             accuracy = 4
     return accuracy
+
+
+def _get_step(h):
+    """
+    Determines scalar step h.
+    """
+    h = np.atleast_1d(h)
+    if len(h) == 1:
+        return h[0]
+    else:
+        warnings._warn_climpy('Using difference between first 2 points for step size.')
+        return h[1] - h[0]
 
 
 @quack._xarray_xy_wrapper
