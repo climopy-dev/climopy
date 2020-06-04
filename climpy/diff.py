@@ -112,6 +112,7 @@ def _fornberg_coeffs(x, x0, order=1):
     return weights[..., -1]
 
 
+@quack._xarray_xy_wrapper
 @quack._pint_wrapper(('=x', '=x', '=y'), '=y')
 @docstring.add_snippets
 def interp(xc, x, y, /, axis=1):
