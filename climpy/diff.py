@@ -2,13 +2,10 @@
 """
 Various finite difference schemes.
 """
-# TODO: Add integration schemes! Will be simple to implement, they are just
-# cumsums.
-import functools
+# TODO: Add integration schemes! Will be simple to implement, they are just cumsums.
 import numpy as np
-import xarray as xr
-from . import ureg
 from .internals import docstring, quack, warnings
+from .internals.array import _ArrayContext
 
 __all__ = [
     'integral',
@@ -22,15 +19,17 @@ sentinel = object()
 # Docstring snippets
 _axis_dim = """
 axis : int, optional
-    Axis along which derivative is taken.
+    Axis along which %(action)s.
 dim : str, optional
     *For `xarray.DataArray` input only*.
-    Named dimension along which the %s is taken.
+    Named dimension along which the %(action)s.
 """
 
-docstring.snippets['deriv.axis'] = _axis_dim % 'derivative'
+docstring.snippets['deriv.axis'] = _axis_dim % {'action': 'derivative is taken'}
 
-docstring.snippets['integral.axis'] = _axis_dim % 'integral'
+docstring.snippets['interp.axis'] = _axis_dim % {'action': 'interpolation is done'}
+
+docstring.snippets['integral.axis'] = _axis_dim % {'action': 'integral is taken'}
 
 docstring.snippets['deriv.args'] = """
 h : float or array-like
@@ -57,6 +56,13 @@ docstring.snippets['deriv.returns'] = """
 diff : array-like
     The "derivative". The length of axis `axis` may differ from `y`
     depending on the `keepleft`, `keepright`, and `keepedges` settings.
+"""
+
+docstring.snippets['basic.params'] = """
+x : array-like
+    A 1-d coordinate vector. Must match the shape of `y` on axis `axis`.
+y : array-like
+    The data.
 """
 
 docstring.snippets['uneven.params'] = """
@@ -104,6 +110,66 @@ def _fornberg_coeffs(x, x0, order=1):
         weights[..., i, idxs] = (idxs * w_prev - h0_prev * w) * (hprod_prev / hprod)
         hprod_prev = hprod
     return weights[..., -1]
+
+
+@quack._pint_wrapper(('=x', '=x', '=y'), '=y')
+@docstring.add_snippets
+def interp(xc, x, y, /, axis=1):
+    """
+    Interpolate to new coordinates along an arbitrary axis.
+
+    Parameters
+    ----------
+    xc : array-like
+        A scalar or 1-d vector of the destination coordinates.
+    x : array-like
+        A 1-d coordinate vector. Must match the shape of `y` on axis `axis`.
+    y : array-like
+        The data.
+    %(interp.axis)s
+    """
+    # Check input
+    # TODO: Make general x-y compatibility checking function
+    xc = np.atleast_1d(xc)
+    if axis < 0:
+        axis += y.ndim
+    if not 0 <= axis < y.ndim:
+        raise ValueError(f'Invalid {axis=} for {y.shape=}.')
+    if x.ndim != xc.ndim:
+        raise ValueError(f'{x.ndim=} incompatible with {xc.ndim}')
+    if (
+        x.ndim == 1 and x.shape[axis] != y.shape[axis]
+        or x.ndim > 1 and x.shape != y.shape
+    ):
+        raise ValueError(f'{x.shape=} incompatible with {y.shape=}.')
+    if xc.ndim > 1 and any(
+        i != j for a, (i, j) in enumerate(zip(xc.shape, y.shape)) if a != axis
+    ):
+        raise ValueError(f'{xc.shape=} incompatible with {y.shape=} and {axis=}.')
+
+    # Interpolate
+    args = (xc, x, y) if x.ndim > 1 else (y,)
+    with _ArrayContext(*args, push_right=axis) as context:
+        # Retrieve data
+        if x.ndim > 1:
+            xc, x, y = context.data
+        else:
+            y = context.data
+
+        # Interpolate
+        yc = np.empty((y.shape[0], xc.shape[1]))
+        for k in range(y.shape[0]):
+            idx = np.searchsorted(x[k, :], xc[k, :], axis=-1)
+            idx[idx == 0] += 1  # extrapolate
+            idx[idx == x.shape[1]] -= 1  # extrapolate
+            yc[k, :] = y[k, idx - 1] + (y[k, idx] - y[k, idx - 1]) * (
+                (xc[k, :] - x[k, idx - 1]) / (x[k, idx] - x[k, idx - 1])
+            )
+
+        # Reset data
+        context.replace_data(yc)
+
+    return context.data
 
 
 @quack._xarray_xy_wrapper
@@ -270,9 +336,7 @@ def deriv1(
                 deriv1(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
             )
     else:
-        raise ValueError(
-            'Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).'
-        )
+        raise ValueError('Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).')
     diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     return np.moveaxis(diff, -1, axis)
 
@@ -363,9 +427,7 @@ def deriv2(
                 deriv2(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
             )
     else:
-        raise ValueError(
-            'Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).'
-        )
+        raise ValueError('Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).')
     diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     return np.moveaxis(diff, -1, axis)
 
@@ -482,9 +544,7 @@ def deriv3(
                 deriv2(h, y[..., -7:], axis=-1, keepright=True, accuracy=4),
             )
     else:
-        raise ValueError(
-            'Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).'
-        )
+        raise ValueError('Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).')
     diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     return np.moveaxis(diff, -1, axis)
 
@@ -499,11 +559,8 @@ def _xy_standardize(x, y, /, axis=0):
     if x.size == 1:  # just used the step size
         x = np.linspace(0, x[0] * (ylen - 1), ylen)
     xlen = x.shape[axis] if x.ndim > 1 else x.size
-    if xlen != y.shape[axis]:
-        raise ValueError(
-            f'Got {xlen} x coordinates but {ylen} y coordinates '
-            f'along dimension {axis}.'
-        )
+    if xlen != y.shape[axis] or x.ndim > 1 and x.shape != y.shape:
+        raise ValueError(f'{x.shape=} incompatible with {y.shape=}')
     return x, y
 
 
