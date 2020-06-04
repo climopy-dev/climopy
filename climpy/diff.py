@@ -8,7 +8,7 @@ from .internals import docstring, quack, warnings
 from .internals.array import _ArrayContext
 
 __all__ = [
-    'integral',
+    'interp', 'integral',
     'deriv1', 'deriv2', 'deriv3',
     'deriv_half', 'deriv_uneven',
 ]

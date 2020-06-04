@@ -42,12 +42,8 @@ def _xarray_xy_wrapper(func):
     """
     def wrapper(*args, keep_attrs=False, **kwargs):
         is_dataarray = any(isinstance(arg, xr.DataArray) for arg in args)
-        if len(args) != 2:
-            raise ValueError('Two input arguments required.')
-        if not is_dataarray:
-            # Just pull out data
-            x, y = args
-        else:
+        x, y = args  # *both* or *one* of these is dataarray
+        if is_dataarray:
             # Translate 'dim' arguments into axis number
             # TODO: Make DataArray quantify, iquantify, standardize, istandardize
             # methods that do things *in-place* vs *return copy*.
@@ -58,7 +54,6 @@ def _xarray_xy_wrapper(func):
                 warnings._warn_climpy('Ambiguous axis specification.')
 
             # Get raw data to be passed to function
-            x, y = args  # *both* or *one* of these is dataarray
             x_dataarray = y_dataarray = None
             if isinstance(x, xr.DataArray):
                 x_dataarray = x
