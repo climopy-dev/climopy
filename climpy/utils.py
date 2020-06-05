@@ -167,6 +167,25 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=10):
         New "lines" may stop or start at rows in the middle of the array.
     ys_sorted : ndarray, optional
         The corresponding *y* coordinates. Returned if `ys` is not ``None``.
+
+    Example
+    -------
+
+    >>> import climpy
+    ... climpy.linetrack(
+    ...    [
+    ...        [30, 20],
+    ...        [22],
+    ...        [24],
+    ...        [32, 25],
+    ...        [26, 40, 33],
+    ...        [45],
+    ...        [20, 47],
+    ...        [23, 50],
+    ...    ],
+    ...    N=3,
+    ... )
+
     """
     # Parse input
     if ys is None:
