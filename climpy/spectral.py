@@ -50,14 +50,14 @@ detrend : {{'constant', 'linear'}}, optional
 """
 
 _power_data = """
-{x} : array-like
+y : array-like
     The input data.
 """
 
 _copower_data = """
-{x}1 : array-like
+y1 : array-like
    First input data.
-{x}2 : array-like
+y2 : array-like
     Second input data. Must have same shape as `y1`.
 """
 
@@ -68,21 +68,21 @@ dx : float or array-like
 """.rstrip() + _power_params
 
 _power2d_params = """
-dx : float or array-like
-    Time dimension step size in physical units. Used to scale `fx`.
-dy : float or array-like
-    Cyclic dimension step size in physical units. Used to scale `fy`.
+dx_time : float or array-like
+    Time dimension step size in physical units. Used to scale `fx_time`.
+dx_lon : float or array-like
+    Longitude or cyclic dimension step size in physical units. Used to scale `fx_lon`.
 {}
 axis_time : int, optional
     Location of the "time" axis.
-axis_cyclic : int, optional
-    Location of the cyclic "space" axis.
+axis_lon : int, optional
+    Location of the cyclic "space" axis, generally longitude.
 """.rstrip() + _power_params
 
-docstring.snippets['power.params'] = _power1d_params.format(_power_data.format(x='y').strip())  # noqa: E501
-docstring.snippets['power2d.params'] = _power2d_params.format(_power_data.format(x='z').strip())  # noqa: E501
-docstring.snippets['copower.params'] = _power1d_params.format(_copower_data.format(x='y').strip())  # noqa: E501
-docstring.snippets['copower2d.params'] = _power2d_params.format(_copower_data.format(x='z').strip())  # noqa: E501
+docstring.snippets['power.params'] = _power1d_params.format(_power_data.strip())
+docstring.snippets['power2d.params'] = _power2d_params.format(_power_data.strip())
+docstring.snippets['copower.params'] = _power1d_params.format(_copower_data.strip())
+docstring.snippets['copower2d.params'] = _power2d_params.format(_copower_data.strip())
 
 
 # Return values
@@ -92,10 +92,10 @@ fx : array-like
 """
 
 _power2d_returns = """
-fx : array-like
-    Frequencies for *time* axis. Units are the inverse of the `dx` units.
-fy : array-like
-    Frequencies for *cyclic* axis. Units are the inverse of the `dy` units.
+fx_time : array-like
+    Frequencies for *time* axis. Units are the inverse of the `dx_time`.
+fx_lon : array-like
+    Frequencies for *longitude* or *cyclic* axis. Units are the inverse of `dx_lon`.
 """
 
 _power_returns = """
@@ -428,14 +428,11 @@ def highpower(x, k, /, axis=-1):
         The filtered data.
     """
     # Naively remove certain frequencies
-    # Should ignore first coefficient, the mean
-    x = np.moveaxis(x, axis, -1)
-    fft = np.fft.fft(x, axis=-1)
-    fftfreqs = np.arange(1, fft.shape[-1] // 2)  # up to fft.size/2 - 1
-
     # Get indices of n largest values. Use *argpartition* because it's more
     # efficient, will just put -nth element into sorted position, everything
     # after that unsorted but larger (don't need exact order!).
+    x = np.moveaxis(x, axis, -1)
+    fft = np.fft.fft(x, axis=-1)
     p = np.abs(fft) ** 2
     f = np.argpartition(p, -k, axis=-1)[..., -k:]
     fft_hi = fft[..., f]
@@ -594,70 +591,70 @@ def _power_driver(
 
 
 def _power2d_driver(
-    dx, dy, z1, z2, /,
+    dx_time, dx_lon, y1, y2, /,
     nperseg=None,
     wintype='boxcar',
     center=np.pi,
     axis_time=0,
-    axis_cyclic=-1,
+    axis_lon=-1,
     detrend='constant',
 ):
     """
     Driver function for 2D spectral estimates.
     """
     # Checks
-    dx = quack._get_step(dx)
-    dy = quack._get_step(dy)
-    copower = z1 is not z2
-    if len(z1.shape) < 2:
+    dx_time = quack._get_step(dx_time)
+    dx_lon = quack._get_step(dx_lon)
+    copower = y1 is not y2
+    if len(y1.shape) < 2:
         raise ValueError('Need at least rank 2 array.')
-    if z1.shape == z2.shape:
-        raise ValueError(f'Shapes of z1 {z1.shape} and z2 {z2.shape} must match.')
-    taxis, caxis = axis_time, axis_cyclic
+    if y1.shape == y2.shape:
+        raise ValueError(f'Shapes of y1 {y1.shape} and y2 {y2.shape} must match.')
+    taxis, caxis = axis_time, axis_lon
     if caxis < 0:
-        caxis += z1.ndim
+        caxis += y1.ndim
     if taxis < 0:
-        taxis += z1.ndim
+        taxis += y1.ndim
 
     # Permute and flatten
-    with _ArrayContext(z1, z2, push_right=(taxis, caxis)) as context:
+    with _ArrayContext(y1, y2, push_right=(taxis, caxis)) as context:
         # Get window and flattened, trimmed data
-        z1, z2 = context.data
-        win, winloc, z1, z2 = _window_data(z1, z2, nperseg=nperseg, wintype=wintype)
+        y1, y2 = context.data
+        win, winloc, y1, y2 = _window_data(y1, y2, nperseg=nperseg, wintype=wintype)
         pm = win.size // 2
         nwindows = winloc.size
-        nextra, ntime, ncyclic = z1.shape
+        nextra, ntime, ncyclic = y1.shape
 
         # Setup output arrays
-        Pz1 = np.nan * np.empty((nextra, nwindows, pm * 2, ncyclic // 2))
+        Py1 = np.nan * np.empty((nextra, nwindows, pm * 2, ncyclic // 2))
         if copower:
-            Pz2 = Pz1.copy()
-            C = Pz1.copy()
-            Q = Pz1.copy()
+            Py2 = Py1.copy()
+            C = Py1.copy()
+            Q = Py1.copy()
 
         # 2D transform for each window on non-cyclic dimension
         # Note since we got the rfft (not fft) in one direction, only have half the
         # coefficients (they are symmetric); means for correct variance, have to
-        # double the power. These are analagous to Libby's notes for complex space
+        # double th power. These are analagous to Libby's notes for complex space
         for k in range(nextra):
             if (
-                np.any(~np.isfinite(z1[k, :, :]))
-                np.any(~np.isfinite(z2[k, :, :]))
+                np.any(~np.isfinite(y1[k, :, :]))
+                or np.any(~np.isfinite(y2[k, :, :]))
             ):
                 warnings._warn_climpy('Skipping array with missing values.')
                 continue
             for i, idx in enumerate(winloc):
-                Fz1 = _fft2d(pm, win, z1[k, idx - pm:idx + pm, :], detrend)
-                Pz1[k, i, :, :] = np.abs(Fz1) ** 2
-                Pz1[k, i, :, :-1] *= 2
+                Fy1 = _fft2d(pm, win, y1[k, idx - pm:idx + pm, :], detrend)
+                Py1[k, i, :, :] = np.abs(Fy1) ** 2
+                Py1[k, i, :, :-1] *= 2
                 if copower:
-                    Fz2 = _fft2d(pm, win, z2[k, idx - pm:idx + pm, :], detrend)
-                    Pz2[k, i, :, :] = np.abs(Fz2) ** 2
-                    Phi1 = np.arctan2(Fz1.imag, Fz1.real)
-                    Phi2 = np.arctan2(Fz2.imag, Fz2.real)
-                    C[k, i, :, :] = np.abs(Fz1) * np.abs(Fz2) * np.cos(Phi1 - Phi2)
-                    Q[k, i, :, :] = np.abs(Fz1) * np.abs(Fz2) * np.sin(Phi1 - Phi2)
-                    Pz2[k, i, :, :-1] *= 2
+                    Fy2 = _fft2d(pm, win, y2[k, idx - pm:idx + pm, :], detrend)
+                    Py2[k, i, :, :] = np.abs(Fy2) ** 2
+                    Phi1 = np.arctan2(Fy1.imag, Fy1.real)
+                    Phi2 = np.arctan2(Fy2.imag, Fy2.real)
+                    C[k, i, :, :] = np.abs(Fy1) * np.abs(Fy2) * np.cos(Phi1 - Phi2)
+                    Q[k, i, :, :] = np.abs(Fy1) * np.abs(Fy2) * np.sin(Phi1 - Phi2)
+                    Py2[k, i, :, :-1] *= 2
                     C[k, i, :, :-1] *= 2
                     Q[k, i, :, :-1] *= 2
 
@@ -667,27 +664,30 @@ def _power2d_driver(
         # here Q by C and the Ws cancel out, end up with average phase diff.
         # NOTE: Default order is to go 0 1 ... N/2 -N/2 ... -1. We reorder so
         # frequencies are from -N/2 ... -1 1 ... N/2.
-        fy = np.fft.rfftfreq(ncyclic)[1:]
-        fx = np.fft.fftfreq(2 * pm)  # start with the positive Fourier coefficients
-        fq = np.abs(fx[pm:pm + 1])  # Nyquist frequency singleton array
-        fx = np.concatenate((-fq, fx[pm + 1:], fx[1:pm], fq), axis=0)
-        Pz1 = Pz1.mean(axis=1)
+        fx_time = np.fft.fftfreq(2 * pm)
+        fq = np.abs(fx_time[pm:pm + 1])  # Nyquist frequency singleton array
+        fx_time = np.concatenate((-fq, fx_time[pm + 1:], fx_time[1:pm], fq), axis=0)
+        fx_lon = np.fft.rfftfreq(ncyclic)[1:]
+        Py1 = Py1.mean(axis=1)
         arrays = (Py1,)
         if copower:
-            Pz2 = Pz2.mean(axis=1)
+            Py2 = Py2.mean(axis=1)
             C = C.mean(axis=1)
             Q = Q.mean(axis=1)
-            Coh = (C ** 2 + Q ** 2) / (Pz1 * Pz2)
+            Coh = (C ** 2 + Q ** 2) / (Py1 * Py2)
             Phi = np.arctan2(Q, C)  # phase
             Phi[Phi >= center + np.pi] -= 2 * np.pi
             Phi[Phi < center - np.pi] += 2 * np.pi
-            arrays = (C, Q, Pz1, Pz2, Coh, Phi)
+            arrays = (C, Q, Py1, Py2, Coh, Phi)
 
         # Replace context data
         context.replace_data(*arrays)
 
     # Return unflattened data
-    return (f / dx, f / dy, *context.data) if copower else (f / dx, f / dy, context.data)  # noqa: E501
+    if copower:
+        return (fx_time / dx_time, fx_lon / dx_lon, *context.data)
+    else:
+        return (fx_time / dx_time, fx_lon / dx_lon, context.data)
 
 
 @quack._pint_wrapper(('=x', '=y'), ('=1 / x', '=y ** 2'))
@@ -710,9 +710,9 @@ def power(dx, y1, /, **kwargs):
     return _power_driver(dx, y1, y1, **kwargs)
 
 
-@quack._pint_wrapper(('=x', '=y', '=z'), ('=1 / x', '=1 / y', '=z ** 2'))
+@quack._pint_wrapper(('=x1', '=x2', '=y'), ('=1 / x1', '=1 / x2', '=y ** 2'))
 @docstring.add_snippets
-def power2d(dx, dy, z1, **kwargs):
+def power2d(dx, dy, y1, **kwargs):
     """
     Return the spectral decomposition of a real-valued array along an
     arbitrary axis.
@@ -727,7 +727,7 @@ def power2d(dx, dy, z1, **kwargs):
 
     %(power.notes)s
     """
-    return _power2d_driver(dx, dy, z1, z1, **kwargs)
+    return _power2d_driver(dx, dy, y1, y1, **kwargs)
 
 
 @quack._pint_wrapper(
@@ -754,11 +754,11 @@ def copower(dx, y1, y2, **kwargs):
 
 
 @quack._pint_wrapper(
-    ('=x', '=y', '=z1', '=z2'),
-    ('=1 / x', '=1 / y', '=z1 * z2', '=z1 * z2', '=z1 ** 2', '=z2 ** 2', '', 'deg'),
+    ('=x1', '=x2', '=y1', '=y2'),
+    ('=1 / x1', '=1 / x2', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
 @docstring.add_snippets
-def copower2d(dx, dy, z1, z2, **kwargs):
+def copower2d(dx_time, dy_lon, y1, y2, **kwargs):
     """
     Return the 2D spectral decomposition of two real-valued arrays with
     along an arbitrary *time* dimension and *cyclic* dimension.
@@ -774,7 +774,7 @@ def copower2d(dx, dy, z1, z2, **kwargs):
 
     %(power.notes)s
     """
-    return _power2d_driver(dx, dy, z1, z2, **kwargs)
+    return _power2d_driver(dx_time, dy_lon, y1, y2, **kwargs)
 
 
 @quack._pint_wrapper(('=x', '', ''), ('', ''))
