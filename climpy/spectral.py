@@ -68,15 +68,15 @@ dx : float or array-like
 """.rstrip() + _power_params
 
 _power2d_params = """
-dx_time : float or array-like
-    Time dimension step size in physical units. Used to scale `fx_time`.
 dx_lon : float or array-like
     Longitude or cyclic dimension step size in physical units. Used to scale `fx_lon`.
+dx_time : float or array-like
+    Time dimension step size in physical units. Used to scale `fx_time`.
 {}
-axis_time : int, optional
-    Location of the "time" axis.
 axis_lon : int, optional
     Location of the cyclic "space" axis, generally longitude.
+axis_time : int, optional
+    Location of the "time" axis.
 """.rstrip() + _power_params
 
 docstring.snippets['power.params'] = _power1d_params.format(_power_data.strip())
@@ -92,10 +92,10 @@ fx : array-like
 """
 
 _power2d_returns = """
-fx_time : array-like
-    Frequencies for *time* axis. Units are the inverse of the `dx_time`.
 fx_lon : array-like
     Frequencies for *longitude* or *cyclic* axis. Units are the inverse of `dx_lon`.
+fx_time : array-like
+    Frequencies for *time* axis. Units are the inverse of the `dx_time`.
 """
 
 _power_returns = """
@@ -591,24 +591,24 @@ def _power_driver(
 
 
 def _power2d_driver(
-    dx_time, dx_lon, y1, y2, /,
+    dx_lon, dx_time, y1, y2, /,
     nperseg=None,
     wintype='boxcar',
     center=np.pi,
-    axis_time=0,
     axis_lon=-1,
+    axis_time=0,
     detrend='constant',
 ):
     """
     Driver function for 2D spectral estimates.
     """
     # Checks
-    dx_time = quack._get_step(dx_time)
     dx_lon = quack._get_step(dx_lon)
+    dx_time = quack._get_step(dx_time)
     copower = y1 is not y2
     if len(y1.shape) < 2:
         raise ValueError('Need at least rank 2 array.')
-    if y1.shape == y2.shape:
+    if y1.shape != y2.shape:
         raise ValueError(f'Shapes of y1 {y1.shape} and y2 {y2.shape} must match.')
     taxis, caxis = axis_time, axis_lon
     if caxis < 0:
@@ -685,9 +685,9 @@ def _power2d_driver(
 
     # Return unflattened data
     if copower:
-        return (fx_time / dx_time, fx_lon / dx_lon, *context.data)
+        return (fx_lon / dx_lon, fx_time / dx_time, *context.data)
     else:
-        return (fx_time / dx_time, fx_lon / dx_lon, context.data)
+        return (fx_lon / dx_lon, fx_time / dx_time, context.data)
 
 
 @quack._pint_wrapper(('=x', '=y'), ('=1 / x', '=y ** 2'))
