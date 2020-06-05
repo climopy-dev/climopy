@@ -7,9 +7,7 @@ from .diff import deriv_half, deriv_uneven
 from .internals import quack
 
 __all__ = [
-    'datetimeday',
-    'datetimemonth',
-    'datetimeyear',
+    'dt2cal',
     'intersection',
     'linetrack',
     'match',
@@ -17,25 +15,36 @@ __all__ = [
 ]
 
 
-def datetimeday(dt):
+def dt2cal(dt):
     """
-    Get day from numpy datetime64.
-    """
-    return (dt.astype('datetime64[D]') - dt.astype('datetime64[M]') + 1).astype(np.int)
+    Convert array of datetime64 to a calendar array of year, month, day, hour,
+    minute, seconds, microsecond with these quantites indexed on the last axis.
 
+    Parameters
+    ----------
+    dt : datetime64 array (...)
+        numpy.ndarray of datetimes of arbitrary shape
 
-def datetimemonth(dt):
+    Returns
+    -------
+    cal : uint32 array (..., 7)
+        calendar array with last axis representing year, month, day, hour,
+        minute, second, microsecond
     """
-    Get month from numpy datetime64.
-    """
-    return dt.astype('datetime64[M]').astype(np.int) % 12 + 1
+    # See: https://stackoverflow.com/a/56260054/4970632
+    # Allocate output
+    out = np.empty(dt.shape + (6,), dtype='u4')
 
-
-def datetimeyear(dt):
-    """
-    Get year from numpy datetime64.
-    """
-    return dt.astype('datetime64[Y]').astype(np.int) + 1970
+    # Decompose calendar floors
+    # NOTE: M8 is datetime64, m8 is timedelta64
+    Y, M, D, h, m, s = [dt.astype(f'M8[{x}]') for x in 'YMDhms']
+    out[..., 0] = Y + 1970  # Gregorian Year
+    out[..., 1] = (M - Y) + 1  # month
+    out[..., 2] = (D - M) + 1  # day
+    out[..., 3] = (dt - D).astype('m8[h]')  # hour
+    out[..., 4] = (dt - h).astype('m8[m]')  # minute
+    out[..., 5] = (dt - m).astype('m8[s]')  # second
+    return out
 
 
 def match(*args):
