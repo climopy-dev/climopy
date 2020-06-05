@@ -123,40 +123,43 @@ def _xarray_xy_wrapper(func):
         if is_dataarray:  # input 'x' or 'y' was DataArray
             pair = isinstance(result, tuple)
             if pair:  # return value of deriv_half
-                x_out, y_out = result
+                x_ret, y_ret = x_out, y_out = result
             else:
-                y_out = result
+                y_ret = y_out = result
 
             # Create output x DataArray
             # NOTE: Always keep attributes because assumption is output
             # 'x' coordinate units or physical characteristic has not changed.
             if pair and isinstance(x, xr.DataArray):
-                x_out = xr.DataArray(
+                attrs = dict(x.attrs)
+                if func.__name__ == 'zerofind':
+                    dims = y.dims
+                    coords = dict(y.coords)
+                else:
+                    dims = x.dims
+                    coords = dict(x.coords)
+                x_ret = xr.DataArray(
                     x_out,
                     name=x.name,
-                    dims=x.dims,  # WARNING: could be ND, e.g. deriv_uneven
-                    attrs=dict(x.attrs),
-                    coords=dict(x.coords),
+                    dims=dims,  # WARNING: could be ND, e.g. deriv_uneven
+                    attrs=attrs,
+                    coords=coords,
                 )
 
             # Create output y DataArray and fix 'axis' coordinates
             if isinstance(y, xr.DataArray):
                 coords = dict(y.coords)
                 attrs = dict(y.attrs) if keep_attrs else {}
+                coord = None  # coordinate for axis along which action was taken
                 dims = list(y.dims)
                 name = y.name
 
-                if pair and isinstance(x, xr.DataArray):
-                    # Assign coordinates with stripped pint units
+                if isinstance(x_ret, xr.DataArray) and x_ret.ndim == 1:
+                    # Already turned into DataArray
                     # TODO: No more 'testing for pairs', use func-specific behavior
-                    coord = x_out
+                    coord = x_ret  # already turned into Dataarray
 
-                elif func.__name__ != 'hist':
-                    # Assign coordinates possibly trimmed with 'keepedges'
-                    nhalf = (y_in.shape[axis] - y_out.shape[axis]) // 2
-                    coord = x[nhalf:-nhalf]
-
-                else:
+                elif func.__name__ == 'hist':
                     # Use first positional input argument, which should have
                     # same name and attribute as dataarray
                     name = name or 'none'
@@ -170,10 +173,21 @@ def _xarray_xy_wrapper(func):
                     del coords[dim]
                     dim, name, attrs = name, 'count', {}  # new properties for result
 
+                elif func.__name__ == 'zerofind':
+                    # The name of new DataArray is name of old dimension
+                    dim, name = 'zero', dim
+                    coord = y_out.shape[axis]
+
+                elif func.__name__ in ('deriv1', 'deriv2', 'deriv3'):
+                    # Assign coordinates possibly trimmed with 'keepedges'
+                    nhalf = (y_in.shape[axis] - y_out.shape[axis]) // 2
+                    coord = x[nhalf:-nhalf]  # may or may not be DataArray
+
                 # Create new output array
                 dims[axis] = dim
-                coords[dim] = _remove_units(coord)
-                y_out = xr.DataArray(
+                if coord is not None:
+                    coords[dim] = _remove_units(coord)
+                y_ret = xr.DataArray(
                     y_out,
                     name=name,
                     dims=dims,
@@ -182,7 +196,7 @@ def _xarray_xy_wrapper(func):
                 )
 
             # Create output array
-            result = (x_out, y_out) if pair else y_out
+            result = (x_ret, y_ret) if pair else y_ret
 
         return result
 
