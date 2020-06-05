@@ -24,7 +24,7 @@ def _get_step(h):
         return h[0]
     elif h.ndim != 1:
         raise ValueError(f'x coordinates must be 1D, not {h.ndim}D.')
-    elif not np.allclose(h):
+    elif not np.allclose(np.diff(h), h[1] - h[0]):
         raise ValueError(f'x coordinate steps must be identical, but got {h}.')
     else:
         return h[1] - h[0]
