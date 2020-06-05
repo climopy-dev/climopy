@@ -18,16 +18,16 @@ __all__ = [
 def dt2cal(dt):
     """
     Convert array of datetime64 to a calendar array of year, month, day, hour,
-    minute, seconds, microsecond with these quantites indexed on the last axis.
+    minute, and seconds with these quantites indexed on the last axis.
 
     Parameters
     ----------
-    dt : datetime64 array (...)
+    dt : datetime64 array
         numpy.ndarray of datetimes of arbitrary shape
 
     Returns
     -------
-    cal : uint32 array (..., 7)
+    cal : uint32 array (..., 6)
         calendar array with last axis representing year, month, day, hour,
         minute, second, microsecond
     """
