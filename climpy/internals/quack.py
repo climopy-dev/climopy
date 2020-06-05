@@ -15,6 +15,21 @@ from . import warnings
 REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside brackets
 
 
+def _get_step(h):
+    """
+    Determine scalar step h.
+    """
+    h = np.atleast_1d(h)
+    if h.size == 1:
+        return h[0]
+    elif h.ndim != 1:
+        raise ValueError(f'x coordinates must be 1D, not {h.ndim}D.')
+    elif not np.allclose(h):
+        raise ValueError(f'x coordinate steps must be identical, but got {h}.')
+    else:
+        return h[1] - h[0]
+
+
 def _apply_units(data):
     """
     Apply unit attribute units and get magnitudes.
@@ -254,6 +269,12 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            # Test input
+            if len(units_in) != len(args):
+                raise ValueError(
+                    f'Expected {len(units_in)} positional args, got {len(args)}.'
+                )
+
             # Fill parameters inside units
             units_in_fmt = []
             units_out_fmt = []
@@ -281,13 +302,12 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
 
             # Call main function and check output
             result = func(*args_new, **kwargs)
+            n_result = 1 if not isinstance(result, tuple) else len(result)
+            n_expect = len(units_out)
             if not is_container_out and isinstance(result, tuple):
                 raise ValueError('Got tuple of return values, expected one value.')
-            if is_container_out and (
-                not isinstance(result, tuple) or len(result) != len(units_out)
-            ):
-                n = len(units_out)
-                raise ValueError(f'Expected {n}-tuple of return values, got {result=}.')
+            if is_container_out and n_result != len(units_out):
+                raise ValueError(f'Expected {n_expect} return values, got {n_result}.')
 
             # Quantify output, but *only* if input was quantities
             if not is_container_out:

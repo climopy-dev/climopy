@@ -15,6 +15,8 @@ from .internals import docstring
 from .internals.array import _ArrayContext
 
 __all__ = [
+    'autocorr',
+    'autocovar',
     'corr',
     'covar',
     'eof',
@@ -46,144 +48,160 @@ _covar_math = r"""
 where :math:`\overline{x}` and :math:`\overline{y}` are the sample means.
 """  # noqa: E501
 
-_corr_covar_docs = """
-Return the %(name)s or auto%(name)s spectrum at successive lags.
+_var_data = """
+z : array-like
+    The input data.
+"""
 
-Parameters
-----------
+_covar_data = """
 z1 : array-like
     Input data.
 z2 : array-like, optional
-    Second input data. Must be same shape as `z1`. Leave empty if
-    auto%(name)s is desired.
+    Second input data. Must be same shape as `z1`.
+"""
+
+_var_template = """
+Return the {name} spectrum at successive lags.
+
+Parameters
+----------
+{data}
 axis : int, optional
-    Axis along which %(name)s is taken.
+    Axis along which {name} is taken.
 lag : int, optional
-    Return %(name)s at the single lag `lag`.
+    Return {name} at the single lag `lag`.
 nlag : int, optional
-    Return lagged %(name)s from ``0`` timesteps up to `nlag` timesteps.
+    Return lagged {name} from ``0`` timesteps up to `nlag` timesteps.
 
 Returns
 -------
 lags : array-like
     The lags.
 result : array-like
-    The %(name)s as a function of lag.
+    The {name} as a function of lag.
 
 Note
 ----
-This function uses the following formula to estimate %(name)s at lag :math:`k`:
-%(math)s
+This function uses the following formula to estimate {name} at lag :math:`k`:
+{math}
 """
 
-docstring.snippets['corr'] = _corr_covar_docs % {
-    'name': 'correlation', 'math': _corr_math
-}
-docstring.snippets['covar'] = _corr_covar_docs % {
-    'name': 'covariance', 'math': _covar_math
-}
-
-docstring.snippets['power.bibliography'] = """
-.. bibliography:: ../bibs/power.bib
-"""
-
-docstring.snippets['power.params'] = """
-coherence : bool, optional
-    Ignored if `z2` is ``None``. If ``False`` (the default), `power`
-    returns the co-power spectrum, quadrature spectrum, and individual
-    power spectra. If ``True``, `power` returns the coherence
-    and phase difference.
-wintype : str or (str, float), optional
-    The window specification, passed to `get_window`. The resulting
-    weights are used to window the data before carrying out spectral
-    decompositions. See notes for details.
-nperseg : int, optional
-    The window or segment length, passed to `get_window`. If ``None``,
-    windowing is not carried out. See notes for details.
-detrend : {'constant', 'linear'}, optional
-    Passed as the `type` argument to `scipy.signal.detrend`. ``'constant'``
-    removes the mean and ``'linear'`` removes the linear trend.
-"""
-
-docstring.snippets['power.notes'] = """
-The Fourier coefficients are scaled so that total variance is equal to one
-half the sum of the right-hand coefficients. This is more natural for the
-real-valued datasets typically used by physical scientists, and matches
-the convention from Elizabeth Barnes's objective analysis `course notes \
-<http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`__.
-This differs from the numpy convention, which scales the coefficients so
-that total variance is equal to the sum of squares of all coefficients,
-or twice the right-hand coefficients.
-
-Windowing is carried out by applying the `wintype` weights to successive
-time segments of length `nperseg` (overlapping by one half the window
-length), taking spectral decompositions of each weighted segment, then
-taking the average of the result for all segments. Note that non-boxcar
-windowing reduces the total power amplitude and results in loss of
-information. It may often be preferable to follow the example of
-:cite:`1991:randel` and smooth in *frequency* space with a Gaussian filter
-after the decomposition has been carried out.
-
-The below example shows that the extent of power reduction resulting from
-non-boxcar windowing depends on the character of the signal.
-
-.. code-block:: python
-
-    import numpy as np
-    import climpy
-    w = climpy.window('hanning', 200)
-    y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
-    y2 = np.random.rand(200) # complex signal
-    for y in (y1, y2):
-        yvar = y.var()
-        Y = (np.abs(np.fft.fft(y)[1:] / y.size) ** 2).sum()
-        Yw = (np.abs(np.fft.fft(y * w)[1:] / y.size) ** 2).sum()
-        print('Boxcar', Y / yvar)
-        print('Hanning', Yw / yvar)
-"""
+docstring.snippets['autocorr'] = _var_template.format(
+    data=_var_data, name='autocorrelation', math=_corr_math,
+)
+docstring.snippets['autocovar'] = _var_template.format(
+    data=_var_data, name='autocovariance', math=_covar_math,
+)
+docstring.snippets['corr'] = _var_template.format(
+    data=_covar_data,  name='correlation', math=_corr_math,
+)
+docstring.snippets['covar'] = _var_template.format(
+    data=_covar_data,  name='covariance', math=_covar_math,
+)
 
 
-@docstring.add_snippets
-def corr(*args, **kwargs):
-    """%(corr)s"""
-    return corr(*args, **kwargs, corr=True)
+def gaussian(z, mean=0, stdev=None, sigma=1):
+    """
+    Returns sample points on Gaussian curve.
+
+    Parameters
+    ----------
+    z : array-like, optional
+        The z-statistics to be sampled.
+    """
+    sigma = stdev if stdev is not None else sigma
+    norm = stats.norm(loc=mean, scale=sigma)
+    pdf = norm.pdf(z, loc=mean, scale=sigma)
+    return z, pdf
 
 
-@docstring.add_snippets
-def covar(
-    z1, z2=None, dt=1, lag=None, nlag=None,
-    axis=-1, corr=False, verbose=False,
+def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1):
+    r"""
+    Return one or more artificial red noise time series with prescribed mean
+    and standard deviation. The time series are generated with the following
+    equation:
+
+    .. math::
+
+        x(t) = a \cdot x(t - \Delta t) + b \cdot \epsilon(t)
+
+    where *a* is the lag-1 autocorrelation and *b* is a scaling term.
+
+    Parameters
+    ---------
+    a : float
+        The autocorrelation.
+    ntime : int, optional
+        Number of timesteps.
+    nsamples : int or list of int, optional
+        Axis size or list of axis sizes for the "sample" dimension(s). Shape of the
+        `data` array will be ``(ntime,)`` if `nsamples` is not provided,
+        ``(ntime, nsamples)`` if `nsamples` is scalar, or ``(ntime, *nsamples)``
+        if `nsamples` is a list of axis sizes.
+    mean, stdev : float, optional
+        The mean and standard deviation for the red noise
+        time series.
+
+    Returns
+    -------
+    data : array-like
+        The red noise data.
+
+    See Also
+    --------
+    rednoisefit
+    """
+    # Initial stuff
+    ntime -= 1  # exclude the initial timestep
+    nsamples = np.atleast_1d(nsamples)
+    data = np.empty((ntime + 1, *nsamples))  # user can make N-D array
+    b = (1 - a ** 2) ** 0.5  # from OA class
+
+    # Nested loop
+    with _ArrayContext(data, push_left=0) as context:
+        data = context.data
+        data[0, :] = 0.0  # initialize
+        for i in range(data.shape[-1]):
+            eps = np.random.normal(loc=0, scale=1, size=ntime)
+            for t in range(1, ntime + 1):
+                data[t, i] = a * data[t - 1, i] + b * eps[t - 1]
+
+    # Return
+    data = context.data
+    if len(nsamples) == 1 and nsamples[0] == 1:
+        data = data.squeeze()
+    return mean + stdev * data  # rescale to have specified stdeviation/mean
+
+
+def _covar_driver(
+    dt, z1, z2, /, *, lag=None, nlag=None,
+    axis=-1, standardize=False, verbose=False,
 ):
-    """%(covar)s"""
+    """
+    Driver function for getting covariance.
+    """
     # Preparation, and stdev/means
-    z1 = np.array(z1)
-    if z2 is None:
-        auto = True
-    else:
-        auto = False
-        z2 = np.array(z2)
-        if z1.shape != z2.shape:
-            raise ValueError(
-                f'Data 1 shape {z1.shape} and Data 2 shape {z2.shape} '
-                'do not match.'
-            )
+    auto = z1 is z2
+    if z1.shape != z2.shape:
+        raise ValueError(f'Incompatible shapes {z1.shape=} and {z2.shape=}.')
     naxis = z1.shape[axis]  # length
 
     # Checks
-    if not (nlag is None) ^ (lag is None):  # xor
-        raise ValueError("Must specify either of the 'lag' or 'nlag' keyword args.")
+    if lag is None and nlag is None:
+        lag = 0
+    if lag is not None and nlag is not None:
+        raise ValueError(f'Conflicting arguments {lag=} and {nlag=}.')
     if nlag is not None and nlag >= naxis / 2:
-        raise ValueError(f"Lag {nlag} must be greater than axis length {naxis}.")
+        raise ValueError(f'Lag {nlag} must be greater than axis length {naxis}.')
     if verbose:
         prefix = 'auto' if auto else ''
-        suffix = 'correlation' if corr else 'covariance'
+        suffix = 'correlation' if standardize else 'covariance'
         if nlag is None:
             print(f'Calculating lag-{lag} {prefix}{suffix}.')
         else:
             print(f'Calculating {prefix}{suffix} to lag {nlag} for axis size {naxis}.')
 
     # Means and permute
-    std1 = std2 = 1  # use for covariance
     z1 = np.moveaxis(z1, axis, -1)
     mean1 = z1.mean(axis=-1, keepdims=True)  # keep dims for broadcasting
     if auto:
@@ -193,7 +211,8 @@ def covar(
         mean2 = z2.mean(axis=-1, keepdims=True)
 
     # Standardize maybe
-    if corr:
+    std1 = std2 = 1  # use for covariance
+    if standardize:
         std1 = z1.std(axis=-1, keepdims=False)
         if auto:
             std2 = std1
@@ -209,6 +228,7 @@ def covar(
     # Correlation on specific lag
     elif nlag is None:
         lag = np.round(lag * dt).astype(int)
+        lags = np.atleast_1d(lag)
         covar = np.sum(
             (z1[..., :-lag] - mean1) * (z2[..., lag:] - mean2), axis=-1, keepdims=True,
         ) / ((naxis - lag) * std1 * std2),
@@ -217,16 +237,15 @@ def covar(
     # Correlation up to n timestep-lags after 0-correlation
     else:
         # First figure out lags
-        # Negative lag means z2 leads z1 (e.g. z corr m, left-hand side
-        # is m leads z).
+        # Negative lag means z2 leads z1 (e.g. z corr m, left-hand side is m leads z).
         # e.g. 20 day lag, at synoptic timesteps
         nlag = np.round(nlag / dt).astype(int)
         if not auto:
             n = nlag * 2 + 1  # the center point, and both sides
-            lags = range(-nlag, nlag + 1)
+            lags = np.arange(-nlag, nlag + 1)
         else:
             n = nlag + 1
-            lags = range(0, nlag + 1)
+            lags = np.arange(0, nlag + 1)
 
         # Get correlation
         # will include the zero-lag autocorrelation
@@ -239,22 +258,60 @@ def covar(
             else:
                 prod = (z1[..., :-lag] - mean1) * (z2[..., lag:] - mean2)
             covar[..., i] = prod.sum(axis=-1) / ((naxis - lag) * std1 * std2)
-        return np.array(lags) * dt, np.moveaxis(covar, -1, axis)
+        lags *= dt
+
+    # Return lags and covariance
+    return lags, np.moveaxis(covar, -1, axis)
 
 
-def eof(
-    data,
-    neof=5,
-    time=-2,
-    space=-1,
-    weights=None,
-    percent=True,
-    normalize=False,
-):
+@quack._pint_wrapper(('=t', '=z'), ('=t', ''))
+@docstring.add_snippets
+def autocorr(dt, z, **kwargs):
     """
-    Calculates the temporal EOFs, using the scipy algorithm for Hermetian (or
-    real symmetric) matrices. This version allows calculating just 'n'
-    most important ones, so should be faster.
+    %(autocorr)s
+    """
+    # NOTE: covar checks if z1 and z2 are the same to to reduce computational cost
+    kwargs.setdefault('standardize', True)
+    return _covar_driver(dt, z, z, **kwargs)
+
+
+@quack._pint_wrapper(('=t', '=z'), ('=t', '=z ** 2'))
+@docstring.add_snippets
+def autocovar(dt, z, **kwargs):
+    """
+    %(autocovar)s
+    """
+    # NOTE: covar checks if z1 and z2 are the same to reduce computational cost
+    return _covar_driver(dt, z, z, **kwargs)
+
+
+@quack._pint_wrapper(('=t', '=z1', '=z2'), ('=t', ''))
+@docstring.add_snippets
+def corr(dt, z1, z2, **kwargs):
+    """
+    %(corr)s
+    """
+    kwargs.setdefault('standardize', True)
+    return _covar_driver(dt, z1, z2, **kwargs, standardize=True)
+
+
+@quack._pint_wrapper(('=t', '=z1', '=z2'), ('=t', '=z1 * z2'))
+@docstring.add_snippets
+def covar(dt, z1, z2, **kwargs):
+    """
+    %(covar)s
+    """
+    return _covar_driver(dt, z1, z2, **kwargs)
+
+
+@quack._pint_wrapper('=z', ('', '=z', '=z ** 2', 'count'))
+def eof(
+    data, /, neof=5, axis_time=-2, axis_space=-1,
+    weights=None, percent=True, normalize=False,
+):
+    r"""
+    Calculate the first `N` EOFs using the scipy algorithm for Hermetian matrices
+    on the covariance matrix.
 
     Parameters
     ----------
@@ -262,9 +319,9 @@ def eof(
         Data of arbitrary shape.
     neof : int, optional
         Number of eigenvalues we want.
-    time : int, optional
+    axis_time : int, optional
         Axis used as the 'record' or 'time' dimension.
-    space : int or list of int, optional
+    axis_space : int or list of int, optional
         Axis or axes used as 'space' dimension.
     weights : array-like, optional
         Area or mass weights; must be broadcastable on multiplication with
@@ -276,6 +333,25 @@ def eof(
         Whether to normalize the data by its standard deviation
         at every point prior to obtaining the EOFs.
 
+    Returns
+    -------
+    pcs : array-like
+        The standardized principal components. The `axis_space` dimensions
+        are reduced to length 1.
+    projs : array-like
+        Projections of the standardized principal components onto the
+        original data. The `axis_time` dimension is reduced to length 1.
+    evals
+        If `percent` is ``Flase``, these are the eigenvalues. Otherwise, this is
+        the percentage of total variance explained by the corresponding eigenvector.
+        The `axis_time` and `axis_space` dimensions are reduced to length 1.
+    nstars
+        The approximate degrees of freedom as determined by the :cite:`2011:wilks`
+        autocorrelation critereon. This can be used to compute the approximate 95%
+        error bounds for the eigenvalues using the :cite:`1982:north` critereon of
+        :math:`\lambda \sqrt{2 / N^*}`. The `axis_time` and `axis_space` dimensions
+        are reduced to length 1.
+
     Example
     -------
 
@@ -286,50 +362,52 @@ def eof(
             dims=('member', 'run', 'time', 'plev', 'lat'),
         )
         data = array.data
-        result = climpy.eof(data, time=2, space=(3, 4))
+        result = climpy.eof(data, axis_time=2, axis_space=(3, 4))
 
+    References
+    ----------
+    .. bibliography:: ../bibs/eofs.bib
     """
     # Parse input
-    m_axis, n_axes = time, space
-    np.atleast_1d(m_axis).item()  # ensure time axis is 1D
-    shape = data.shape  # original shape
+    axis_space = np.atleast_1d(axis_space)
+    np.atleast_1d(axis_time).item()  # ensure time axis is 1D
 
     # Remove the mean and optionally standardize the data
-    data = data - data.mean(axis=m_axis, keepdims=True)  # remove mean
+    data = data - data.mean(axis=axis_time, keepdims=True)  # remove mean
     if normalize:
-        data = data / data.std(axis=m_axis, keepdims=True)
+        data = data / data.std(axis=axis_time, keepdims=True)
 
     # Next apply weights
-    m = data.shape[m_axis]  # number timesteps
-    n = np.prod([data.shape[_] for _ in n_axes])  # number space locations
+    ntime = data.shape[axis_time]  # number timesteps
+    nspace = np.prod(np.asarray(data.shape)[axis_space])  # number space locations
     if weights is None:
         weights = 1
     weights = np.atleast_1d(weights)  # want numpy array
     weights = weights / weights.mean()  # so does not affect amplitude
-    if m > n:  # longer time axis than space axis
+    if ntime > nspace:
         dataw = data = data * np.sqrt(weights)
-    else:  # longer space axis than dime axis
+    else:
         dataw = data * weights  # raises error if dimensions incompatible
 
     # Turn matrix in to extra (K) x time (M) x space (N)
     # Requires flatening space axes into one, and flattening extra axes into one
     with _ArrayContext(
         data, dataw,
-        push_right=(m_axis, *n_axes),
-        nflat_right=len(n_axes),  # flatten space axes
-        nflat_left=data.ndim - len(n_axes) - 1,  # flatten
+        push_right=(axis_time, *axis_space),
+        nflat_right=len(axis_space),  # flatten space axes
+        nflat_left=data.ndim - len(axis_space) - 1,  # flatten
     ) as context:
         # Retrieve reshaped data
         data, dataw = context.data
-        k, m, n = data.shape
-        if m != shape[m_axis] or n != np.prod(np.asarray(shape)[n_axes]):
+        k = data.shape[0]  # ensure 3D
+        if data.ndim != 3 or ntime != data.shape[0] or nspace != data.shape[1]:
             raise RuntimeError('Array resizing algorithm failed.')
 
         # Prepare output arrays
-        pcs = np.empty((k, neof, m, 1))
-        projs = np.empty((k, neof, 1, n))
+        pcs = np.empty((k, neof, ntime, 1))
+        projs = np.empty((k, neof, 1, nspace))
         evals = np.empty((k, neof, 1, 1))
-        nstar = np.empty((k, 1, 1, 1))
+        nstars = np.empty((k, 1, 1, 1))
 
         # Get EOFs and PCs and stuff
         for i in range(k):
@@ -341,40 +419,40 @@ def eof(
             # TODO: Fix the weight projection below
             rho = np.corrcoef(x.T[:, 1:], x.T[:, :-1])[0, 1]  # space x time
             rho_ave = (rho * weights).sum() / weights.sum()
-            nstar[i, 0, 0, 0] = m * ((1 - rho_ave) / (1 + rho_ave))  # estimate
+            nstars[i, 0, 0, 0] = ntime * ((1 - rho_ave) / (1 + rho_ave))  # estimate
 
             # Get EOFs using covariance matrix on *shortest* dimension
+            # NOTE: Eigenvalues are in *ascending* order, so get the last ones
             if x.shape[0] > x.shape[1]:
                 # Get *temporal* covariance matrix since time dimension larger
-                eigrange = [n - neof, n - 1]  # eigenvalues to get
-                covar = (xw.T @ xw) / m
-                # returns eigenvectors in *columns*
+                # Returns eigenvectors in columns
+                eigrange = [nspace - neof, nspace - 1]  # eigenvalues to get
+                covar = (xw.T @ xw) / ntime
                 l, v = linalg.eigh(covar, eigvals=eigrange, eigvals_only=False)
-                Z = xw @ v  # (time by space) x (space x neof)
-                z = (Z - Z.mean(axis=0)) / Z.std(axis=0)  # standardize pcs
-                p = x.T @ z / m  # (space by time) x (time by neof)
+                pc = xw @ v  # (time x space) x (space x neof) = (time x neof)
 
-            # Get *spatial* dispersion matrix since space dimension longer
-            # This time 'eigenvectors' are actually the pcs
             else:
-                eigrange = [m - neof, m - 1]  # eigenvalues to get
-                covar = (xw @ x.T) / n
-                l, Z = linalg.eigh(covar, eigvals=eigrange, eigvals_only=False)
-                z = (Z - Z.mean(axis=0)) / Z.std(axis=0)  # standardize pcs
-                p = (x.T @ z) / m  # (space by time) x (time by neof)
+                # Get *spatial* dispersion matrix since space dimension longer
+                # This time 'eigenvectors' are actually the pcs
+                eigrange = [ntime - neof, ntime - 1]  # eigenvalues to get
+                covar = (xw @ x.T) / nspace
+                l, pc = linalg.eigh(covar, eigvals=eigrange, eigvals_only=False)
 
             # Store in big arrays
-            pcs[i, :, :, 0] = z.T[::-1, :]  # neof by time
-            projs[i, :, 0, :] = p.T[::-1, :]  # neof by space
-            if percent:
-                evals[i, :, 0, 0] = (
-                    100.0 * l[::-1] / np.trace(covar)
-                )  # percent explained
+            # NOTE: We store projection of PC onto data to get 1 standard
+            # deviation associated with the PC rather than actual eigenvector,
+            # because eigenvector values may be damped by area weighting.
+            pc = (pc - pc.mean(axis=0)) / pc.std(axis=0)  # standardize pcs
+            proj = (x.T @ pc) / ntime  # (space by time) x (time by neof)
+            pcs[i, :, :, 0] = pc.T[::-1, :]  # neof by time
+            projs[i, :, 0, :] = proj.T[::-1, :]  # neof by space
+            if percent:  # *percent explained* rather than total
+                evals[i, :, 0, 0] = (100.0 * l[::-1] / np.trace(covar))
             else:
-                evals[i, :, 0, 0] = l[::-1]  # neof
+                evals[i, :, 0, 0] = l[::-1]  # actual eigenvalues
 
         # Replace context data with new dimension inserted on left side
-        context.replace(pcs, projs, evals, nstar, insert_left=1)
+        context.replace(pcs, projs, evals, nstars, insert_left=1)
 
     # Return data restored to original dimensionality
     return context.data
@@ -401,17 +479,6 @@ def reof(data, neof=5):  # noqa
     Not yet implemented.
     """
     raise NotImplementedError
-
-
-def gaussian(N=1000, mean=0, stdev=None, sigma=1):
-    """
-    Returns sample points on Gaussian curve.
-    """
-    sigma = stdev if stdev is not None else sigma
-    norm = stats.norm(loc=mean, scale=sigma)
-    x = np.linspace(norm.ppf(0.0001), norm.ppf(0.9999), N)  # x through percentile range
-    pdf = norm.pdf(x, loc=mean, scale=sigma)
-    return x, pdf
 
 
 @quack._xarray_xy_wrapper
@@ -464,6 +531,8 @@ def hist(bins, y, /, axis=0):
     return context.data
 
 
+@quack._xarray_xy_wrapper
+@quack._pint_wrapper(('=x', '=y'), ('=y / x', '=y / x', '=y'))
 def linefit(x, y, /, axis=-1):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
@@ -525,65 +594,9 @@ def linefit(x, y, /, axis=-1):
     return context.data
 
 
-def rednoise(a, ntime, nsamples=1, mean=0, stdev=1):
-    r"""
-    Return one or more artificial red noise time series with prescribed mean
-    and standard deviation. The time series are generated with the following
-    equation:
-
-    .. math::
-
-        x(t) = a \cdot x(t - \Delta t) + b \cdot \epsilon(t)
-
-    where *a* is the lag-1 autocorrelation and *b* is a scaling term.
-
-    Parameters
-    ---------
-    a : float
-        The autocorrelation.
-    ntime : int
-        Number of timesteps.
-    nsamples : int or list of int, optional
-        Axis size or list of axis sizes for the "sample" dimension(s). Shape of the
-        `data` array will be ``(ntime,)`` if `nsamples` is not provided,
-        ``(ntime, nsamples)`` if `nsamples` is scalar, or ``(ntime, *nsamples)``
-        if `nsamples` is a list of axis sizes.
-    mean, stdev : float, optional
-        The mean and standard deviation for the red noise
-        time series.
-
-    Returns
-    -------
-    data : array-like
-        The red noise data.
-
-    See Also
-    --------
-    rednoisefit
-    """
-    # Initial stuff
-    ntime -= 1  # exclude the initial timestep
-    nsamples = np.atleast_1d(nsamples)
-    data = np.empty((ntime + 1, *nsamples))  # user can make N-D array
-    b = (1 - a ** 2) ** 0.5  # from OA class
-
-    # Nested loop
-    with _ArrayContext(data, push_left=0) as context:
-        data = context.data
-        data[0, :] = 0.0  # initialize
-        for i in range(data.shape[-1]):
-            eps = np.random.normal(loc=0, scale=1, size=ntime)
-            for t in range(1, ntime + 1):
-                data[t, i] = a * data[t - 1, i] + b * eps[t - 1]
-
-    # Return
-    data = context.data
-    if len(nsamples) == 1 and nsamples[0] == 1:
-        data = data.squeeze()
-    return mean + stdev * data  # rescale to have specified stdeviation/mean
-
-
-def rednoisefit(a, dt=1, nlag=None, nlag_fit=None, axis=-1):
+@quack._xarray_xy_wrapper
+@quack._pint_wrapper(('=t', ''), ('=t', '=t', ''))
+def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=-1):
     r"""
     Return the :math:`e`-folding autocorrelation timescale for the input
     autocorrelation spectra along an arbitrary axis. Depending on the length
@@ -603,10 +616,10 @@ def rednoisefit(a, dt=1, nlag=None, nlag_fit=None, axis=-1):
 
     Parameters
     ----------
-    a : array-like
-        The autocorrelation spectra.
     dt : float, optional
         The timestep. This is used to scale timescales into physical units.
+    a : array-like
+        The autocorrelation spectra.
     nlag : int, optional
         The number of lag timesteps to include in the curve fitting. Default
         is all the available lags.
@@ -653,23 +666,23 @@ def rednoisefit(a, dt=1, nlag=None, nlag_fit=None, axis=-1):
         nextra, nlag_in = a.shape
         nlag = nlag or nlag_in
         lags = np.arange(0, nlag)  # lags for the curve fit
-        tau = np.empty((nextra, 1))
-        sigma = np.empty((nextra, 1))
+        taus = np.empty((nextra, 1))
+        sigmas = np.empty((nextra, 1))
         afit = np.empty((nextra, nlag_fit))
         for i in range(nextra):
             if nlag <= 1:
-                p = -dt / np.log(a[i, -1])
-                s = 0  # no sigma, because no estimate
+                tau = -dt / np.log(a[i, -1])
+                sigma = 0  # no sigma, because no estimate
             else:
-                p, s = optimize.curve_fit(curve, lags, a[i, :])
-                s = np.sqrt(np.diag(s))
-                p, s = p[0], s[0]  # take only first param
-            tau[i, 0] = p  # just store the timescale
-            sigma[i, 0] = s
-            afit[i, :] = np.exp(-dt * lags_fit / p)  # best-fit spectrum
+                tau, sigma = optimize.curve_fit(curve, lags, a[i, :])
+                sigma = np.sqrt(np.diag(sigma))
+                tau, sigma = tau[0], sigma[0]  # take only first param
+            taus[i, 0] = tau  # just store the timescale
+            sigmas[i, 0] = sigma
+            afit[i, :] = np.exp(-dt * lags_fit / tau)  # best-fit spectrum
 
         # Replace context data
-        context.replace_data(tau, sigma, afit)
+        context.replace_data(taus, sigmas, afit)
 
     # Return permuted data
     return context.data
@@ -689,7 +702,7 @@ def wilks(percentiles, alpha=0.10):
 
     References
     ----------
-    .. bibliography:: ../bibs/wilks.bib
+    .. bibliography:: ../bibs/fdr.bib
     """
     percentiles = np.asarray(percentiles)
     pvals = list(percentiles.flat)  # want in decimal

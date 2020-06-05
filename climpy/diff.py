@@ -177,18 +177,6 @@ def _accuracy_check(n, accuracy, order=1):
     return accuracy
 
 
-def _get_step(h):
-    """
-    Determines scalar step h.
-    """
-    h = np.atleast_1d(h)
-    if len(h) == 1:
-        return h[0]
-    else:
-        warnings._warn_climpy('Using difference between first 2 points for step size.')
-        return h[1] - h[0]
-
-
 @quack._xarray_xy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=y / x')
 @docstring.add_snippets
@@ -214,7 +202,7 @@ def deriv1(
     deriv_half, deriv_uneven
     """
     # Simple Euler scheme
-    h = _get_step(h)
+    h = quack._get_step(h)
     ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
@@ -309,7 +297,7 @@ def deriv2(
     deriv1, deriv_uneven
     """
     # Simple Euler scheme
-    h = _get_step(h)
+    h = quack._get_step(h)
     ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
@@ -400,7 +388,7 @@ def deriv3(
     deriv1, deriv_uneven
     """
     # Simple Euler scheme
-    h = _get_step(h)
+    h = quack._get_step(h)
     ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
