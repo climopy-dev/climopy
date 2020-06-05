@@ -7,8 +7,9 @@ from .diff import deriv_half, deriv_uneven
 from .internals import quack
 
 __all__ = [
-    'month',
-    'year',
+    'datetimeday',
+    'datetimemonth',
+    'datetimeyear',
     'intersection',
     'linetrack',
     'match',
@@ -16,14 +17,25 @@ __all__ = [
 ]
 
 
-def year(dt):
-    """Get year from numpy datetime64."""
-    return dt.astype('datetime64[Y]').astype(np.int32) + 1970
+def datetimeday(dt):
+    """
+    Get day from numpy datetime64.
+    """
+    return (dt.astype('datetime64[D]') - dt.astype('datetime64[M]') + 1).astype(np.int)
 
 
-def month(dt):
-    """Get month from numpy datetime64."""
-    return dt.astype('datetime64[M]').astype(np.int32) % 12 + 1
+def datetimemonth(dt):
+    """
+    Get month from numpy datetime64.
+    """
+    return dt.astype('datetime64[M]').astype(np.int) % 12 + 1
+
+
+def datetimeyear(dt):
+    """
+    Get year from numpy datetime64.
+    """
+    return dt.astype('datetime64[Y]').astype(np.int) + 1970
 
 
 def match(*args):
