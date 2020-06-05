@@ -45,37 +45,38 @@ class _ArrayContext(object):
         The general usage is as follows:
 
         >>> from climpy.internals import array
-            with array._ArrayContext(data1, data2, **kwargs) as context:
-                # Get flattened data
-                data1, data2 = context.data
-                # Make new similarly shaped data
-                ...
-                # Set context data
-                context.data = (data1, data2)
-            # Get unflattened data
-            return context.data
+        ... with array._ArrayContext(data1, data2, **kwargs) as context:
+        ...     # Get flattened data
+        ...     data1, data2 = context.data
+        ...     # Make new similarly shaped data
+        ...     ...
+        ...     # Set context data
+        ...     context.data = (data1, data2)
+        ... # Get unflattened data
+        ... return context.data
 
         Here is a worked example used with the EOF algorithm:
 
         >>> from climpy.internals import array
-            import xarray as xr
-            import numpy as np
-            # Generate neof, member, run, time, plev, lat array
-            dataarray = xr.DataArray(
-                np.random.rand(12, 8, 100, 40, 20),
-                dims=('member', 'run', 'time', 'plev', 'lat'),
-            )
-            array = dataarray.data
-            with array._ArrayContext(
-                array,
-                push_left=(0, 1), nflat_left=2,
-                push_right=(2, 3, 4), nflat_right=2,
-            ) as context:
-                data = context.data
-                nextra, ntime, nspace = data.shape
-                eofs = np.random.rand(nextra, 5, 1, nspace)  # singleton time dimension
-                pcs = np.random.rand(nextra, 5, ntime, 1)  # singleton space dimension
-                context.replace_data(eofs, pcs, insert_left=1)
+        ... import xarray as xr
+        ... import numpy as np
+        ... # Generate neof, member, run, time, plev, lat array
+        ... dataarray = xr.DataArray(
+        ...     np.random.rand(12, 8, 100, 40, 20),
+        ...     dims=('member', 'run', 'time', 'plev', 'lat'),
+        ... )
+        ... array = dataarray.data
+        ... with array._ArrayContext(
+        ...     array,
+        ...     push_left=(0, 1), nflat_left=2,
+        ...     push_right=(2, 3, 4), nflat_right=2,
+        ... ) as context:
+        ...     data = context.data
+        ...     nextra, ntime, nspace = data.shape
+        ...     eofs = np.random.rand(nextra, 5, 1, nspace)  # singleton time dimension
+        ...     pcs = np.random.rand(nextra, 5, ntime, 1)  # singleton space dimension
+        ...     context.replace_data(eofs, pcs, insert_left=1)
+
         """
         # Set arrays
         # NOTE: No array standardization here. Assume duck-type arrays (numpy

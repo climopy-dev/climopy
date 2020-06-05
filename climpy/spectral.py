@@ -610,14 +610,9 @@ def _power2d_driver(
         raise ValueError('Need at least rank 2 array.')
     if y1.shape != y2.shape:
         raise ValueError(f'Shapes of y1 {y1.shape} and y2 {y2.shape} must match.')
-    taxis, caxis = axis_time, axis_lon
-    if caxis < 0:
-        caxis += y1.ndim
-    if taxis < 0:
-        taxis += y1.ndim
 
     # Permute and flatten
-    with _ArrayContext(y1, y2, push_right=(taxis, caxis)) as context:
+    with _ArrayContext(y1, y2, push_right=(axis_time, axis_lon)) as context:
         # Get window and flattened, trimmed data
         y1, y2 = context.data
         win, winloc, y1, y2 = _window_data(y1, y2, nperseg=nperseg, wintype=wintype)
