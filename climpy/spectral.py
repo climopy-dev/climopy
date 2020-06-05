@@ -608,10 +608,10 @@ def _power2d_driver(
     # Checks
     dx = quack._get_step(dx)
     dy = quack._get_step(dy)
-    copower = z2 is not None
+    copower = z1 is not z2
     if len(z1.shape) < 2:
         raise ValueError('Need at least rank 2 array.')
-    if copower and not z1.shape == z2.shape:
+    if z1.shape == z2.shape:
         raise ValueError(f'Shapes of z1 {z1.shape} and z2 {z2.shape} must match.')
     taxis, caxis = axis_time, axis_cyclic
     if caxis < 0:
@@ -642,7 +642,7 @@ def _power2d_driver(
         for k in range(nextra):
             if (
                 np.any(~np.isfinite(z1[k, :, :]))
-                or copower and np.any(~np.isfinite(z2[k, :, :]))
+                np.any(~np.isfinite(z2[k, :, :]))
             ):
                 warnings._warn_climpy('Skipping array with missing values.')
                 continue
@@ -661,28 +661,22 @@ def _power2d_driver(
                     C[k, i, :, :-1] *= 2
                     Q[k, i, :, :-1] *= 2
 
-        # Output frequencies.
+        # Get output arrays
         # TODO: Why remove mean power?
+        # NOTE: This Phi relationship is still valid. Check Libby notes. Divide
+        # here Q by C and the Ws cancel out, end up with average phase diff.
         # NOTE: Default order is to go 0 1 ... N/2 -N/2 ... -1. We reorder so
         # frequencies are from -N/2 ... -1 1 ... N/2.
         fy = np.fft.rfftfreq(ncyclic)[1:]
         fx = np.fft.fftfreq(2 * pm)  # start with the positive Fourier coefficients
         fq = np.abs(fx[pm:pm + 1])  # Nyquist frequency singleton array
         fx = np.concatenate((-fq, fx[pm + 1:], fx[1:pm], fq), axis=0)
-
-        # Take average along windows
         Pz1 = Pz1.mean(axis=1)
+        arrays = (Py1,)
         if copower:
             Pz2 = Pz2.mean(axis=1)
             C = C.mean(axis=1)
             Q = Q.mean(axis=1)
-
-        # Get output arrays
-        # NOTE: This Phi relationship is still valid. Check Libby notes. Divide
-        # here Q by C and the Ws cancel out, end up with average phase diff.
-        if not copower:
-            arrays = (Pz1,)
-        else:
             Coh = (C ** 2 + Q ** 2) / (Pz1 * Pz2)
             Phi = np.arctan2(Q, C)  # phase
             Phi[Phi >= center + np.pi] -= 2 * np.pi
@@ -693,10 +687,7 @@ def _power2d_driver(
         context.replace_data(*arrays)
 
     # Return unflattened data
-    if copower:
-        return (fx / dx, fy / dy, *context.data)
-    else:
-        return (fx / dx, fy / dy, context.data)
+    return (f / dx, f / dy, *context.data) if copower else (f / dx, f / dy, context.data)  # noqa: E501
 
 
 @quack._pint_wrapper(('=x', '=y'), ('=1 / x', '=y ** 2'))
