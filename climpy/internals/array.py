@@ -13,7 +13,8 @@ handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 logger = logging.getLogger('ArrayContext')
 logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.ERROR)
+# logger.setLevel(logging.INFO)
 
 
 class _ArrayContext(object):

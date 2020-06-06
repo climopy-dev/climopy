@@ -203,8 +203,9 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=10):
     # [NaN, 40]  # bigger than sep, so "new" line
     # [NaN, 42]
     seed = np.atleast_1d(seed)[:N]
-    xs_sorted = np.empty((len(xs) + 1, N * 2)) * np.nan
-    ys_sorted = np.empty((len(ys) + 1, N * 2)) * np.nan
+    with np.errstate(invalid='ignore'):
+        xs_sorted = np.empty((len(xs) + 1, N * 2)) * np.nan
+        ys_sorted = np.empty((len(ys) + 1, N * 2)) * np.nan
     xs_sorted[0, :seed.size] = seed
 
     for i, (ixs, iys) in enumerate(zip(xs, ys)):
@@ -225,7 +226,6 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=10):
         mindiffs = np.empty((N * 2,)) * np.nan
         argmins = np.empty((N * 2,)) * np.nan
         for j, ix_prev in enumerate(xs_sorted[i - 1, :]):
-            print('previous', j, ix_prev)
             if np.isnan(ix_prev):
                 continue
             diffs = np.abs(ixs - ix_prev)
@@ -273,9 +273,9 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=10):
         return xs_sorted[1:, :]
 
 
-@quack._xarray_xy_wrapper
+@quack._xarray_zerofind_wrapper(axis=1)
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y'))
-def zerofind(x, y, axis=-1, diff=0, centered=True, which='both', **kwargs):
+def zerofind(x, y, axis=None, diff=None, centered=True, which='both', **kwargs):
     """
     Find the location of the zero value for a given data array.
 
@@ -286,7 +286,8 @@ def zerofind(x, y, axis=-1, diff=0, centered=True, which='both', **kwargs):
     y : array-like
         The data for which we find zeros.
     axis : int, optional
-        The axis along which zeros are tracked.
+        The axis along which zeros are found and (optionally) derivatives
+        are taken. These will be connected along the other axis with `linetrack`.
     diff : int, optional
         How many times to differentiate along the axis.
     centered : bool, optional
@@ -307,6 +308,27 @@ def zerofind(x, y, axis=-1, diff=0, centered=True, which='both', **kwargs):
         The zero values. If ``diff == 0`` these should all be equal to zero
         up to floating point precision. Otherwise these are the minima and
         maxima corresponding to the zero derivative locations.
+
+    Example
+    -------
+
+    >>> import xarray as xr
+    ... import climpy
+    ... ureg = climpy.ureg
+    ... x = np.arange(100)
+    ... y = np.sort(np.random.rand(50, 10) - 0.5, axis=0)
+    ... y = np.concatenate((y, y[::-1, :]), axis=0)
+    ... xarr = xr.DataArray(
+    ...     x * ureg.s,
+    ...     dims=('x',), attrs={'long_name': 'x coordinate'}
+    ... )
+    ... with climpy.internals.warnings._unit_stripped_ignore():
+    ...     yarr = xr.DataArray(
+    ...         y * ureg.m, name='variable',
+    ...         dims=('x', 'y'), coords={'x': xarr}
+    ...     )
+    ... zx, zy = climpy.zerofind(xarr, yarr, N=2)
+
     """
     # Tests
     # TODO: Support tracking across single axis
@@ -376,11 +398,9 @@ def zerofind(x, y, axis=-1, diff=0, centered=True, which='both', **kwargs):
         zys.append(izys)
 
     # Return locations and values
-    if nextra == 1:  # there were no other dimensions; only return the sublist
-        zxs, zys = np.array(zxs[0]), np.array(zys[0])
-    else:
-        zxs, zys = linetrack(zxs, zys, **kwargs)
+    zxs, zys = linetrack(zxs, zys, **kwargs)
     if not zxs.size:
         raise ValueError(f'No zeros found for data {y!r}.')
-
+    zxs = np.moveaxis(zxs, -1, axis)
+    zys = np.moveaxis(zys, -1, axis)
     return zxs, zys

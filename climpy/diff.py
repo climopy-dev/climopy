@@ -113,7 +113,7 @@ def _fornberg_coeffs(x, x0, order=1):
     return weights[..., -1]
 
 
-@quack._xarray_xy_wrapper
+@quack._xarray_xy_y_wrapper(axis=0)
 @quack._pint_wrapper(('=x', '=y'), '=x * y')
 @docstring.add_snippets
 def integral(x, y, /, y0=0, axis=0):
@@ -177,7 +177,7 @@ def _accuracy_check(n, accuracy, order=1):
     return accuracy
 
 
-@quack._xarray_xy_wrapper
+@quack._xarray_xy_y_wrapper(axis=0)
 @quack._pint_wrapper(('=x', '=y'), '=y / x')
 @docstring.add_snippets
 def deriv1(
@@ -272,7 +272,7 @@ def deriv1(
     return np.moveaxis(diff, -1, axis)
 
 
-@quack._xarray_xy_wrapper
+@quack._xarray_xy_y_wrapper(axis=0)
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** 2')
 @docstring.add_snippets
 def deriv2(
@@ -363,7 +363,7 @@ def deriv2(
     return np.moveaxis(diff, -1, axis)
 
 
-@quack._xarray_xy_wrapper
+@quack._xarray_xy_y_wrapper(axis=0)
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** 3')
 @docstring.add_snippets
 def deriv3(
@@ -495,7 +495,7 @@ def _xy_standardize(x, y, /, axis=0):
     return x, y
 
 
-@quack._xarray_xy_wrapper
+@quack._xarray_xy_xy_wrapper(axis=0)
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
 @docstring.add_snippets
 def deriv_half(x, y, /, order=1, axis=0):
@@ -536,7 +536,7 @@ def deriv_half(x, y, /, order=1, axis=0):
     return x, diff
 
 
-@quack._xarray_xy_wrapper
+@quack._xarray_xy_xy_wrapper(axis=0)
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
 @docstring.add_snippets
 def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):

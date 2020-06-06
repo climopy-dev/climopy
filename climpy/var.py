@@ -481,10 +481,10 @@ def reof(data, neof=5):  # noqa
     raise NotImplementedError
 
 
-@quack._xarray_xy_wrapper
-@quack._pint_wrapper(('=y', '=y'), '')
+@quack._xarray_hist_wrapper(axis=0)
+@quack._pint_wrapper(('=y', '=y'), 'count')
 @docstring.add_snippets
-def hist(bins, y, /, axis=0):
+def hist(bins, y, /, axis=None):
     """
     Get the histogram along axis `axis`.
 
@@ -505,6 +505,7 @@ def hist(bins, y, /, axis=0):
     ... ureg = climpy.ureg
     ... data = xr.DataArray(
     ...     np.random.rand(20, 1000) * ureg.m,
+    ...     name='distance',
     ...     dims=('x', 'y'),
     ...     coords={'x': np.arange(20), 'y': np.arange(1000) * 0.1}
     ... )
@@ -531,7 +532,6 @@ def hist(bins, y, /, axis=0):
     return context.data
 
 
-@quack._xarray_xy_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=y / x', '=y / x', '=y'))
 def linefit(x, y, /, axis=-1):
     """
@@ -594,7 +594,6 @@ def linefit(x, y, /, axis=-1):
     return context.data
 
 
-@quack._xarray_xy_wrapper
 @quack._pint_wrapper(('=t', ''), ('=t', '=t', ''))
 def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=-1):
     r"""
