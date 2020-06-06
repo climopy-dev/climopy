@@ -169,69 +169,6 @@ def _from_dataarray(
     return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords)
 
 
-def _xarray_hist_wrapper(func):
-    """
-    Support `xarray.DataArray` for `hist` function.
-    """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # Sanitize input
-        # NOTE: This time 'x' coordinates are bins so do not infer
-        yb, y = args
-        yb_in, y_in, kwargs = _to_arraylike(func, yb, y, infer_axis=False, **kwargs)
-
-        # Call main function
-        y_out = func(yb_in, y_in, **kwargs)
-
-        # Add metadata to y_out
-        if isinstance(y, xr.DataArray):
-            dim = y.dims[kwargs['axis']]
-            name = y.name
-            yb_centers = 0.5 * (yb_in[1:] + yb_in[:-1])
-            coords = _from_dataarray(
-                y, yb_centers, dims=(name,), coords={}
-            )
-            y_out = _from_dataarray(
-                y, y_out, name='count', attrs={},
-                dim_rename={dim: name}, dim_coords={name: coords},
-            )
-
-        return y_out
-
-    return wrapper
-
-
-def _xarray_zerofind_wrapper(func):
-    """
-    Support `xarray.DataArray` for zerofind function.
-    """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # Sanitize input
-        x, y = args
-        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
-
-        # Call main function
-        x_out, y_out = func(x_in, y_in, **kwargs)
-
-        # Add metadata to x_out and y_out
-        if isinstance(y, xr.DataArray):
-            attrs = {}
-            dim = y.dims[kwargs['axis']]
-            if dim in y.coords:
-                attrs = y.coords[dim].attrs
-            x_out = _from_dataarray(
-                y, y_out, name=dim, attrs=attrs, dim_rename={dim: 'track'},
-            )
-            y_out = _from_dataarray(
-                y, y_out, keep_attrs=True, dim_rename={dim: 'track'},
-            )
-
-        return x_out, y_out
-
-    return wrapper
-
-
 def _xarray_fit_wrapper(func):
     """
     Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
@@ -417,6 +354,69 @@ def _xarray_power2d_wrapper(func):
             )
 
         return k, *Ps
+
+    return wrapper
+
+
+def _xarray_hist_wrapper(func):
+    """
+    Support `xarray.DataArray` for `hist` function.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        # NOTE: This time 'x' coordinates are bins so do not infer
+        yb, y = args
+        yb_in, y_in, kwargs = _to_arraylike(func, yb, y, infer_axis=False, **kwargs)
+
+        # Call main function
+        y_out = func(yb_in, y_in, **kwargs)
+
+        # Add metadata to y_out
+        if isinstance(y, xr.DataArray):
+            dim = y.dims[kwargs['axis']]
+            name = y.name
+            yb_centers = 0.5 * (yb_in[1:] + yb_in[:-1])
+            coords = _from_dataarray(
+                y, yb_centers, dims=(name,), coords={}
+            )
+            y_out = _from_dataarray(
+                y, y_out, name='count', attrs={},
+                dim_rename={dim: name}, dim_coords={name: coords},
+            )
+
+        return y_out
+
+    return wrapper
+
+
+def _xarray_zerofind_wrapper(func):
+    """
+    Support `xarray.DataArray` for zerofind function.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x, y = args
+        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
+
+        # Call main function
+        x_out, y_out = func(x_in, y_in, **kwargs)
+
+        # Add metadata to x_out and y_out
+        if isinstance(y, xr.DataArray):
+            attrs = {}
+            dim = y.dims[kwargs['axis']]
+            if dim in y.coords:
+                attrs = y.coords[dim].attrs
+            x_out = _from_dataarray(
+                y, y_out, name=dim, attrs=attrs, dim_rename={dim: 'track'},
+            )
+            y_out = _from_dataarray(
+                y, y_out, keep_attrs=True, dim_rename={dim: 'track'},
+            )
+
+        return x_out, y_out
 
     return wrapper
 
