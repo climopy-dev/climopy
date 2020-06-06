@@ -55,9 +55,9 @@ z : array-like
 
 _covar_data = """
 z1 : array-like
-    Input data.
+    The input data.
 z2 : array-like, optional
-    Second input data. Must be same shape as `z1`.
+    The second input data. Must be same shape as `z1`.
 """
 
 _var_template = """
@@ -65,6 +65,8 @@ Return the {name} spectrum at successive lags.
 
 Parameters
 ----------
+dt : float or array-like
+    The timestep or regularly-spaced time coordinates.
 {data}
 axis : int, optional
     Axis along which {name} is taken.
@@ -87,16 +89,16 @@ This function uses the following formula to estimate {name} at lag :math:`k`:
 """
 
 docstring.snippets['autocorr'] = _var_template.format(
-    data=_var_data, name='autocorrelation', math=_corr_math,
+    data=_var_data.strip(), name='autocorrelation', math=_corr_math,
 )
 docstring.snippets['autocovar'] = _var_template.format(
-    data=_var_data, name='autocovariance', math=_covar_math,
+    data=_var_data.strip(), name='autocovariance', math=_covar_math,
 )
 docstring.snippets['corr'] = _var_template.format(
-    data=_covar_data,  name='correlation', math=_corr_math,
+    data=_covar_data.strip(), name='correlation', math=_corr_math,
 )
 docstring.snippets['covar'] = _var_template.format(
-    data=_covar_data,  name='covariance', math=_covar_math,
+    data=_covar_data.strip(), name='covariance', math=_covar_math,
 )
 
 
