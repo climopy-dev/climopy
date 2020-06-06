@@ -568,6 +568,7 @@ def _power_driver(
                     Q[k, i, :-1] *= 2
 
         # Get window averages and output arrays
+        # NOTE: For sanity check, ensure (C ** 2 + Q ** 2) / (Py1 * Py2) === 1.
         # NOTE: This Phi relationship is still valid. Check Libby notes. Divide
         # here Q by C and the Ws cancel out, end up with average phase diff.
         f = np.fft.rfftfreq(2 * pm)[1:]  # frequencies
@@ -577,11 +578,11 @@ def _power_driver(
             Py2 = Py2.mean(axis=1)
             C = C.mean(axis=1)
             Q = Q.mean(axis=1)
-            Coh = (C ** 2 + Q ** 2) / (Py1 * Py2)
+            Coh = C ** 2 / (Py1 * Py2)
             Phi = np.arctan2(Q, C)  # phase
             Phi[Phi >= center + np.pi] -= 2 * np.pi
             Phi[Phi < center - np.pi] += 2 * np.pi
-            Phi = Phi * 180 / np.pi  # convert to degrees!!!
+            Phi = Phi * 180.0 / np.pi  # convert to degrees!!!
             arrays = (C, Q, Py1, Py2, Coh, Phi)
 
         # Replace arrays
@@ -685,9 +686,10 @@ def _power2d_driver(
         return (fx_lon / dx_lon, fx_time / dx_time, context.data)
 
 
+@quack._xarray_power_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=1 / x', '=y ** 2'))
 @docstring.add_snippets
-def power(dx, y1, /, **kwargs):
+def power(dx, y1, /, axis=0, **kwargs):
     """
     Return the spectral decomposition of a real-valued array along an
     arbitrary axis.
@@ -701,13 +703,72 @@ def power(dx, y1, /, **kwargs):
     %(power.returns)s
 
     %(power.notes)s
+
+    Example
+    -------
+
+    >>> import climpy
+    ... import xarray as xr
+    ... ureg = climpy.ureg
+    ... x = xr.DataArray(
+    ...     np.arange(1000, dtype=float) * ureg.day, dims=('time',), name='time'
+    ... )
+    ... y = xr.DataArray(
+    ...     np.random.rand(1000, 50) * ureg.K, dims=('time', 'space'), name='variable'
+    ... )
+    ... f, P = climpy.power(x, y, axis=0)
+
     """
-    return _power_driver(dx, y1, y1, **kwargs)
+    return _power_driver(dx, y1, y1, axis=axis, **kwargs)
 
 
+@quack._xarray_copower_wrapper
+@quack._pint_wrapper(
+    ('=x', '=y1', '=y2'),
+    ('=1 / x', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
+)
+@docstring.add_snippets
+def copower(dx, y1, y2, axis=0, **kwargs):
+    """
+    Return the co-spectral decomposition and related quantities for two
+    real-valued arrays along an arbitrary axis.
+
+    Parameters
+    ----------
+    %(copower.params)s
+
+    Returns
+    -------
+    %(copower.returns)s
+
+    %(power.notes)s
+
+    Example
+    -------
+
+    >>> import climpy
+    ... import xarray as xr
+    ... ureg = climpy.ureg
+    ... x = xr.DataArray(
+    ...     np.arange(1000, dtype=float) * ureg.day, dims=('time',), name='time'
+    ... )
+    ... y1 = xr.DataArray(
+    ...     np.random.rand(1000, 50) * ureg.K, dims=('time', 'space'), name='variable'
+    ... )
+    ... y2 = xr.DataArray(
+    ...     np.random.rand(1000, 50) * ureg.m / ureg.s,
+    ...     dims=('time', 'space'), name='variable',
+    ... )
+    ... f, C, Q, P1, P2, Coh, Phi = climpy.copower(x, y1, y2, axis=0)
+
+    """
+    return _power_driver(dx, y1, y2, axis=axis, **kwargs)
+
+
+@quack._xarray_power2d_wrapper
 @quack._pint_wrapper(('=x1', '=x2', '=y'), ('=1 / x1', '=1 / x2', '=y ** 2'))
 @docstring.add_snippets
-def power2d(dx, dy, y1, **kwargs):
+def power2d(dx, dy, y1, axis_lon=-1, axis_time=0, **kwargs):
     """
     Return the spectral decomposition of a real-valued array along an
     arbitrary axis.
@@ -722,38 +783,18 @@ def power2d(dx, dy, y1, **kwargs):
 
     %(power.notes)s
     """
-    return _power2d_driver(dx, dy, y1, y1, **kwargs)
+    return _power2d_driver(
+        dx, dy, y1, y1, axis_lon=axis_lon, axis_time=axis_time, **kwargs
+    )
 
 
-@quack._pint_wrapper(
-    ('=x', '=y1', '=y2'),
-    ('=1 / x', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
-)
-@docstring.add_snippets
-def copower(dx, y1, y2, **kwargs):
-    """
-    Return the co-spectral decomposition and related quantities for two
-    real-valued arrays along an arbitrary axis.
-
-    Parameters
-    ----------
-    %(copower.params)s
-
-    Returns
-    -------
-    %(copower.returns)s
-
-    %(power.notes)s
-    """
-    return _power_driver(dx, y1, y2, **kwargs)
-
-
+@quack._xarray_copower2d_wrapper
 @quack._pint_wrapper(
     ('=x1', '=x2', '=y1', '=y2'),
     ('=1 / x1', '=1 / x2', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
 @docstring.add_snippets
-def copower2d(dx_time, dy_lon, y1, y2, **kwargs):
+def copower2d(dx_time, dy_lon, y1, y2, axis_lon=0, axis_time=-1, **kwargs):
     """
     Return the 2D spectral decomposition of two real-valued arrays with
     along an arbitrary *time* dimension and *cyclic* dimension.
@@ -769,7 +810,9 @@ def copower2d(dx_time, dy_lon, y1, y2, **kwargs):
 
     %(power.notes)s
     """
-    return _power2d_driver(dx_time, dy_lon, y1, y2, **kwargs)
+    return _power2d_driver(
+        dx_time, dy_lon, y1, y2, axis_lon=axis_lon, axis_time=axis_time, **kwargs
+    )
 
 
 @quack._pint_wrapper(('=x', '', ''), ('', ''))

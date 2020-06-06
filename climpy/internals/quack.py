@@ -76,13 +76,15 @@ def _remove_units(data):
     return data
 
 
-def _to_arraylike(func, x, *ys, infer_axis=True, **kwargs):
+def _to_arraylike(func, x, *ys, suffix='', infer_axis=True, **kwargs):
     """
-    Sanitize input *x* and *y* DataArrays, return the axis and dim
-    along which we are calculating stuff,
+    Get data from *x* and *y* DataArrays, interpret the `dim` argument, and
+    try to determine the `axis` used for computations automatically if
+    ``infer_axis=True``. The axis suffix can be e.g. ``'_time'``, and then
+    we look for the ``dim_time`` keyword.
     """
     # Ensure all *ys* have identical dimensions, type, and shape
-    axis_default = _get_default(func, 'axis')
+    axis_default = _get_default(func, 'axis' + suffix)
     x_dataarray = isinstance(x, xr.DataArray)
     y_dataarray = all(isinstance(y, xr.DataArray) for y in ys)
     types = tuple(type(y) for y in ys)
@@ -97,9 +99,9 @@ def _to_arraylike(func, x, *ys, infer_axis=True, **kwargs):
             raise ValueError(f'Dimensions should be identical, got {dims}.')
 
     # Interpret 'dim' argument when input is Dataarray
-    axis = kwargs.pop('axis', None)
+    axis = kwargs.pop('axis' + suffix, None)
     if y_dataarray:
-        dim = kwargs.pop('dim', None)
+        dim = kwargs.pop('dim' + suffix, None)
         if dim is not None:
             if axis is not None:
                 warnings._warn_climpy('Ambiguous axis specification.')
@@ -109,14 +111,14 @@ def _to_arraylike(func, x, *ys, infer_axis=True, **kwargs):
     # Detect if user input axis or dim conflicts with inferred one
     # NOTE: Easier to do this than permit *omitting* x coordinates and retrieving
     # coordinates from DataArray. Variable call signatures get tricky.
-    if infer_axis and x_dataarray and y_dataarray and x.ndim == 1 and x.name in ys[0].dims:  # noqa: E501
+    if infer_axis and x_dataarray and y_dataarray and x.ndim == 1 and x.dims[0] in ys[0].dims:  # noqa: E501
         axis_inferred = ys[0].dims.index(x.dims[0])
         if axis is not None and axis != axis_inferred:
             raise ValueError(f'Input {axis=} different from {axis_inferred=}.')
         axis = axis_inferred
 
     # Apply units and get data
-    kwargs['axis'] = axis_default if axis is None else axis
+    kwargs['axis' + suffix] = axis_default if axis is None else axis
     if x_dataarray:
         x = _apply_units(x)
     if y_dataarray:
@@ -167,37 +169,6 @@ def _from_dataarray(
     return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords)
 
 
-def _xarray_zerofind_wrapper(func):
-    """
-    Support `xarray.DataArray` for zerofind function.
-    """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # Sanitize input
-        x, y = args
-        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
-
-        # Call main function
-        x_out, y_out = func(x_in, y_in, **kwargs)
-
-        # Add metadata to x_out and y_out
-        if isinstance(y, xr.DataArray):
-            attrs = {}
-            dim = y.dims[kwargs['axis']]
-            if dim in y.coords:
-                attrs = y.coords[dim].attrs
-            x_out = _from_dataarray(
-                y, y_out, name=dim, attrs=attrs, dim_rename={dim: 'track'},
-            )
-            y_out = _from_dataarray(
-                y, y_out, keep_attrs=True, dim_rename={dim: 'track'},
-            )
-
-        return x_out, y_out
-
-    return wrapper
-
-
 def _xarray_hist_wrapper(func):
     """
     Support `xarray.DataArray` for `hist` function.
@@ -230,6 +201,37 @@ def _xarray_hist_wrapper(func):
     return wrapper
 
 
+def _xarray_zerofind_wrapper(func):
+    """
+    Support `xarray.DataArray` for zerofind function.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x, y = args
+        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
+
+        # Call main function
+        x_out, y_out = func(x_in, y_in, **kwargs)
+
+        # Add metadata to x_out and y_out
+        if isinstance(y, xr.DataArray):
+            attrs = {}
+            dim = y.dims[kwargs['axis']]
+            if dim in y.coords:
+                attrs = y.coords[dim].attrs
+            x_out = _from_dataarray(
+                y, y_out, name=dim, attrs=attrs, dim_rename={dim: 'track'},
+            )
+            y_out = _from_dataarray(
+                y, y_out, keep_attrs=True, dim_rename={dim: 'track'},
+            )
+
+        return x_out, y_out
+
+    return wrapper
+
+
 def _xarray_power_wrapper(func):
     """
     Support `xarray.DataArray` for `power` function.
@@ -246,12 +248,12 @@ def _xarray_power_wrapper(func):
         # Create new output array
         if isinstance(x, xr.DataArray):
             f = _from_dataarray(
-                x, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
+                x, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
             )
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
             P = _from_dataarray(
-                y, dim_rename={dim: 'f'}, dim_coords={'f': f},
+                y, P, dim_rename={dim: 'f'}, dim_coords={'f': f},
             )
 
         return f, P
@@ -275,16 +277,89 @@ def _xarray_copower_wrapper(func):
         # Create new output array
         if isinstance(x, xr.DataArray):
             f = _from_dataarray(
-                x, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
+                x, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
             )
         if isinstance(y1, xr.DataArray):
             dim = y1.dims[kwargs['axis']]
             C, Q, P1, P2, Coh, Phi = (
-                _from_dataarray(y1, dim_rename={dim: 'f'}, dim_coords={'f': f})
-                for p in (C, Q, P1, P2, Coh, Phi)
+                _from_dataarray(y1, P, dim_rename={dim: 'f'}, dim_coords={'f': f})
+                for P in (C, Q, P1, P2, Coh, Phi)
             )
 
         return f, C, Q, P1, P2, Coh, Phi
+
+    return wrapper
+
+
+def _xarray_power2d_wrapper(func):
+    """
+    Support `xarray.DataArray` for `power2d` function.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x1, x2, y = args  # *both* or *one* of these is dataarray
+        x1_in, y_in, kwargs = _to_arraylike(func, x1, y, suffix='_lon', **kwargs)
+        x2_in, _, kwargs = _to_arraylike(func, x2, y, suffix='_time', **kwargs)
+
+        # Call main function
+        k, f, P = func(x1_in, x2_in, y_in, **kwargs)
+
+        # Create new output array
+        if isinstance(x1, xr.DataArray):
+            k = _from_dataarray(
+                x1, k, dims=('k',), coords={}, attrs={'long_name': 'wavenumber'},
+            )
+        if isinstance(x2, xr.DataArray):
+            f = _from_dataarray(
+                x2, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
+            )
+        if isinstance(y, xr.DataArray):
+            dim1 = y.dims[kwargs['axis_lon']]
+            dim2 = y.dims[kwargs['axis_time']]
+            P = _from_dataarray(
+                y, P, dim_rename={dim1: 'k', dim2: 'f'}, dim_coords={'k': k, 'f': f},
+            )
+
+        return k, f, P
+
+    return wrapper
+
+
+def _xarray_copower2d_wrapper(func):
+    """
+    Support `xarray.DataArray` for `copower2d` function.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x1, x2, y1, y2 = args  # *both* or *one* of these is dataarray
+        x1_in, y1_in, y2_in, kwargs = _to_arraylike(func, x1, y1, y2, suffix='_lon', **kwargs)  # noqa: E501
+        x2_in, _, _, kwargs = _to_arraylike(func, x2, y1, y2, suffix='_time', **kwargs)
+
+        # Call main function
+        k, f, C, Q, P1, P2, Coh, Phi = func(x1_in, x2_in, y1_in, y2_in, **kwargs)
+
+        # Create new output array
+        if isinstance(x1, xr.DataArray):
+            k = _from_dataarray(
+                x1, dims=('k',), coords={}, attrs={'long_name': 'wavenumber'},
+            )
+        if isinstance(x2, xr.DataArray):
+            f = _from_dataarray(
+                x2, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
+            )
+        if isinstance(y1, xr.DataArray):
+            dim1 = y1.dims[kwargs['axis_lon']]
+            dim2 = y1.dims[kwargs['axis_time']]
+            C, Q, P1, P2, Coh, Phi = (
+                _from_dataarray(
+                    y1, P, dim_rename={dim1: 'k', dim2: 'f'}, dim_coords={'k': k, 'f': f},  # noqa: E501
+                )
+                for P in (C, Q, P1, P2, Coh, Phi)
+            )
+
+        return k, f, C, Q, P1, P2, Coh, Phi
 
     return wrapper
 
