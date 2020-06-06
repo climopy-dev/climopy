@@ -175,7 +175,7 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1):
 
 def _covar_driver(
     dt, z1, z2, /, *, lag=None, nlag=None,
-    axis=-1, standardize=False, verbose=False,
+    axis=0, standardize=False, verbose=False,
 ):
     """
     Driver function for getting covariance.
@@ -532,8 +532,9 @@ def hist(bins, y, /, axis=None):
     return context.data
 
 
+@quak._xarray_fit_wrapper(*, axis=0)
 @quack._pint_wrapper(('=x', '=y'), ('=y / x', '=y / x', '=y'))
-def linefit(x, y, /, axis=-1):
+def linefit(x, y, /, axis=0):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
 
@@ -594,8 +595,9 @@ def linefit(x, y, /, axis=-1):
     return context.data
 
 
+@quak._xarray_fit_wrapper(*, axis=0)
 @quack._pint_wrapper(('=t', ''), ('=t', '=t', ''))
-def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=-1):
+def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=0):
     r"""
     Return the :math:`e`-folding autocorrelation timescale for the input
     autocorrelation spectra along an arbitrary axis. Depending on the length

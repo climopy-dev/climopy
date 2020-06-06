@@ -61,47 +61,6 @@ def _remove_units(data):
     return data
 
 
-def _from_dataarray(
-    dataarray, data, name=None, dims=None, attrs=None, coords=None,
-    dim_rename=None, dim_coords=None, keep_attrs=False
-):
-    """
-    Create a copy of the DataArray with various modifications.
-
-    Parameters
-    ----------
-    dataarray : xarray.DataArray
-        The source.
-    data : array-like
-        The new data.
-    name, dims, attrs, coords : optional
-        Replacement values.
-    dim_rename : 2-tuple of str, optional
-        Used to rename dimensions.
-    dim_coords : (str, array-like), optional
-        The new array coordinates for an arbitrary dimension
-    """
-    # Get source info
-    name = name or dataarray.name
-    dims = dims or list(dataarray.dims)
-    if coords is None:
-        coords = dict(dataarray.coords)
-    if attrs is None:
-        attrs = dict(dataarray.attrs) if keep_attrs else {}
-
-    # Rename dimension and optionally apply coordinates
-    if dim_rename is not None:
-        dim_in, dim_out = dim_rename
-        coords.pop(dim_in, None)
-        dims[dims.index(dim_in)] = dim_out
-    if dim_coords is not None:
-        dim, coord = dim_coords
-        coords[dim] = _remove_units(coord)
-
-    # Return new dataarray
-    return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords)
-
-
 def _to_arraylike(x, y, axis_default, *, infer_axis=True, **kwargs):
     """
     Sanitize input *x* and *y* DataArrays, return the axis and dim
@@ -142,14 +101,57 @@ def _to_arraylike(x, y, axis_default, *, infer_axis=True, **kwargs):
     return x, y, kwargs
 
 
+def _from_dataarray(
+    dataarray, data, name=None, dims=None, attrs=None, coords=None,
+    dim_rename=None, dim_coords=None, keep_attrs=False,
+):
+    """
+    Create a copy of the DataArray with various modifications.
+
+    Parameters
+    ----------
+    dataarray : xarray.DataArray
+        The source.
+    data : array-like
+        The new data.
+    name, dims, attrs, coords : optional
+        Replacement values.
+    dim_rename : 2-tuple of str, optional
+        Used to rename dimensions.
+    dim_coords : (str, array-like), optional
+        The new array coordinates for an arbitrary dimension
+    """
+    # Get source info
+    name = name or dataarray.name
+    dims = dims or list(dataarray.dims)
+    if coords is None:
+        coords = dict(dataarray.coords)
+    if attrs is None:
+        attrs = dict(dataarray.attrs) if keep_attrs else {}
+
+    # Rename dimension and optionally apply coordinates
+    if dim_rename is not None:
+        dim_in, dim_out = dim_rename
+        coords.pop(dim_in, None)
+        dims[dims.index(dim_in)] = dim_out
+    if dim_coords is not None:
+        dim, coord = dim_coords
+        if coord is not None:
+            coords[dim] = _remove_units(coord)
+        elif dim in coords:  # e.g. ('lat', None) is instruction do delete dimension
+            del coords[dim]
+
+    # Return new dataarray
+    return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords)
+
+
 def _xarray_zerofind_wrapper(*, axis):
     """
-    Support `xarray.DataArray` for zerofind function. `axis` should be
-    the default axis, duplicated from the function call signature.
+    Support `xarray.DataArray` for zerofind function.
     """
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, keep_attrs=False, **kwargs):
+        def wrapper(*args, **kwargs):
             # Sanitize input
             x, y = args
             x_in, y_in, kwargs = _to_arraylike(x, y, axis, **kwargs)
@@ -183,7 +185,7 @@ def _xarray_hist_wrapper(*, axis):
     """
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, keep_attrs=False, **kwargs):
+        def wrapper(*args, **kwargs):
             # Sanitize input
             # NOTE: This time 'x' coordinates are bins so do not infer
             yb, y = args
@@ -214,6 +216,35 @@ def _xarray_hist_wrapper(*, axis):
     return decorator
 
 
+def _xarray_fit_wrapper(*, axis):
+    """
+    Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
+    and returning a fit parameter, the fit standard error, and the reconstruction.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Sanitize input
+            x, y = args  # *both* or *one* of these is dataarray
+            x_in, y_in, kwargs = _to_arraylike(x, y, axis, **kwargs)
+
+            # Call main function
+            fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
+
+            # Create new output array
+            if isinstance(y, xr.DataArray):
+                dim_coords = (y.dims[kwargs['axis']], None)
+                fit_val = _from_dataarray(y, fit_val, dim_coords=dim_coords)
+                fit_err = _from_dataarray(y, fit_err, dim_coords=dim_coords)
+                fit_line = _from_dataarray(y, fit_line)  # same everything
+
+            return fit_val, fit_err, fit_line
+
+        return wrapper
+
+    return decorator
+
+
 def _xarray_xy_y_wrapper(*, axis):
     """
     Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
@@ -222,7 +253,7 @@ def _xarray_xy_y_wrapper(*, axis):
     """
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, keep_attrs=False, **kwargs):
+        def wrapper(*args, **kwargs):
             # Sanitize input
             x, y = args  # *both* or *one* of these is dataarray
             x_in, y_in, kwargs = _to_arraylike(x, y, axis, **kwargs)
@@ -258,7 +289,7 @@ def _xarray_xy_xy_wrapper(*, axis):
     """
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, keep_attrs=False, **kwargs):
+        def wrapper(*args, **kwargs):
             # Sanitize input
             x, y = args  # *both* or *one* of these is dataarray
             x_in, y_in, kwargs = _to_arraylike(x, y, axis, **kwargs)
