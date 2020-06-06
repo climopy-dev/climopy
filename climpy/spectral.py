@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Spectral analysis tools. Many of these are adapted
-from examples and course notes provided by `Elizabeth Barnes \
+from examples and course notes provided by Professors `Elizabeth Barnes \
 <http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`__
 and `Dennis Hartmann \
 <https://atmos.washington.edu/~dennis/552_Notes_ftp.html>`__.
@@ -130,7 +130,7 @@ Notes
 The Fourier coefficients are scaled so that total variance is equal to one
 half the sum of the right-hand coefficients. This is more natural for the
 real-valued datasets typically used by physical scientists, and matches
-the convention from Elizabeth Barnes's objective analysis
+the convention from Professor Elizabeth Barnes's objective analysis
 `course notes \
 <http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`__.
 This differs from the numpy convention, which scales the coefficients so

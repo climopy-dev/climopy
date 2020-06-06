@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Analyses of variance and trends. Many of these are adapted
-from examples and course notes provided by `Elizabeth Barnes \
+from examples and course notes provided by Professors `Elizabeth Barnes \
 <http://barnes.atmos.colostate.edu/COURSES/AT655_S15/lecture_slides.html>`__
 and `Dennis Hartmann \
 <https://atmos.washington.edu/~dennis/552_Notes_ftp.html>`__.
