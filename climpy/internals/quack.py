@@ -2,6 +2,10 @@
 """
 Wrappers that permit duck-type array input to various functions.
 
+Todo
+----
+Add wrappers for variance functions, spectral functions, and EOF function.
+
 Warning
 -------
 It is clunky to require duplicate ``axis=axis`` but otherwise if you change it
