@@ -722,7 +722,7 @@ def power(dx, y1, /, axis=0, **kwargs):
     return _power_driver(dx, y1, y1, axis=axis, **kwargs)
 
 
-@quack._xarray_copower_wrapper
+@quack._xarray_power_wrapper
 @quack._pint_wrapper(
     ('=x', '=y1', '=y2'),
     ('=1 / x', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
@@ -788,7 +788,7 @@ def power2d(dx, dy, y1, axis_lon=-1, axis_time=0, **kwargs):
     )
 
 
-@quack._xarray_copower2d_wrapper
+@quack._xarray_power2d_wrapper
 @quack._pint_wrapper(
     ('=x1', '=x2', '=y1', '=y2'),
     ('=1 / x1', '=1 / x2', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),

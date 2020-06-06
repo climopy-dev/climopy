@@ -353,113 +353,51 @@ def _xarray_covar_wrapper(func):
 
 def _xarray_power_wrapper(func):
     """
-    Support `xarray.DataArray` for `power` function.
+    Support `xarray.DataArray` for `power` and `copower`.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Sanitize input
-        x, y = args  # *both* or *one* of these is dataarray
-        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
+        x, *ys = args  # *both* or *one* of these is dataarray
+        x_in, *ys_in, kwargs = _to_arraylike(func, x, *ys, **kwargs)
 
         # Call main function
-        f, P = func(x_in, y_in, **kwargs)
+        f, *Ps = func(x_in, *ys_in, **kwargs)
 
         # Create new output array
+        y = ys[0]
         if isinstance(x, xr.DataArray):
             f = _from_dataarray(
                 x, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
             )
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
-            P = _from_dataarray(
-                y, P, dim_rename={dim: 'f'}, dim_coords={'f': f},
+            Ps = (
+                _from_dataarray(y, P, dim_rename={dim: 'f'}, dim_coords={'f': f})
+                for P in Ps
             )
 
-        return f, P
-
-    return wrapper
-
-
-def _xarray_copower_wrapper(func):
-    """
-    Support `xarray.DataArray` for `copower` function.
-    """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # Sanitize input
-        x, y1, y2 = args  # *both* or *one* of these is dataarray
-        x_in, y1_in, y2_in, kwargs = _to_arraylike(func, x, y1, y2, **kwargs)
-
-        # Call main function
-        f, C, Q, P1, P2, Coh, Phi = func(x_in, y1_in, y2_in, **kwargs)
-
-        # Create new output array
-        if isinstance(x, xr.DataArray):
-            f = _from_dataarray(
-                x, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
-            )
-        if isinstance(y1, xr.DataArray):
-            dim = y1.dims[kwargs['axis']]
-            C, Q, P1, P2, Coh, Phi = (
-                _from_dataarray(y1, P, dim_rename={dim: 'f'}, dim_coords={'f': f})
-                for P in (C, Q, P1, P2, Coh, Phi)
-            )
-
-        return f, C, Q, P1, P2, Coh, Phi
+        return f, *Ps
 
     return wrapper
 
 
 def _xarray_power2d_wrapper(func):
     """
-    Support `xarray.DataArray` for `power2d` function.
+    Support `xarray.DataArray` for `power2d` and `copower2d`.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Sanitize input
-        x1, x2, y = args  # *both* or *one* of these is dataarray
-        x1_in, y_in, kwargs = _to_arraylike(func, x1, y, suffix='_lon', **kwargs)
-        x2_in, _, kwargs = _to_arraylike(func, x2, y, suffix='_time', **kwargs)
+        x1, x2, *ys = args  # *both* or *one* of these is dataarray
+        x1_in, *ys_in, kwargs = _to_arraylike(func, x1, *ys, suffix='_lon', **kwargs)
+        x2_in, *_, kwargs = _to_arraylike(func, x2, *ys, suffix='_time', **kwargs)
 
         # Call main function
-        k, f, P = func(x1_in, x2_in, y_in, **kwargs)
+        k, f, *Ps = func(x1_in, x2_in, *ys_in, **kwargs)
 
         # Create new output array
-        if isinstance(x1, xr.DataArray):
-            k = _from_dataarray(
-                x1, k, dims=('k',), coords={}, attrs={'long_name': 'wavenumber'},
-            )
-        if isinstance(x2, xr.DataArray):
-            f = _from_dataarray(
-                x2, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
-            )
-        if isinstance(y, xr.DataArray):
-            dim1 = y.dims[kwargs['axis_lon']]
-            dim2 = y.dims[kwargs['axis_time']]
-            P = _from_dataarray(
-                y, P, dim_rename={dim1: 'k', dim2: 'f'}, dim_coords={'k': k, 'f': f},
-            )
-
-        return k, f, P
-
-    return wrapper
-
-
-def _xarray_copower2d_wrapper(func):
-    """
-    Support `xarray.DataArray` for `copower2d` function.
-    """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # Sanitize input
-        x1, x2, y1, y2 = args  # *both* or *one* of these is dataarray
-        x1_in, y1_in, y2_in, kwargs = _to_arraylike(func, x1, y1, y2, suffix='_lon', **kwargs)  # noqa: E501
-        x2_in, _, _, kwargs = _to_arraylike(func, x2, y1, y2, suffix='_time', **kwargs)
-
-        # Call main function
-        k, f, C, Q, P1, P2, Coh, Phi = func(x1_in, x2_in, y1_in, y2_in, **kwargs)
-
-        # Create new output array
+        y = ys[0]
         if isinstance(x1, xr.DataArray):
             k = _from_dataarray(
                 x1, dims=('k',), coords={}, attrs={'long_name': 'wavenumber'},
@@ -468,17 +406,17 @@ def _xarray_copower2d_wrapper(func):
             f = _from_dataarray(
                 x2, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
             )
-        if isinstance(y1, xr.DataArray):
-            dim1 = y1.dims[kwargs['axis_lon']]
-            dim2 = y1.dims[kwargs['axis_time']]
-            C, Q, P1, P2, Coh, Phi = (
+        if isinstance(y, xr.DataArray):
+            dim1 = y.dims[kwargs['axis_lon']]
+            dim2 = y.dims[kwargs['axis_time']]
+            Ps = (
                 _from_dataarray(
-                    y1, P, dim_rename={dim1: 'k', dim2: 'f'}, dim_coords={'k': k, 'f': f},  # noqa: E501
+                    y, P, dim_rename={dim1: 'k', dim2: 'f'}, dim_coords={'k': k, 'f': f}
                 )
-                for P in (C, Q, P1, P2, Coh, Phi)
+                for P in Ps
             )
 
-        return k, f, C, Q, P1, P2, Coh, Phi
+        return k, *Ps
 
     return wrapper
 
