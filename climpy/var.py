@@ -481,10 +481,10 @@ def reof(data, neof=5):  # noqa
     raise NotImplementedError
 
 
-@quack._xarray_hist_wrapper(axis=0)
+@quack._xarray_hist_wrapper
 @quack._pint_wrapper(('=y', '=y'), 'count')
 @docstring.add_snippets
-def hist(bins, y, /, axis=None):
+def hist(bins, y, /, axis=0):
     """
     Get the histogram along axis `axis`.
 
@@ -532,7 +532,7 @@ def hist(bins, y, /, axis=None):
     return context.data
 
 
-@quak._xarray_fit_wrapper(*, axis=0)
+@quack._xarray_fit_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=y / x', '=y / x', '=y'))
 def linefit(x, y, /, axis=0):
     """
@@ -595,7 +595,7 @@ def linefit(x, y, /, axis=0):
     return context.data
 
 
-@quak._xarray_fit_wrapper(*, axis=0)
+@quack._xarray_fit_wrapper
 @quack._pint_wrapper(('=t', ''), ('=t', '=t', ''))
 def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=0):
     r"""

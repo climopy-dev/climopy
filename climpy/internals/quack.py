@@ -6,13 +6,13 @@ Todo
 ----
 Add wrappers for variance functions, spectral functions, and EOF function.
 
-Warning
+Note
 -------
-It is clunky to require duplicate ``axis=axis`` but otherwise if you change it
-in the function you may forget to change it on the wrapper. And cannot do xarray
-processing inside main functions because it must happen outside of pint processing.
+Cannot do xarray processing inside main functions because it must happen
+outside of pint processing.
 """
 import re
+import inspect
 import functools
 import itertools
 import numpy as np
@@ -23,6 +23,13 @@ from . import warnings
 
 # Regex to find terms surrounded by curly braces that can be filled with str.format()
 REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside brackets
+
+
+def _get_default(func, param):
+    """
+    Get the default value from the call signature.
+    """
+    return inspect.signature(func).parameters[param].default
 
 
 def _get_step(h):
@@ -42,14 +49,18 @@ def _get_step(h):
 
 def _apply_units(data):
     """
-    Apply unit attribute units and get magnitudes.
+    Apply units from attribute and get magnitudes. This will make more sense
+    when the accessor is added to climpy.
     """
     if isinstance(data.data, ureg.Quantity):
         data = data.data
     else:
+        units = data.attrs.pop('units', None)
         try:
-            data = data.data * ureg(data.attrs['units'])
+            data = data.data * ureg(units)
         except Exception:  # many, many things could go wrong here
+            if units is not None:
+                warnings._warn_climpy(f'Failed to apply units {units!r} with pint.')
             data = data.data
     return data
 
@@ -65,44 +76,53 @@ def _remove_units(data):
     return data
 
 
-def _to_arraylike(x, y, axis_default, *, infer_axis=True, **kwargs):
+def _to_arraylike(func, x, *ys, infer_axis=True, **kwargs):
     """
     Sanitize input *x* and *y* DataArrays, return the axis and dim
     along which we are calculating stuff,
     """
+    # Ensure all *ys* have identical dimensions, type, and shape
+    axis_default = _get_default(func, 'axis')
+    x_dataarray = isinstance(x, xr.DataArray)
+    y_dataarray = all(isinstance(y, xr.DataArray) for y in ys)
+    types = tuple(type(y) for y in ys)
+    if len(set(types)) != 1:
+        raise ValueError(f'Expected one type for y inputs, got {types=}.')
+    shapes = tuple(y.shape for y in ys)
+    if any(_ != shapes[0] for _ in shapes):
+        raise ValueError(f'Shapes should be identical, got {shapes}.')
+    if y_dataarray:
+        dims = tuple(y.dims for y in ys)
+        if any(_ != dims[0] for _ in dims):
+            raise ValueError(f'Dimensions should be identical, got {dims}.')
+
     # Interpret 'dim' argument when input is Dataarray
     axis = kwargs.pop('axis', None)
-    if isinstance(y, xr.DataArray):
+    if y_dataarray:
         dim = kwargs.pop('dim', None)
         if dim is not None:
             if axis is not None:
                 warnings._warn_climpy('Ambiguous axis specification.')
-            axis = y.dims.index(dim)
+            axis = ys[0].dims.index(dim)
 
     # If both are dataarrays and *x* is coordinates, infer axis from dimension names
     # Detect if user input axis or dim conflicts with inferred one
     # NOTE: Easier to do this than permit *omitting* x coordinates and retrieving
     # coordinates from DataArray. Variable call signatures get tricky.
-    if (
-        infer_axis
-        and isinstance(x, xr.DataArray)
-        and isinstance(y, xr.DataArray)
-        and x.ndim == 1
-        and x.name in y.dims
-    ):
-        axis_inferred = y.dims.index(x.dims[0])
+    if infer_axis and x_dataarray and y_dataarray and x.ndim == 1 and x.name in ys[0].dims:  # noqa: E501
+        axis_inferred = ys[0].dims.index(x.dims[0])
         if axis is not None and axis != axis_inferred:
             raise ValueError(f'Input {axis=} different from {axis_inferred=}.')
         axis = axis_inferred
 
     # Apply units and get data
     kwargs['axis'] = axis_default if axis is None else axis
-    if isinstance(x, xr.DataArray):
+    if x_dataarray:
         x = _apply_units(x)
-    if isinstance(y, xr.DataArray):
-        y = _apply_units(y)
+    if y_dataarray:
+        ys = (_apply_units(y) for y in ys)
 
-    return x, y, kwargs
+    return (x, *ys, kwargs)
 
 
 def _from_dataarray(
@@ -120,9 +140,9 @@ def _from_dataarray(
         The new data.
     name, dims, attrs, coords : optional
         Replacement values.
-    dim_rename : 2-tuple of str, optional
+    dim_rename : (dim1_old, dim1_new, dim2_old, dim2_new, ...), optional
         Used to rename dimensions.
-    dim_coords : (str, array-like), optional
+    dim_coords : (dim1, coords1, dim2, coords2, ...), optional
         The new array coordinates for an arbitrary dimension
     """
     # Get source info
@@ -134,12 +154,10 @@ def _from_dataarray(
         attrs = dict(dataarray.attrs) if keep_attrs else {}
 
     # Rename dimension and optionally apply coordinates
-    if dim_rename is not None:
-        dim_in, dim_out = dim_rename
+    for dim_in, dim_out in (dim_rename or {}).items():
         coords.pop(dim_in, None)
         dims[dims.index(dim_in)] = dim_out
-    if dim_coords is not None:
-        dim, coord = dim_coords
+    for dim, coord in (dim_coords or {}).items():
         if coord is not None:
             coords[dim] = _remove_units(coord)
         elif dim in coords:  # e.g. ('lat', None) is instruction do delete dimension
@@ -149,139 +167,185 @@ def _from_dataarray(
     return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords)
 
 
-def _xarray_zerofind_wrapper(*, axis):
+def _xarray_zerofind_wrapper(func):
     """
     Support `xarray.DataArray` for zerofind function.
     """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Sanitize input
-            x, y = args
-            x_in, y_in, kwargs = _to_arraylike(x, y, axis, **kwargs)
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x, y = args
+        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
 
-            # Call main function
-            x_out, y_out = func(x_in, y_in, **kwargs)
+        # Call main function
+        x_out, y_out = func(x_in, y_in, **kwargs)
 
-            # Add metadata to x_out and y_out
-            if isinstance(y, xr.DataArray):
-                attrs = {}
-                dim = y.dims[kwargs['axis']]
-                if dim in y.coords:
-                    attrs = y.coords[dim]
-                x_out = _from_dataarray(
-                    y, y_out, name=dim, attrs=attrs, dim_rename=(dim, 'track'),
-                )
-                y_out = _from_dataarray(
-                    y, y_out, dim_rename=(dim, 'track'),
-                )
+        # Add metadata to x_out and y_out
+        if isinstance(y, xr.DataArray):
+            attrs = {}
+            dim = y.dims[kwargs['axis']]
+            if dim in y.coords:
+                attrs = y.coords[dim].attrs
+            x_out = _from_dataarray(
+                y, y_out, name=dim, attrs=attrs, dim_rename={dim: 'track'},
+            )
+            y_out = _from_dataarray(
+                y, y_out, keep_attrs=True, dim_rename={dim: 'track'},
+            )
 
-            return x_out, y_out
+        return x_out, y_out
 
-        return wrapper
-
-    return decorator
+    return wrapper
 
 
-def _xarray_hist_wrapper(*, axis):
+def _xarray_hist_wrapper(func):
     """
     Support `xarray.DataArray` for `hist` function.
     """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Sanitize input
-            # NOTE: This time 'x' coordinates are bins so do not infer
-            yb, y = args
-            yb_in, y_in, kwargs = _to_arraylike(
-                yb, y, axis, infer_axis=False, **kwargs
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        # NOTE: This time 'x' coordinates are bins so do not infer
+        yb, y = args
+        yb_in, y_in, kwargs = _to_arraylike(func, yb, y, infer_axis=False, **kwargs)
+
+        # Call main function
+        y_out = func(yb_in, y_in, **kwargs)
+
+        # Add metadata to y_out
+        if isinstance(y, xr.DataArray):
+            dim = y.dims[kwargs['axis']]
+            name = y.name
+            yb_centers = 0.5 * (yb_in[1:] + yb_in[:-1])
+            coords = _from_dataarray(
+                y, yb_centers, dims=(name,), coords={}
+            )
+            y_out = _from_dataarray(
+                y, y_out, name='count', attrs={},
+                dim_rename={dim: name}, dim_coords={name: coords},
             )
 
-            # Call main function
-            y_out = func(yb_in, y_in, **kwargs)
+        return y_out
 
-            # Add metadata to y_out
-            if isinstance(y, xr.DataArray):
-                dim = y.dims[kwargs['axis']]
-                name = y.name
-                yb_centers = 0.5 * (yb_in[1:] + yb_in[:-1])
-                coords = _from_dataarray(
-                    y, yb_centers, dims=(name,), coords={}
-                )
-                y_out = _from_dataarray(
-                    y, y_out, name='count', attrs={},
-                    dim_rename=(dim, name), dim_coords=(name, coords),
-                )
-
-            return y_out
-
-        return wrapper
-
-    return decorator
+    return wrapper
 
 
-def _xarray_fit_wrapper(*, axis):
+def _xarray_power_wrapper(func):
+    """
+    Support `xarray.DataArray` for `power` function.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x, y = args  # *both* or *one* of these is dataarray
+        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
+
+        # Call main function
+        f, P = func(x_in, y_in, **kwargs)
+
+        # Create new output array
+        if isinstance(x, xr.DataArray):
+            f = _from_dataarray(
+                x, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
+            )
+        if isinstance(y, xr.DataArray):
+            dim = y.dims[kwargs['axis']]
+            P = _from_dataarray(
+                y, dim_rename={dim: 'f'}, dim_coords={'f': f},
+            )
+
+        return f, P
+
+    return wrapper
+
+
+def _xarray_copower_wrapper(func):
+    """
+    Support `xarray.DataArray` for `copower` function.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x, y1, y2 = args  # *both* or *one* of these is dataarray
+        x_in, y1_in, y2_in, kwargs = _to_arraylike(func, x, y1, y2, **kwargs)
+
+        # Call main function
+        f, C, Q, P1, P2, Coh, Phi = func(x_in, y1_in, y2_in, **kwargs)
+
+        # Create new output array
+        if isinstance(x, xr.DataArray):
+            f = _from_dataarray(
+                x, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
+            )
+        if isinstance(y1, xr.DataArray):
+            dim = y1.dims[kwargs['axis']]
+            C, Q, P1, P2, Coh, Phi = (
+                _from_dataarray(y1, dim_rename={dim: 'f'}, dim_coords={'f': f})
+                for p in (C, Q, P1, P2, Coh, Phi)
+            )
+
+        return f, C, Q, P1, P2, Coh, Phi
+
+    return wrapper
+
+
+def _xarray_fit_wrapper(func):
     """
     Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
     and returning a fit parameter, the fit standard error, and the reconstruction.
     """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Sanitize input
-            x, y = args  # *both* or *one* of these is dataarray
-            x_in, y_in, kwargs = _to_arraylike(x, y, axis, **kwargs)
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x, y = args  # *both* or *one* of these is dataarray
+        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
 
-            # Call main function
-            fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
+        # Call main function
+        fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
 
-            # Create new output array
-            if isinstance(y, xr.DataArray):
-                dim_coords = (y.dims[kwargs['axis']], None)
-                fit_val = _from_dataarray(y, fit_val, dim_coords=dim_coords)
-                fit_err = _from_dataarray(y, fit_err, dim_coords=dim_coords)
-                fit_line = _from_dataarray(y, fit_line)  # same everything
+        # Create new output array
+        if isinstance(y, xr.DataArray):
+            dim_coords = {y.dims[kwargs['axis']]: None}
+            fit_val = _from_dataarray(y, fit_val, dim_coords=dim_coords)
+            fit_err = _from_dataarray(y, fit_err, dim_coords=dim_coords)
+            fit_line = _from_dataarray(y, fit_line)  # same everything
 
-            return fit_val, fit_err, fit_line
+        return fit_val, fit_err, fit_line
 
-        return wrapper
-
-    return decorator
+    return wrapper
 
 
-def _xarray_xy_y_wrapper(*, axis):
+def _xarray_xy_y_wrapper(func):
     """
     Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
     coordinates and returning just *y* coordinates. Permits situation
     where dimension coordinates on returned data are symmetrically trimmed.
     """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Sanitize input
-            x, y = args  # *both* or *one* of these is dataarray
-            x_in, y_in, kwargs = _to_arraylike(x, y, axis, **kwargs)
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x, y = args  # *both* or *one* of these is dataarray
+        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
 
-            # Call main function
-            y_out = func(x_in, y_in, **kwargs)
+        # Call main function
+        y_out = func(x_in, y_in, **kwargs)
 
-            # Create new output array
-            if isinstance(y, xr.DataArray):
-                axis_ = kwargs['axis']
-                dim = y.dims[axis_]
-                ntrim = (y_in.shape[axis_] - y_out.shape[axis_]) // 2
-                if ntrim > 0 and dim in y.coords:
-                    dim_coords = (dim, x[ntrim:-ntrim])
-                y_out = _from_dataarray(y, y_out, dim_coords=dim_coords)
+        # Create new output array
+        if isinstance(y, xr.DataArray):
+            axis_ = kwargs['axis']
+            dim = y.dims[axis_]
+            ntrim = (y_in.shape[axis_] - y_out.shape[axis_]) // 2
+            dim_coords = None
+            if ntrim > 0 and dim in y.coords:
+                dim_coords = {dim: x[ntrim:-ntrim]}
+            y_out = _from_dataarray(y, y_out, dim_coords=dim_coords)
 
-            return y_out
+        return y_out
 
-        return wrapper
-
-    return decorator
+    return wrapper
 
 
-def _xarray_xy_xy_wrapper(*, axis):
+def _xarray_xy_xy_wrapper(func):
     """
     Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
     coordinates and returning new *x* and *y* coordinates.
@@ -291,34 +355,31 @@ def _xarray_xy_xy_wrapper(*, axis):
     So far this fails for 2D `xarray.DataArray` *x* data with non-empty
     coordinates for the `dim` dimension.
     """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Sanitize input
-            x, y = args  # *both* or *one* of these is dataarray
-            x_in, y_in, kwargs = _to_arraylike(x, y, axis, **kwargs)
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x, y = args  # *both* or *one* of these is dataarray
+        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
 
-            # Call main function
-            x_out, y_out = func(x_in, y_in, **kwargs)
+        # Call main function
+        x_out, y_out = func(x_in, y_in, **kwargs)
 
-            # Create new output array with x coordinates either trimmed
-            # or interpolated onto half-levels
-            # NOTE: This may fail for 2D DataArray x coordinates
-            axis_ = kwargs['axis']
-            dim_coods = None
-            if x.ndim == 1 and any(isinstance(_, xr.DataArray) for _ in (x, y)):
-                dim = x.dims[0] if isinstance(x, xr.DataArray) else y.dims[axis_]
-                dim_coods = (dim, x_out)
-            if isinstance(x, xr.DataArray):
-                x_out = _from_dataarray(x, x_out, dim_coords=dim_coods)
-            if isinstance(y, xr.DataArray):
-                y_out = _from_dataarray(y, y_out, dim_coords=dim_coods)
+        # Create new output array with x coordinates either trimmed
+        # or interpolated onto half-levels
+        # NOTE: This may fail for 2D DataArray x coordinates
+        axis_ = kwargs['axis']
+        dim_coords = None
+        if x.ndim == 1 and any(isinstance(_, xr.DataArray) for _ in (x, y)):
+            dim = x.dims[0] if isinstance(x, xr.DataArray) else y.dims[axis_]
+            dim_coords = {dim: x_out}
+        if isinstance(x, xr.DataArray):
+            x_out = _from_dataarray(x, x_out, dim_coords=dim_coords)
+        if isinstance(y, xr.DataArray):
+            y_out = _from_dataarray(y, y_out, dim_coords=dim_coords)
 
-            return y_out
+        return y_out
 
-        return wrapper
-
-    return decorator
+    return wrapper
 
 
 def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):

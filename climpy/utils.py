@@ -273,9 +273,9 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=10):
         return xs_sorted[1:, :]
 
 
-@quack._xarray_zerofind_wrapper(axis=1)
+@quack._xarray_zerofind_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y'))
-def zerofind(x, y, axis=None, diff=None, centered=True, which='both', **kwargs):
+def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     """
     Find the location of the zero value for a given data array.
 
