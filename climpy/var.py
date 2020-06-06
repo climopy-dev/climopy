@@ -213,17 +213,19 @@ def _covar_driver(
     # Standardize maybe
     std1 = std2 = 1  # use for covariance
     if standardize:
-        std1 = z1.std(axis=-1, keepdims=False)
+        std1 = z1.std(axis=-1, keepdims=True)
         if auto:
             std2 = std1
         else:
-            std2 = z2.std(axis=-1, keepdims=False)
+            std2 = z2.std(axis=-1, keepdims=True)
 
     # This is just the variance, or *one* if autocorrelation mode is enabled
     # corrs = np.ones((*z1.shape[:-1], 1))
     if nlag is None and lag == 0:
-        covar = np.sum((z1 - mean1) * (z2 - mean2)) / (naxis * std1 * std2),
-        return np.moveaxis(covar, -1, axis)
+        lags = [0]
+        covar = np.sum(
+            (z1 - mean1) * (z2 - mean2), axis=-1, keepdims=True
+        ) / (naxis * std1 * std2)
 
     # Correlation on specific lag
     elif nlag is None:
@@ -232,7 +234,6 @@ def _covar_driver(
         covar = np.sum(
             (z1[..., :-lag] - mean1) * (z2[..., lag:] - mean2), axis=-1, keepdims=True,
         ) / ((naxis - lag) * std1 * std2),
-        return np.moveaxis(covar, -1, axis)
 
     # Correlation up to n timestep-lags after 0-correlation
     else:
@@ -264,44 +265,48 @@ def _covar_driver(
     return lags, np.moveaxis(covar, -1, axis)
 
 
+@quack._xarray_covar_wrapper
 @quack._pint_wrapper(('=t', '=z'), ('=t', ''))
 @docstring.add_snippets
-def autocorr(dt, z, **kwargs):
+def autocorr(dt, z, axis=0, **kwargs):
     """
     %(autocorr)s
     """
     # NOTE: covar checks if z1 and z2 are the same to to reduce computational cost
     kwargs.setdefault('standardize', True)
-    return _covar_driver(dt, z, z, **kwargs)
+    return _covar_driver(dt, z, z, axis=axis, **kwargs)
 
 
+@quack._xarray_covar_wrapper
 @quack._pint_wrapper(('=t', '=z'), ('=t', '=z ** 2'))
 @docstring.add_snippets
-def autocovar(dt, z, **kwargs):
+def autocovar(dt, z, axis=0, **kwargs):
     """
     %(autocovar)s
     """
     # NOTE: covar checks if z1 and z2 are the same to reduce computational cost
-    return _covar_driver(dt, z, z, **kwargs)
+    return _covar_driver(dt, z, z, axis=axis, **kwargs)
 
 
+@quack._xarray_covar_wrapper
 @quack._pint_wrapper(('=t', '=z1', '=z2'), ('=t', ''))
 @docstring.add_snippets
-def corr(dt, z1, z2, **kwargs):
+def corr(dt, z1, z2, axis=0, **kwargs):
     """
     %(corr)s
     """
     kwargs.setdefault('standardize', True)
-    return _covar_driver(dt, z1, z2, **kwargs, standardize=True)
+    return _covar_driver(dt, z1, z2, axis=axis, **kwargs)
 
 
+@quack._xarray_covar_wrapper
 @quack._pint_wrapper(('=t', '=z1', '=z2'), ('=t', '=z1 * z2'))
 @docstring.add_snippets
-def covar(dt, z1, z2, **kwargs):
+def covar(dt, z1, z2, axis=0, **kwargs):
     """
     %(covar)s
     """
-    return _covar_driver(dt, z1, z2, **kwargs)
+    return _covar_driver(dt, z1, z2, axis=axis, **kwargs)
 
 
 @quack._pint_wrapper('=z', ('', '=z', '=z ** 2', 'count'))
