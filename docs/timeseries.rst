@@ -1,6 +1,11 @@
 Time series analysis
 ====================
 
+.. warning::
+
+   These examples are out of date and may no longer work. Please refer
+   first to the :ref:`API Reference` until the examples are updated.
+
 Trends and windows
 ------------------
 
