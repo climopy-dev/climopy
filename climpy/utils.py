@@ -136,7 +136,7 @@ def intersection(x, segment1, segment2, xlog=False):
 
 
 # TODO: Support pint quantities here
-def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=10):
+def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=1):
     """
     Track individual "lines" across lists of coordinates.
 
