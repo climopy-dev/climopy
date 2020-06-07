@@ -197,15 +197,17 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=10):
 
     # Arrays containing sorted lines in the output columns
     # NOTE: Need twice the maximum number of simultaneously tracked lines
-    # as columns in the array. For example to generate the sequence with N = 1:
+    # as columns in the array if 'sep' is less than infinity. For example to
+    # generate the sequence with N = 1 and sep == 5:
     # [20, NaN]
     # [22, NaN]
     # [NaN, 40]  # bigger than sep, so "new" line
     # [NaN, 42]
     seed = np.atleast_1d(seed)[:N]
+    nslots = N if not track or sep == np.inf else 2 * N
     with np.errstate(invalid='ignore'):
-        xs_sorted = np.empty((len(xs) + 1, N * 2)) * np.nan
-        ys_sorted = np.empty((len(ys) + 1, N * 2)) * np.nan
+        xs_sorted = np.empty((len(xs) + 1, nslots)) * np.nan
+        ys_sorted = np.empty((len(ys) + 1, nslots)) * np.nan
     xs_sorted[0, :seed.size] = seed
 
     for i, (ixs, iys) in enumerate(zip(xs, ys)):
@@ -223,8 +225,8 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=10):
 
         # Find the points in the latest unsorted record that are *closest*
         # to the points in existing tracks, and the difference between them.
-        mindiffs = np.empty((N * 2,)) * np.nan
-        argmins = np.empty((N * 2,)) * np.nan
+        mindiffs = np.empty((nslots,)) * np.nan
+        argmins = np.empty((nslots,)) * np.nan
         for j, ix_prev in enumerate(xs_sorted[i - 1, :]):
             if np.isnan(ix_prev):
                 continue
