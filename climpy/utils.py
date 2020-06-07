@@ -192,7 +192,9 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=10):
         ys = xs  # not pretty but this simplifies the loop code
     if seed is None:
         seed = []
-    if len(xs) != len(ys) or any(len(x) != len(y) for x, y in zip(xs, ys)):
+    if len(xs) != len(ys) or any(
+        np.atleast_1d(x).size != np.atleast_1d(y).size for x, y in zip(xs, ys)
+    ):
         raise ValueError('Mismatched geometry between x and y lines.')
 
     # Arrays containing sorted lines in the output columns
