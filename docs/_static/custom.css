@@ -292,6 +292,12 @@ body,
 .rst-content dl:not(.docutils) .admonition {
   background: var(--block-bg-color);
 }
+
+.rst-content .bibtex.label {
+  background: var(--block-bg-color);
+  border-left-color: var(--accent-bg-color);
+}
+
 .rst-content .admonition>.admonition-title,
 .rst-content dl:not(.docutils) .admonition>.admonition-title {
   color: var(--main-color); /* title text is same as block bg */
