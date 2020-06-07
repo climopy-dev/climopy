@@ -58,7 +58,8 @@ class _ArrayContext(object):
 
         Here is a worked example used with the EOF algorithm:
 
-        >>> from climpy.internals import array
+        >>> from climpy.internals.array import logger, logging, _ArrayContext
+        ... logger.setLevel(logging.INFO)
         ... import xarray as xr
         ... import numpy as np
         ... # Generate neof, member, run, time, plev, lat array
@@ -67,7 +68,7 @@ class _ArrayContext(object):
         ...     dims=('member', 'run', 'time', 'plev', 'lat'),
         ... )
         ... array = dataarray.data
-        ... with array._ArrayContext(
+        ... with _ArrayContext(
         ...     array,
         ...     push_left=(0, 1), nflat_left=2,
         ...     push_right=(2, 3, 4), nflat_right=2,
@@ -77,6 +78,7 @@ class _ArrayContext(object):
         ...     eofs = np.random.rand(nextra, 5, 1, nspace)  # singleton time dimension
         ...     pcs = np.random.rand(nextra, 5, ntime, 1)  # singleton space dimension
         ...     context.replace_data(eofs, pcs, insert_left=1)
+        ... logger.setLevel(logging.ERROR)
 
         """
         # Set arrays
@@ -308,7 +310,7 @@ class _ArrayContext(object):
         nflat_left = self._nflat_left
         nflat_right = self._nflat_right
         shape_flat = self._arrays[0].shape
-        shape_unflat = self._shapes[0]
+        shape_unflat_orig = self._shapes[0]
         self._arrays = []
         self._shapes = []
         self._moves = []
@@ -330,14 +332,13 @@ class _ArrayContext(object):
                 and shape[-1] != shape_flat[-1]
                 and shape[-1] > 1  # reduction to singleton is allowed
             ):
-                print(len(shape_flat), len(shape), insert_left, insert_right)
                 raise ValueError(
                     f'New flattened array shape {shape!r} incompatible with '
                     f'existing flattened array shape {shape_flat!r}.'
                 )
 
             # Determine *unflattened* shape from template shape
-            shape_unflat = shape_unflat.copy()
+            shape_unflat = shape_unflat_orig.copy()
             if nflat_left is None:
                 ileft_flat = 0
                 nleft_unflat = 0

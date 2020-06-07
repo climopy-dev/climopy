@@ -311,10 +311,11 @@ def covar(dt, z1, z2, axis=0, **kwargs):
     return _covar_driver(dt, z1, z2, axis=axis, **kwargs)
 
 
+@quack._xarray_eof_wrapper
 @quack._pint_wrapper('=z', ('', '=z', '=z ** 2', 'count'))
 def eof(
     data, /, neof=5, axis_time=-2, axis_space=-1,
-    weights=None, percent=True, normalize=False,
+    weights=None, percent=False, normalize=False,
 ):
     r"""
     Calculate the first `N` EOFs using the scipy algorithm for Hermetian matrices
@@ -334,8 +335,8 @@ def eof(
         Area or mass weights; must be broadcastable on multiplication with
         `data` weights. Will be normalized prior to application.
     percent : bool, optional
-        Whether to return raw eigenvalue(s) or the *percentage* of variance
-        explained by eigenvalue(s).
+        Whether to return raw eigenvalue(s) or the *percentage* of total
+        variance explained by eigenvalue(s). Default is ``False``.
     normalize : bool, optional
         Whether to normalize the data by its standard deviation
         at every point prior to obtaining the EOFs.
@@ -362,14 +363,21 @@ def eof(
     Example
     -------
 
-    >>> import xarray as xr
-        import climpy
-        array = xr.DataArray(
-            np.random.rand(10, 5, 100, 40, 20),
-            dims=('member', 'run', 'time', 'plev', 'lat'),
-        )
-        data = array.data
-        result = climpy.eof(data, axis_time=2, axis_space=(3, 4))
+    >>> from climpy.internals.array import logger, logging
+    ... import xarray as xr
+    ... import climpy
+    ... data = xr.DataArray(
+    ...     np.random.rand(10, 6, 100, 40, 20),
+    ...     dims=('member', 'run', 'time', 'plev', 'lat'),
+    ...     coords={
+    ...         'member': np.arange(1, 11),
+    ...         'run': np.arange(1, 7),
+    ...         'time': np.arange(100.0),
+    ...         'plev': np.linspace(0.0, 1000.0, 40),
+    ...         'lat': np.linspace(-90.0, 90.0, 20),
+    ...     }
+    ... )
+    ... pcs, projs, evals, nstars = climpy.eof(data, axis_time=2, axis_space=(3, 4))
 
     References
     ----------
@@ -378,6 +386,10 @@ def eof(
     # Parse input
     axis_space = np.atleast_1d(axis_space)
     np.atleast_1d(axis_time).item()  # ensure time axis is 1D
+    axis_space[axis_space < 0] += data.ndim
+    if axis_time < 0:
+        axis_time += data.ndim
+    axis_extra = tuple(set(range(data.ndim)) - {axis_time, *axis_space})
 
     # Remove the mean and optionally standardize the data
     data = data - data.mean(axis=axis_time, keepdims=True)  # remove mean
@@ -398,8 +410,10 @@ def eof(
 
     # Turn matrix in to extra (K) x time (M) x space (N)
     # Requires flatening space axes into one, and flattening extra axes into one
+    shape_orig = data.shape
     with _ArrayContext(
         data, dataw,
+        push_left=axis_extra,
         push_right=(axis_time, *axis_space),
         nflat_right=len(axis_space),  # flatten space axes
         nflat_left=data.ndim - len(axis_space) - 1,  # flatten
@@ -407,8 +421,12 @@ def eof(
         # Retrieve reshaped data
         data, dataw = context.data
         k = data.shape[0]  # ensure 3D
-        if data.ndim != 3 or ntime != data.shape[0] or nspace != data.shape[1]:
-            raise RuntimeError('Array resizing algorithm failed.')
+        if data.ndim != 3 or ntime != data.shape[1] or nspace != data.shape[2]:
+            raise RuntimeError(
+                'Array resizing algorithm failed. '
+                f'Expected (N x {ntime} x {nspace}). '
+                f'Turned shape from {shape_orig} to {data.shape}.'
+            )
 
         # Prepare output arrays
         pcs = np.empty((k, neof, ntime, 1))
@@ -459,7 +477,7 @@ def eof(
                 evals[i, :, 0, 0] = l[::-1]  # actual eigenvalues
 
         # Replace context data with new dimension inserted on left side
-        context.replace(pcs, projs, evals, nstars, insert_left=1)
+        context.replace_data(pcs, projs, evals, nstars, insert_left=1)
 
     # Return data restored to original dimensionality
     return context.data

@@ -262,32 +262,6 @@ def _xarray_xy_xy_wrapper(func):
     return wrapper
 
 
-def _xarray_covar_wrapper(func):
-    """
-    Support `xarray.DataArray` for `corr`, `covar`, `autocorr`, and `autocovar` funcs.
-    """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # Sanitize input
-        x, *ys = args  # *both* or *one* of these is dataarray
-        x_in, *ys_in, kwargs = _to_arraylike(func, x, *ys, **kwargs)
-
-        # Call main function
-        lag, C = func(x_in, *ys_in, **kwargs)
-
-        # Create new output array
-        y = ys[0]
-        if isinstance(x, xr.DataArray):
-            lag = _from_dataarray(x, lag, dims=('lag',), coords={})
-        if isinstance(y, xr.DataArray):
-            dim = y.dims[kwargs['axis']]
-            C = _from_dataarray(y, C, dim_rename={dim: 'lag'}, dim_coords={'lag': lag})
-
-        return lag, C
-
-    return wrapper
-
-
 def _xarray_power_wrapper(func):
     """
     Support `xarray.DataArray` for `power` and `copower`.
@@ -354,6 +328,78 @@ def _xarray_power2d_wrapper(func):
             )
 
         return k, *Ps
+
+    return wrapper
+
+
+def _xarray_covar_wrapper(func):
+    """
+    Support `xarray.DataArray` for `corr`, `covar`, `autocorr`, and `autocovar` funcs.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input
+        x, *ys = args  # *both* or *one* of these is dataarray
+        x_in, *ys_in, kwargs = _to_arraylike(func, x, *ys, **kwargs)
+
+        # Call main function
+        lag, C = func(x_in, *ys_in, **kwargs)
+
+        # Create new output array
+        y = ys[0]
+        if isinstance(x, xr.DataArray):
+            lag = _from_dataarray(x, lag, dims=('lag',), coords={})
+        if isinstance(y, xr.DataArray):
+            dim = y.dims[kwargs['axis']]
+            C = _from_dataarray(y, C, dim_rename={dim: 'lag'}, dim_coords={'lag': lag})
+
+        return lag, C
+
+    return wrapper
+
+
+def _xarray_eof_wrapper(func):
+    """
+    Support `xarray.DataArray` for `eof` functions.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Sanitize input and interpret 'dim' arguments
+        data, = data_in, = args
+        axis_time = kwargs.pop('axis_time', _get_default(func, 'axis_time'))
+        axis_space = kwargs.pop('axis_space', _get_default(func, 'axis_space'))
+        if isinstance(data, xr.DataArray):
+            data_in = data.data
+            if 'dim_time' in kwargs:  # no warning for duplicate args, no big deal
+                axis_time = data.dims.index(kwargs.pop('dim_time'))
+            if 'dim_space' in kwargs:
+                axis_space = data.dims.index(kwargs.pop('dim_space'))
+
+        # Call main function
+        pcs, projs, evals, nstars = func(
+            data_in, axis_time=axis_time, axis_space=axis_space, **kwargs,
+        )
+
+        # Create new output arrays
+        if isinstance(data, xr.DataArray):
+            # Add EOF dimension
+            dims = ['eof'] + list(data.dims)  # add 'EOF number' leading dimension
+            eofs = np.arange(1, pcs.shape[0] + 1)
+
+            # Remove dimension coordinates where necessary
+            time_flat = {data.dims[axis_time]: None}
+            space_flat = {data.dims[axis]: None for axis in np.atleast_1d(axis_space)}
+            both_flat = {**time_flat, **space_flat}
+            all_flat = both_flat.copy()  # with singleton EOF dimension
+            both_flat['eof'] = time_flat['eof'] = space_flat['eof'] = eofs
+
+            # Create new DataArrays
+            pcs = _from_dataarray(data, pcs, dims=dims, dim_coords=space_flat)
+            projs = _from_dataarray(data, projs, dims=dims, dim_coords=time_flat)
+            evals = _from_dataarray(data, evals, dims=dims, dim_coords=both_flat)
+            nstars = _from_dataarray(data, nstars, dims=dims, dim_coords=all_flat)
+
+        return pcs, projs, evals, nstars
 
     return wrapper
 
@@ -539,7 +585,6 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
             if not is_container_out and isinstance(result, tuple):
                 raise ValueError('Got tuple of return values, expected one value.')
             if is_container_out and n_result != len(units_out):
-                print('result!!!', result)
                 raise ValueError(f'Expected {n_expect} return values, got {n_result}.')
 
             # Quantify output, but *only* if input was quantities
