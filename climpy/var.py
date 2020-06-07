@@ -384,6 +384,10 @@ def eof(
     .. bibliography:: ../bibs/eofs.bib
     """
     # Parse input
+    # WARNING: Have to explicitly 'push_left' extra dimensions (even though just
+    # specifying nflat_left is enough to flattened the desired dimensions) or the new
+    # 'eof' dimension is not pushed to the left of the extra dimensions. Think this
+    # is not a bug but consistent with design.
     axis_space = np.atleast_1d(axis_space)
     np.atleast_1d(axis_time).item()  # ensure time axis is 1D
     axis_space[axis_space < 0] += data.ndim
