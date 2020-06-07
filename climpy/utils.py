@@ -136,7 +136,7 @@ def intersection(x, segment1, segment2, xlog=False):
 
 
 # TODO: Support pint quantities here
-def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=1):
+def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, ntrack=1):
     """
     Track individual "lines" across lists of coordinates.
 
@@ -155,8 +155,8 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=1):
         default behavior is to not separate into tracks this way.
     seed : float or list of float, optional
         The track or tracks you want the algorithm to pick up if the number of
-        tracks is limited by `N`.
-    N : int, optional
+        tracks is limited by `ntrack`.
+    ntrack : int, optional
         The maximum number of values to be simultaneously tracked. This can
         be used to ignore spurious values in combination with `seed`.
 
@@ -183,7 +183,7 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=1):
     ...        [20, 47],
     ...        [23, 50],
     ...    ],
-    ...    N=3,
+    ...    ntrack=3,
     ... )
 
     """
@@ -200,13 +200,13 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=1):
     # Arrays containing sorted lines in the output columns
     # NOTE: Need twice the maximum number of simultaneously tracked lines
     # as columns in the array if 'sep' is less than infinity. For example to
-    # generate the sequence with N = 1 and sep == 5:
+    # generate the sequence with ntrack = 1 and sep == 5:
     # [20, NaN]
     # [22, NaN]
     # [NaN, 40]  # bigger than sep, so "new" line
     # [NaN, 42]
-    seed = np.atleast_1d(seed)[:N]
-    nslots = N if not track or sep == np.inf else 2 * N
+    seed = np.atleast_1d(seed)[:ntrack]
+    nslots = ntrack if not track or sep == np.inf else 2 * ntrack
     with np.errstate(invalid='ignore'):
         xs_sorted = np.empty((len(xs) + 1, nslots)) * np.nan
         ys_sorted = np.empty((len(ys) + 1, nslots)) * np.nan
@@ -218,8 +218,8 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=1):
         # lines in previous group so every single point starts a new line.
         # NOTE: It's ok if columns are occupied by more than one "line" as
         # long as there are NaNs between them. This is really just for plotting.
-        ixs = np.atleast_1d(ixs)[:N]
-        iys = np.atleast_1d(iys)[:N]
+        ixs = np.atleast_1d(ixs)[:ntrack]
+        iys = np.atleast_1d(iys)[:ntrack]
         if not track or ixs.size == 0 or np.all(np.isnan(xs_sorted[i - 1, :])):
             xs_sorted[i, :ixs.size] = ixs
             ys_sorted[i, :iys.size] = iys
@@ -249,7 +249,7 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=1):
                 continue
             if idx in idxs:  # already continued the line from a closer candidate
                 continue
-            if nlines >= N:
+            if nlines >= ntrack:
                 continue
             nlines += 1
             idxs.add(idx)
@@ -264,7 +264,7 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, N=1):
         jslots, = np.where(np.all(np.isnan(xs_sorted[i - 1:i + 1, :]), axis=0))
         lines_new = set(range(len(ixs))) - set(argmins)
         for j, idx in enumerate(lines_new):
-            if nlines >= N:
+            if nlines >= ntrack:
                 continue
             nlines += 1
             xs_sorted[i, jslots[j]] = ixs[int(idx)]
@@ -331,7 +331,7 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     ...         y * ureg.m, name='variable',
     ...         dims=('x', 'y'), coords={'x': xarr}
     ...     )
-    ... zx, zy = climpy.zerofind(xarr, yarr, N=2)
+    ... zx, zy = climpy.zerofind(xarr, yarr, ntrack=2)
 
     """
     # Tests
