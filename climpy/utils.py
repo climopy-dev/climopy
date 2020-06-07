@@ -4,7 +4,7 @@ Includes miscellaneous mathematical functions.
 """
 import numpy as np
 from .diff import deriv_half, deriv_uneven
-from .internals import quack
+from .internals import quack, warnings
 
 __all__ = [
     'dt2cal',
@@ -101,7 +101,7 @@ def match(*args):
     return slices + [vs[0][slices[0]]]
 
 
-def intersection(x, segment1, segment2, xlog=False):
+def intersection(x, y1, y2, xlog=False):
     """
     Find the (first) intersection point for two line segments.
 
@@ -109,28 +109,47 @@ def intersection(x, segment1, segment2, xlog=False):
     ----------
     x : ndarray
         The *x* coordinates.
-    segment1, segment2 : ndarray
+    y1, y2 : ndarray
         The two lists of *y* coordinates.
     xlog : bool, optional
         Whether to find the *x* coordinate intersection in logarithmic space.
+
+    Example
+    -------
+
+    >>> import climpy
+    ... x = 10 + np.arange(4)
+    ... y1 = np.array([4, 2, 0, -2])
+    ... y2 = np.array([0, 1, 2, 3])
+    ... climpy.intersection(x, y1, y2)
+
     """
     # Initial stuff
-    segment1, segment2 = np.array(segment1), np.array(segment2)
+    x = np.asanyarray(x)
+    y1 = np.asanyarray(y1)
+    y2 = np.asanyarray(y2)
     if xlog:  # transform x coordinates optionally
         transform = lambda x: np.log10(x)
         itransform = lambda x: 10 ** x
     else:
         transform = itransform = lambda x: x
+    if x.size != y1.size or x.size != y2.size:
+        raise ValueError(f'Incompatible sizes {x.size=}, {y1.size=}, {y2.size=}.')
 
     # Get intersection
-    diff = segment1 - segment2
-    if (diff > 0).all() or (diff < 0).all():
+    dy = y1 - y2
+    if np.all(dy > 0) or np.all(dy < 0):
         print('Warning: No intersections found.')
         return np.nan, np.nan
-    idx = np.where(diff > 0)[0][0]  # two-element vectors
-    x, y = diff[idx - 1:idx + 1], transform(x[idx - 1:idx + 1])
+    idx, = np.where(np.diff(np.sign(dy)) != 0)  # e.g. 6, 2, -3 --> 1, 1, -1 --> 0, -2
+    if idx.size > 1:
+        warnings._warn_climpy('Multiple intersections found. Using the first one.')
+    idx = idx[0]
+
+    # Get coordinates
+    x, y = dy[idx:idx + 2], transform(x[idx:idx + 2])
     px = itransform(y[0] + (0 - x[0]) * ((y[1] - y[0]) / (x[1] - x[0])))
-    x, y = y, segment2[idx - 1:idx + 1]
+    x, y = y, y2[idx:idx + 2]
     py = y[0] + (transform(px) - x[0]) * ((y[1] - y[0]) / (x[1] - x[0]))
     return px, py
 
