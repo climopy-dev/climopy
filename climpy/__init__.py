@@ -70,7 +70,7 @@ ureg.define(
     '@alias meter = metre = geopotential_meter = geopotential_metre = gpm'
 )
 ureg.define(
-    '@alias kelvin = Kelvin = K = '
+    '@alias kelvin = Kelvin = K = k = '
     'degree_kelvin = degree_Kelvin = degrees_kelvin = degrees_Kelvin = '
     'deg_K = deg_k = degK = degk'
 )
