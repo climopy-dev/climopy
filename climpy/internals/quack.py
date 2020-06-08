@@ -456,7 +456,7 @@ def _xarray_zerofind_wrapper(func):
             if dim in y.coords:
                 attrs = y.coords[dim].attrs
             x_out = _from_dataarray(
-                y, y_out, name=dim, attrs=attrs, dim_rename={dim: 'track'},
+                y, x_out, name=dim, attrs=attrs, dim_rename={dim: 'track'},
             )
             y_out = _from_dataarray(
                 y, y_out, keep_attrs=True, dim_rename={dim: 'track'},

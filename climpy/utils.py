@@ -361,7 +361,10 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
         raise ValueError(f'Currently y must be 2D, got {y.ndim}D.')
     if x.ndim != 1 or y.shape[axis] != x.size:
         raise ValueError(f'Invalid shapes {x.shape=} and {y.shape=}.')
+    is1d = y.ndim == 1
     y = np.moveaxis(y, axis, -1)
+    if is1d:
+        y = y[None, ...]
     reverse = x[1] - x[0] < 0  # TODO: check this works?
     nextra, naxis = y.shape
 
@@ -424,6 +427,8 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     zxs, zys = linetrack(zxs, zys, **kwargs)
     if not zxs.size:
         raise ValueError(f'No zeros found for data {y!r}.')
+    if is1d:
+        zxs, zys = zxs[0, :], zys[0, :]
     zxs = np.moveaxis(zxs, -1, axis)
     zys = np.moveaxis(zys, -1, axis)
     return zxs, zys
