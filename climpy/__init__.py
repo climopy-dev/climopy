@@ -41,6 +41,9 @@ ureg.define(
 )
 
 # Canonical unit definitions
+ureg.define(  # cannot use alias for 'dimensionless', this is best way
+    'none = 1'
+)
 ureg.define(  # automatically adds milli, hecta, etc.
     'bar = 10^5 Pa = b'
 )
@@ -89,16 +92,30 @@ ureg.define(
     'deg_F = deg_f = degF = degf'
 )
 
+# Common units with constants
+ureg.define(
+    '_10km = 10 * km = 10km'
+)
+ureg.define(
+    '_100km = 100 * km = 100km'
+)
+ureg.define(
+    '_1000km = 1000 * km = 1000km'
+)
+ureg.define(
+    '_100hPa = 100 * hPa = 100hPa'
+)
+
 # Import everything into top-level namespace
-from .utils import *  # noqa
-from .spherical import *  # noqa
-from .downloads import *  # noqa
-from .diff import *  # noqa
-from .var import *  # noqa
-from .spectral import *  # noqa
-from .waves import *  # noqa
-from .const import *  # noqa
-from . import internals
+from .utils import *  # noqa: F401, F403
+from .spherical import *  # noqa: F401, F403
+from .downloads import *  # noqa: F401, F403
+from .diff import *  # noqa: F401, F403
+from .var import *  # noqa: F401, F403
+from .spectral import *  # noqa: F401, F403
+from .waves import *  # noqa: F401, F403
+from .const import *  # noqa: F401, F403
+from . import internals  # noqa: F401
 
 # SCM versioning
 name = 'climpy'
