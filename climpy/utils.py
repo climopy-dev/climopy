@@ -155,7 +155,7 @@ def intersection(x, y1, y2, xlog=False):
 
 
 # TODO: Support pint quantities here
-def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=1):
+def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=None):
     """
     Track individual "lines" across lists of coordinates.
 
@@ -174,7 +174,8 @@ def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=1):
         tracks is limited by `ntrack`.
     ntrack : int, optional
         The maximum number of values to be simultaneously tracked. This can
-        be used to ignore spurious values in combination with `seed`.
+        be set to a low value to ignore spurious values in combination with `seed`.
+        The default value is the maximum `xs` sublist length.
 
     Returns
     -------
@@ -208,21 +209,28 @@ def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=1):
         ys = xs  # not pretty but this simplifies the loop code
     if seed is None:
         seed = []
-    if len(xs) != len(ys) or any(
-        np.atleast_1d(x).size != np.atleast_1d(y).size for x, y in zip(xs, ys)
+    if (
+        len(xs) != len(ys)
+        or any(np.atleast_1d(x).size != np.atleast_1d(y).size for x, y in zip(xs, ys))
     ):
         raise ValueError('Mismatched geometry between x and y lines.')
+    if ntrack is None:
+        ntrack = max(1 if np.isscalar(x) else len(x) for x in xs)
 
     # Arrays containing sorted lines in the output columns
-    # NOTE: Need twice the maximum number of simultaneously tracked lines
-    # as columns in the array if 'sep' is less than infinity. For example to
-    # generate the sequence with ntrack = 1 and sep == 5:
+    # NOTE: Need twice the maximum number of simultaneously tracked lines as columns
+    # in the array. For example the following sequence with ntrack == 1 and sep == 5:
     # [20, NaN]
     # [22, NaN]
     # [NaN, 40]  # bigger than sep, so "new" line
-    # [NaN, 42]
+    # For another example, the following sequence with ntrack == 2 and sep == np.inf:
+    # [18, 32, NaN]
+    # [20, 30, NaN]
+    # [NaN, 33, 40]
+    # The algorithm recognizes that even if ntrack is 2, if the remaining unmatched
+    # points are even *farther* from the remaining previous points, this is a new line.
+    nslots = 2 * ntrack
     seed = np.atleast_1d(seed)[:ntrack]
-    nslots = ntrack if sep == np.inf else 2 * ntrack
     with np.errstate(invalid='ignore'):
         xs_sorted = np.empty((len(xs) + 1, nslots)) * np.nan
         ys_sorted = np.empty((len(ys) + 1, nslots)) * np.nan
@@ -234,9 +242,11 @@ def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=1):
         # lines in previous group so every single point starts a new line.
         # NOTE: It's ok if columns are occupied by more than one "line" as
         # long as there are NaNs between them. This is really just for plotting.
-        ixs = np.atleast_1d(ixs)[:ntrack]
-        iys = np.atleast_1d(iys)[:ntrack]
+        ixs = np.atleast_1d(ixs)
+        iys = np.atleast_1d(iys)
         if ixs.size == 0 or np.all(np.isnan(xs_sorted[i - 1, :])):
+            ixs = ixs[:ntrack]
+            iys = iys[:ntrack]
             xs_sorted[i, :ixs.size] = ixs
             ys_sorted[i, :iys.size] = iys
             continue
@@ -286,11 +296,14 @@ def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=1):
             xs_sorted[i, jslots[j]] = ixs[int(idx)]
             ys_sorted[i, jslots[j]] = iys[int(idx)]
 
-    # Return lines, ignoring the "seed"
+    # Return lines ignoring the "seed" and removing empty tracks
+    mask = np.any(~np.isnan(xs_sorted[1:, :]), axis=0)
+    xs_sorted = xs_sorted[1:, mask]
+    ys_sorted = ys_sorted[1:, mask]
     if xs is not ys:
-        return xs_sorted[1:, :], ys_sorted[1:, :]
+        return xs_sorted, ys_sorted
     else:
-        return xs_sorted[1:, :]
+        return xs_sorted
 
 
 @quack._xarray_zerofind_wrapper
