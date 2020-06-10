@@ -155,7 +155,7 @@ def intersection(x, y1, y2, xlog=False):
 
 
 # TODO: Support pint quantities here
-def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, ntrack=1):
+def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=1):
     """
     Track individual "lines" across lists of coordinates.
 
@@ -165,9 +165,6 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, ntrack=1):
         The locations to be grouped into lines.
     ys : list of lists, optional
         The values corresponding to the locations `xs`.
-    track : bool, optional
-        Whether to track the lines. If ``False`` this function simply puts
-        the sublists into rows of a 2D array in no particular order.
     sep : float, optional
         The maximum separation between points belonging to the same "track".
         Larger separations will cause the algorithm to begin a new track. The
@@ -225,7 +222,7 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, ntrack=1):
     # [NaN, 40]  # bigger than sep, so "new" line
     # [NaN, 42]
     seed = np.atleast_1d(seed)[:ntrack]
-    nslots = ntrack if not track or sep == np.inf else 2 * ntrack
+    nslots = ntrack if sep == np.inf else 2 * ntrack
     with np.errstate(invalid='ignore'):
         xs_sorted = np.empty((len(xs) + 1, nslots)) * np.nan
         ys_sorted = np.empty((len(ys) + 1, nslots)) * np.nan
@@ -239,7 +236,7 @@ def linetrack(xs, ys=None, /, track=True, sep=np.inf, seed=None, ntrack=1):
         # long as there are NaNs between them. This is really just for plotting.
         ixs = np.atleast_1d(ixs)[:ntrack]
         iys = np.atleast_1d(iys)[:ntrack]
-        if not track or ixs.size == 0 or np.all(np.isnan(xs_sorted[i - 1, :])):
+        if ixs.size == 0 or np.all(np.isnan(xs_sorted[i - 1, :])):
             xs_sorted[i, :ixs.size] = ixs
             ys_sorted[i, :iys.size] = iys
             continue
