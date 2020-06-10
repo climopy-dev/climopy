@@ -536,7 +536,7 @@ def deriv_half(x, y, /, order=1, axis=0):
     return x, diff
 
 
-@quack._xarray_xy_xy_wrapper
+@quack._xarray_xy_y_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
 @docstring.add_snippets
 def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
@@ -610,9 +610,6 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
 
     # Pad edges simply with edge derivatives
     if not keepedges:
-        x = x[..., nhalf:-nhalf]
         diff = diff[..., nhalf:-nhalf]
-    if x.ndim > 1:
-        x = np.moveaxis(x, -1, axis)
     diff = np.moveaxis(diff, -1, axis)
-    return x, diff
+    return diff
