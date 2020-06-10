@@ -537,7 +537,7 @@ def deriv_half(x, y, /, order=1, axis=0):
 
 
 @quack._xarray_xy_y_wrapper
-@quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
+@quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.add_snippets
 def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
