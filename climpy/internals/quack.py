@@ -18,8 +18,8 @@ import itertools
 import numpy as np
 import xarray as xr
 import pint.util as putil
-from .. import ureg
 from . import warnings
+from ..units import ureg
 
 # Regex to find terms surrounded by curly braces that can be filled with str.format()
 REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside brackets

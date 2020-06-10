@@ -4,7 +4,10 @@ A variety of physical constants.
 # WARNING: Putting hyperlink on first line seems to break the sphinx docstring
 # because colon is interpreted as start of docstring. Must appear on line 2.
 import math
-from . import ureg
+import pint
+import functools
+import itertools
+from .units import ureg
 Quant = ureg.Quantity
 
 __all__ = [
@@ -101,3 +104,56 @@ kb = R / Na
 #: `Stefan-Boltzmann constant\
 #: <https://en.wikipedia.org/wiki/Stefan–Boltzmann_constant>`__
 sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
+
+# Add context definitions for otherwise impossible definitions
+# NOTE: This feature is extremely limited for now, e.g. defining the transformation
+# [length]**2 to [mass] does not work for [length]**-2 to [mass]**-1 and vice versa,
+# *additional* units like an extra [joule] cause this to fail, and adding things
+# together e.g. with [length]**2 + [mass] fails.
+# Do not use for now due to numerous limitations.
+# context = pint.Context('climpy')
+
+# Transform temperature to heat energy
+# for (source1, dest1, scale1), (source2, dest2, scale2) in itertools.product(
+#     (('[temperature]', '[energy] / [mass]', cp), ('', '', 1.0)),
+#     (('[pressure]', '[mass] / [area]', 1.0 / g), ('', '', 1.0)),
+# ):
+#     source = ' * '.join(filter(bool, (source1, source2)))
+#     dest = ' * '.join(filter(bool, (dest1, dest2)))
+#     scale = scale1 * scale2
+#     if source:
+#         context.add_transformation(
+#             source, dest, functools.partial(lambda scale, ureg, x : x * scale, scale)
+#         )
+#         context.add_transformation(
+#             dest, source, functools.partial(lambda scale, ureg, x : x / scale, scale)
+#         )
+
+# Transform pressure to mass per unit area
+# context.add_transformation(
+#     '[temperature]', '[energy] / [mass]', lambda ureg, x: x * cp
+# )
+# context.add_transformation(
+#     '[energy] / [mass]', '[temperature]', lambda ureg, x: x / cp
+# )
+# context.add_transformation(
+#     '[pressure]', '[mass] / [area]', lambda ureg, x: x / g
+# )
+# context.add_transformation(
+#     '[mass] / [area]', '[pressure]', lambda ureg, x: g * x
+# )
+
+# Transform energy from 'per unit mass' to 'per unit area' of Earth
+# for prefix in ('[energy]', '[energy] / [time]'):
+#     context.add_transformation(
+#         f'{prefix} / [area]', f'{prefix} / [mass]',
+#         lambda ureg, x: x * g / psfc,  # noqa: U100
+#     )
+#     context.add_transformation(
+#         f'{prefix} / [mass]', f'{prefix} / [area]',
+#         lambda ureg, x: x * psfc / g,  # noqa: U100
+#     )
+
+# Add context object
+# ureg.add_context(context)
+# ureg.enable_contexts(context)
