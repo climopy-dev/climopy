@@ -165,6 +165,12 @@ def _from_dataarray(
         elif dim in coords:  # e.g. ('lat', None) is instruction do delete dimension
             del coords[dim]
 
+    # Strip unit if present
+    for coord in coords.values():
+        if isinstance(coord.data, ureg.Quantity):
+            coord.attrs.setdefault('units', format(coord.data.units, '~'))
+            coord.data = coord.data.magnitude
+
     # Return new dataarray
     return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords)
 
