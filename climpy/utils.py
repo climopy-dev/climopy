@@ -399,11 +399,13 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     zys = []
     for k in range(nextra):
         # Get indices where values go positive to negative and vice versa
+        # NOTE: Always have False where NaNs present
         posneg = negpos = ()
-        if which in ('negpos', 'both'):
-            negpos = np.diff(np.sign(y[k, :])) > 0
-        if which in ('posneg', 'both'):
-            posneg = np.diff(np.sign(dy[k, :])) < 0
+        with np.errstate(invalid='ignore'):
+            if which in ('negpos', 'both'):
+                negpos = np.diff(np.sign(y[k, :])) > 0
+            if which in ('posneg', 'both'):
+                posneg = np.diff(np.sign(dy[k, :])) < 0
 
         # Interpolate to exact zero locations and values at those locations
         izxs = []
