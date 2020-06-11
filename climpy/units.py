@@ -2,8 +2,11 @@
 """
 Integration with `pint`.
 """
+import xarray as xr
 import numpy as np
 import pint
+
+__all__ = ['ureg']
 
 #: The `pint.UnitRegistry` used throughout climpy. Adds flexible aliases for
 #: the meter, Kelvin, degree Celsius, and degree Fahrenheit.
@@ -105,44 +108,3 @@ ureg.define(
 ureg.define(
     '_100hPa = 100 * hPa = 100hPa'
 )
-
-
-def concatenate(arrays, /, axis=0):
-    """
-    Concatenate multiple values into a new unitized object.
-
-    Parameters
-    ----------
-    arrays : Sequence of arrays
-        The items to be joined together.
-    axis : integer, optional
-        The array axis along which to join the arrays.
-
-    Returns
-    -------
-    `pint.Quantity`
-        New container with the value passed in and units corresponding to the first item.
-    """
-    if not arrays:
-        return arrays
-
-    # Combine ensuring units are identical
-    data = []
-    units = None
-    for a in arrays:
-        if not isinstance(a, ureg.Quantity):
-            a = ureg.Quantity(a, '')
-        if units is None:
-            units = a.units
-        a = a.to(units).magnitude
-        data.append(np.atleast_1d(a))
-
-    # Use masked array concatenate to ensure masks are preserved
-    # but convert to normal array if there are no masked values.
-    data = np.ma.concatenate(data, axis=axis)
-    if not np.any(data.mask):
-        data = np.asarray(data)
-
-    return ureg.Quantity(data, units)
-
-
