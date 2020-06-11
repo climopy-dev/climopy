@@ -139,7 +139,7 @@ def intersection(x, y1, y2, xlog=False):
     # Get intersection
     dy = y1 - y2
     if np.all(dy > 0) or np.all(dy < 0):
-        print('Warning: No intersections found.')
+        warnings._warn_climpy(f'No intersections found for data {y1!r} and {y2!r}.')
         return np.nan, np.nan
     idx, = np.where(np.diff(np.sign(dy)) != 0)  # e.g. 6, 2, -3 --> 1, 1, -1 --> 0, -2
     if idx.size > 1:
@@ -215,7 +215,12 @@ def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=None):
     ):
         raise ValueError('Mismatched geometry between x and y lines.')
     if ntrack is None:
-        ntrack = max(getattr(x, 'size', 1 if np.isscalar(x) else len(x)) for x in xs)
+        # WARNING: np.isscalar(np.array(1)) returns False so need to take
+        # great pains to avoid length of unsized object errors
+        ntrack = max(
+            size if (size := getattr(x, 'size', None)) is not None
+            else 1 if np.isscalar(x) else len(x) for x in xs
+        )
 
     # Arrays containing sorted lines in the output columns
     # NOTE: Need twice the maximum number of simultaneously tracked lines as columns
@@ -438,7 +443,7 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     # Return locations and values
     zxs, zys = linetrack(zxs, zys, **kwargs)
     if not zxs.size:
-        raise ValueError(f'No zeros found for data {y!r}.')
+        warnings._warn_climpy(f'No zeros found for data {y!r}.')
     if is1d:
         zxs, zys = zxs[0, :], zys[0, :]
     zxs = np.moveaxis(zxs, -1, axis)
