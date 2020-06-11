@@ -215,7 +215,7 @@ def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=None):
     ):
         raise ValueError('Mismatched geometry between x and y lines.')
     if ntrack is None:
-        ntrack = max(1 if np.isscalar(x) else len(x) for x in xs)
+        ntrack = max(getattr(x, 'size', 1 if np.isscalar(x) else len(x)) for x in xs)
 
     # Arrays containing sorted lines in the output columns
     # NOTE: Need twice the maximum number of simultaneously tracked lines as columns
