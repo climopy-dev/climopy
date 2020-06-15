@@ -156,6 +156,23 @@ _add_transformation(
     g,
 )
 
+# Lorenz energy terms per unit mass or per unit pressure
+_add_transformation(
+    '[energy] / [mass]',
+    '[energy] / [area] / [pressure]',
+    1.0 / g,
+)
+_add_transformation(
+    '[power] / [mass]',
+    '[power] / [area] / [pressure]',
+    1.0 / g,
+)
+_add_transformation(
+    '[power] * [length] / [mass]',
+    '[power] * [length] / [area] / [pressure]',
+    1.0 / g,
+)
+
 # Transformations used when integrating with respect to pressure
 # NOTE: Converging geopotential height times pressures to J / m^2 does
 # not need transformation. Functionally this is (height * g) / g to get
