@@ -111,49 +111,86 @@ sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
 # *additional* units like an extra [joule] cause this to fail, and adding things
 # together e.g. with [length]**2 + [mass] fails.
 # Do not use for now due to numerous limitations.
-# context = pint.Context('climpy')
+context = pint.Context('climpy')
 
 # Transform temperature to heat energy
-# for (source1, dest1, scale1), (source2, dest2, scale2) in itertools.product(
-#     (('[temperature]', '[energy] / [mass]', cp), ('', '', 1.0)),
-#     (('[pressure]', '[mass] / [area]', 1.0 / g), ('', '', 1.0)),
-# ):
-#     source = ' * '.join(filter(bool, (source1, source2)))
-#     dest = ' * '.join(filter(bool, (dest1, dest2)))
-#     scale = scale1 * scale2
-#     if source:
-#         context.add_transformation(
-#             source, dest, functools.partial(lambda scale, ureg, x : x * scale, scale)
-#         )
-#         context.add_transformation(
-#             dest, source, functools.partial(lambda scale, ureg, x : x / scale, scale)
-#         )
+def _add_transformation(source, dest, scale):
+    """
+    Add a custom unit transformation.
+    """
+    context.add_transformation(
+        source, dest, functools.partial(lambda scale, ureg, x : x * scale, scale)
+    )
+    context.add_transformation(
+        dest, source, functools.partial(lambda scale, ureg, x : x / scale, scale)
+    )
 
-# Transform pressure to mass per unit area
-# context.add_transformation(
-#     '[temperature]', '[energy] / [mass]', lambda ureg, x: x * cp
-# )
-# context.add_transformation(
-#     '[energy] / [mass]', '[temperature]', lambda ureg, x: x / cp
-# )
-# context.add_transformation(
-#     '[pressure]', '[mass] / [area]', lambda ureg, x: x / g
-# )
-# context.add_transformation(
-#     '[mass] / [area]', '[pressure]', lambda ureg, x: g * x
-# )
+# Dry static energy components, their fluxes, and their flux convergences
+_add_transformation(
+    '[temperature]',
+    '[energy] / [mass]',
+    cp,
+)
+_add_transformation(
+    '[temperature] / [time]',
+    '[power] / [mass]',
+    cp,
+)
+_add_transformation(
+    '[temperature] * [length] / [time]',
+    '[power] * [length] / [mass]',
+    cp,
+)
+_add_transformation(
+    '[length]',
+    '[energy] / [mass]',
+    g,  # geopotential
+)
+_add_transformation(
+    '[length] / [time]',
+    '[power] / [mass]',
+    g,
+)
+_add_transformation(
+    '[length] ** 2 / [time]',
+    '[power] * [length] / [mass]',
+    g,
+)
 
-# Transform energy from 'per unit mass' to 'per unit area' of Earth
-# for prefix in ('[energy]', '[energy] / [time]'):
-#     context.add_transformation(
-#         f'{prefix} / [area]', f'{prefix} / [mass]',
-#         lambda ureg, x: x * g / psfc,  # noqa: U100
-#     )
-#     context.add_transformation(
-#         f'{prefix} / [mass]', f'{prefix} / [area]',
-#         lambda ureg, x: x * psfc / g,  # noqa: U100
-#     )
+# Transformations used when integrating with respect to pressure
+# NOTE: Converging geopotential height times pressures to J / m^2 does
+# not need transformation. Functionally this is (height * g) / g to get
+# geopotential then convert the pressure integration to a mass integration.
+_add_transformation(
+    '[energy] * [pressure] / [mass]',
+    '[energy] / [area]',
+    1.0 / g,
+)
+_add_transformation(
+    '[power] * [pressure] / [mass]',
+    '[power] / [area]',
+    1.0 / g,
+)
+_add_transformation(
+    '[power] * [pressure] * [length] / [mass]',
+    '[power] * [length] / [area]',
+    1.0 / g,
+)
+_add_transformation(
+    '[temperature] * [pressure]',
+    '[energy] / [area]',
+    cp / g,
+)
+_add_transformation(
+    '[temperature] * [pressure] / [time]',
+    '[power] / [area]',
+    cp / g,
+)
+_add_transformation(
+    '[temperature] * [pressure] * [length] / [time]',
+    '[power] * [length] / [area]',
+    cp / g,
+)
 
 # Add context object
-# ureg.add_context(context)
-# ureg.enable_contexts(context)
+ureg.enable_contexts(context)
