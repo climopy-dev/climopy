@@ -110,7 +110,6 @@ sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
 # [length]**2 to [mass] does not work for [length]**-2 to [mass]**-1 and vice versa,
 # *additional* units like an extra [joule] cause this to fail, and adding things
 # together e.g. with [length]**2 + [mass] fails.
-# Do not use for now due to numerous limitations.
 context = pint.Context('climpy')
 
 # Transform temperature to heat energy
