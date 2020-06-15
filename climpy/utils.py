@@ -3,6 +3,9 @@
 Includes miscellaneous mathematical functions.
 """
 import numpy as np
+import datetime
+import pandas as pd
+from functools import partial
 from .diff import deriv_half, deriv_uneven
 from .internals import quack, warnings
 
@@ -33,17 +36,37 @@ def dt2cal(dt):
     """
     # See: https://stackoverflow.com/a/56260054/4970632
     # Allocate output
+    dt = np.asarray(dt)
     out = np.empty(dt.shape + (6,), dtype='u4')
 
     # Decompose calendar floors
     # NOTE: M8 is datetime64, m8 is timedelta64
-    Y, M, D, h, m, s = [dt.astype(f'M8[{x}]') for x in 'YMDhms']
-    out[..., 0] = Y + 1970  # Gregorian Year
-    out[..., 1] = (M - Y) + 1  # month
-    out[..., 2] = (D - M) + 1  # day
-    out[..., 3] = (dt - D).astype('m8[h]')  # hour
-    out[..., 4] = (dt - h).astype('m8[m]')  # minute
-    out[..., 5] = (dt - m).astype('m8[s]')  # second
+    if isinstance(dt, pd.DatetimeIndex):
+        # Datatype is subdtype of numpy.datetime64 but includes builtin
+        # methods for getting calendar properties
+        out[..., 0] = dt.year
+        out[..., 1] = dt.month
+        out[..., 2] = dt.day
+        out[..., 3] = dt.hour
+        out[..., 4] = dt.minute
+        out[..., 5] = dt.second
+    elif np.issubdtype(dt, np.datetime64):
+        Y, M, D, h, m, s = [dt.astype(f'M8[{x}]') for x in 'YMDhms']
+        out[..., 0] = Y + 1970  # Gregorian Year
+        out[..., 1] = (M - Y) + 1  # month
+        out[..., 2] = (D - M) + 1  # day
+        out[..., 3] = (dt - D).astype('m8[h]')  # hour
+        out[..., 4] = (dt - h).astype('m8[m]')  # minute
+        out[..., 5] = (dt - m).astype('m8[s]')  # second
+    elif dt.dtype == 'object' and all(isinstance(_, datetime.datetime) for _ in dt.flat):  # noqa: E501
+        out[..., 0] = np.vectorize(partial(getattr, dt, 'year'))()
+        out[..., 1] = np.vectorize(partial(getattr, dt, 'month'))()
+        out[..., 2] = np.vectorize(partial(getattr, dt, 'day'))()
+        out[..., 3] = np.vectorize(partial(getattr, dt, 'hour'))()
+        out[..., 4] = np.vectorize(partial(getattr, dt, 'minute'))()
+        out[..., 5] = np.vectorize(partial(getattr, dt, 'second'))()
+    else:
+        raise ValueError(f'Invalid data type for dt2cal: {dt.dtype}')
     return out
 
 

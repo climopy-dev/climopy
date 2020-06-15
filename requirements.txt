@@ -3,4 +3,5 @@
 numpy
 scipy
 pint
+pandas
 xarray
