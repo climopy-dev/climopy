@@ -124,7 +124,9 @@ def _add_transformation(source, dest, scale):
         dest, source, functools.partial(lambda scale, ureg, x : x / scale, scale)
     )
 
-# Dry static energy components, their fluxes, and their flux convergences
+# Dry static energy components, their rates of change (1/s), their fluxes (m/s),
+# and their *absolute* fluxes integrated over the latitude band (m^2/s)
+# Thermal energy
 _add_transformation(
     '[temperature]',
     '[energy] / [mass]',
@@ -141,9 +143,16 @@ _add_transformation(
     cp,
 )
 _add_transformation(
+    '[temperature] * [area] / [time]',
+    '[power] * [area] / [mass]',
+    cp,
+)
+
+# Geopotential energy
+_add_transformation(
     '[length]',
     '[energy] / [mass]',
-    g,  # geopotential
+    g,
 )
 _add_transformation(
     '[length] / [time]',
@@ -151,12 +160,17 @@ _add_transformation(
     g,
 )
 _add_transformation(
-    '[length] ** 2 / [time]',
+    '[length] * [length] / [time]',
     '[power] * [length] / [mass]',
     g,
 )
+_add_transformation(
+    '[length] * [area] / [time]',
+    '[power] * [area] / [mass]',
+    g,
+)
 
-# Lorenz energy terms per unit mass or per unit pressure
+# Static energy or Lorenz energy measured in energy per unit mass
 _add_transformation(
     '[energy] / [mass]',
     '[energy] / [area] / [pressure]',
@@ -172,10 +186,37 @@ _add_transformation(
     '[power] * [length] / [area] / [pressure]',
     1.0 / g,
 )
+_add_transformation(
+    '[power] * [area] / [mass]',
+    '[power] / [pressure]',
+    1.0 / g,
+)
 
-# Transformations used when integrating with respect to pressure
-# NOTE: Converging geopotential height times pressures to J / m^2 does
-# not need transformation. Functionally this is (height * g) / g to get
+# Thermal energy integrated with respect to pressure
+_add_transformation(
+    '[temperature] * [pressure]',
+    '[energy] / [area]',
+    cp / g,
+)
+_add_transformation(
+    '[temperature] * [pressure] / [time]',
+    '[power] / [area]',
+    cp / g,
+)
+_add_transformation(
+    '[temperature] * [pressure] * [length] / [time]',
+    '[power] * [length] / [area]',
+    cp / g,
+)
+_add_transformation(
+    '[temperature] * [pressure] * [area] / [time]',
+    '[power]',
+    cp / g,
+)
+
+# Geopotential or static energy integrated with respect to pressure
+# NOTE: Converting integrated geopotential height m * hPa to J / m^2 does
+# not need extra transformation. Functionally this is (height * g) / g to get
 # geopotential then convert the pressure integration to a mass integration.
 _add_transformation(
     '[energy] * [pressure] / [mass]',
@@ -193,19 +234,9 @@ _add_transformation(
     1.0 / g,
 )
 _add_transformation(
-    '[temperature] * [pressure]',
-    '[energy] / [area]',
-    cp / g,
-)
-_add_transformation(
-    '[temperature] * [pressure] / [time]',
-    '[power] / [area]',
-    cp / g,
-)
-_add_transformation(
-    '[temperature] * [pressure] * [length] / [time]',
-    '[power] * [length] / [area]',
-    cp / g,
+    '[power] * [pressure] * [area] / [mass]',
+    '[power]',
+    1.0 / g,
 )
 
 # Add context object
