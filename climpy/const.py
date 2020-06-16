@@ -124,120 +124,42 @@ def _add_transformation(source, dest, scale):
         dest, source, functools.partial(lambda scale, ureg, x : x / scale, scale)
     )
 
-# Dry static energy components, their rates of change (1/s), their fluxes (m/s),
+# Static energy components, their rates of change (1/s), their fluxes (m/s),
 # and their *absolute* fluxes integrated over the latitude band (m^2/s)
-# Thermal energy
-_add_transformation(
-    '[temperature]',
-    '[energy] / [mass]',
-    cp,
-)
-_add_transformation(
-    '[temperature] / [time]',
-    '[power] / [mass]',
-    cp,
-)
-_add_transformation(
-    '[temperature] * [length] / [time]',
-    '[power] * [length] / [mass]',
-    cp,
-)
-_add_transformation(
-    '[temperature] * [area] / [time]',
-    '[power] * [area] / [mass]',
-    cp,
-)
-
-# Geopotential energy
-_add_transformation(
-    '[length]',
-    '[energy] / [mass]',
-    g,
-)
-_add_transformation(
-    '[length] / [time]',
-    '[power] / [mass]',
-    g,
-)
-_add_transformation(
-    '[length] * [length] / [time]',
-    '[power] * [length] / [mass]',
-    g,
-)
-_add_transformation(
-    '[length] * [area] / [time]',
-    '[power] * [area] / [mass]',
-    g,
-)
-
-# Static energy or Lorenz energy measured in energy per unit mass
-_add_transformation(
-    '[energy] / [mass]',
-    '[energy] / [area] / [pressure]',
-    1.0 / g,
-)
-_add_transformation(
-    '[power] / [mass]',
-    '[power] / [area] / [pressure]',
-    1.0 / g,
-)
-_add_transformation(
-    '[power] * [length] / [mass]',
-    '[power] * [length] / [area] / [pressure]',
-    1.0 / g,
-)
-_add_transformation(
-    '[power] * [area] / [mass]',
-    '[power] / [pressure]',
-    1.0 / g,
-)
-
-# Thermal energy integrated with respect to pressure
-_add_transformation(
-    '[temperature] * [pressure]',
-    '[energy] / [area]',
-    cp / g,
-)
-_add_transformation(
-    '[temperature] * [pressure] / [time]',
-    '[power] / [area]',
-    cp / g,
-)
-_add_transformation(
-    '[temperature] * [pressure] * [length] / [time]',
-    '[power] * [length] / [area]',
-    cp / g,
-)
-_add_transformation(
-    '[temperature] * [pressure] * [area] / [time]',
-    '[power]',
-    cp / g,
-)
-
-# Geopotential or static energy integrated with respect to pressure
-# NOTE: Converting integrated geopotential height m * hPa to J / m^2 does
-# not need extra transformation. Functionally this is (height * g) / g to get
-# geopotential then convert the pressure integration to a mass integration.
-_add_transformation(
-    '[energy] * [pressure] / [mass]',
-    '[energy] / [area]',
-    1.0 / g,
-)
-_add_transformation(
-    '[power] * [pressure] / [mass]',
-    '[power] / [area]',
-    1.0 / g,
-)
-_add_transformation(
-    '[power] * [pressure] * [length] / [mass]',
-    '[power] * [length] / [area]',
-    1.0 / g,
-)
-_add_transformation(
-    '[power] * [pressure] * [area] / [mass]',
-    '[power]',
-    1.0 / g,
-)
+for suffix in ('', ' / [time]', '* [length] / [time]', '* [area] / [time]'):
+    # Thermal energy
+    _add_transformation(
+        '[temperature]' + suffix,
+        '[energy] / [mass]' + suffix,
+        cp,
+    )
+    # Geopotential energy
+    _add_transformation(
+        '[length]' + suffix,
+        '[energy] / [mass]' + suffix,
+        g,
+    )
+    # Static energy or Lorenz energy converted to per unit pressure
+    _add_transformation(
+        '[energy] / [mass]' + suffix,
+        '[energy] / [area] / [pressure]' + suffix,
+        1.0 / g,
+    )
+    # Thermal energy integrated with respect to pressure
+    _add_transformation(
+        '[temperature] * [pressure]' + suffix,
+        '[energy] / [area]' + suffix,
+        cp / g,
+    )
+    # Geopotential or static energy integrated with respect to pressure
+    # NOTE: Converting integrated geopotential height m * hPa to J / m^2 does
+    # not need extra transformation. Functionally this is (height * g) / g to get
+    # geopotential then convert the pressure integration to a mass integration.
+    _add_transformation(
+        '[energy] * [pressure] / [mass]' + suffix,
+        '[energy] / [area]' + suffix,
+        1.0 / g,
+    )
 
 # Add context object
 ureg.enable_contexts(context)
