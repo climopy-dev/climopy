@@ -3,16 +3,35 @@
 Warnings used internally by climpy.
 """
 import contextlib
+import re
+import sys
 import warnings
+
 import pint
+
 warnings.simplefilter('error', category=pint.UnitStrippedWarning)
+ClimoPyWarning = type('ClimoPyWarning', (UserWarning,), {})
 
 
-def _warn_climpy(message):
+def _warn_climopy(message):
     """
-    Emit a basic warning. This will be further developed in the future.
+    Emit a `ClimoPyWarning` and try to show the stack level corresponding
+    to user code by jumping to the stack outside of climopy, numpy, scipy,
+    pandas, xarray, pint, and scipy.
     """
-    warnings.warn(message, stacklevel=3)  # 2, plus get out of this function
+    frame = sys._getframe()
+    stacklevel = 1
+    while True:
+        if frame is None:
+            break  # when called in embedded context may hit frame is None
+        if not re.match(
+            r'\A(climopy|numpy|scipy|xarray|pandas|pint).',
+            frame.f_globals.get('__name__', '')
+        ):
+            break
+        frame = frame.f_back
+        stacklevel += 1
+    warnings.warn(message, ClimoPyWarning, stacklevel=stacklevel)
 
 
 @contextlib.contextmanager
