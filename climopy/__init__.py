@@ -10,7 +10,7 @@ from .utils import *  # noqa: F401, F403
 from .spherical import *  # noqa: F401, F403
 from .downloads import *  # noqa: F401, F403
 from .diff import *  # noqa: F401, F403
-from .var import *  # noqa: F401,t short F403
+from .var import *  # noqa: F401, F403
 from .spectral import *  # noqa: F401, F403
 from .waves import *  # noqa: F401, F403
 from . import const  # noqa: F401
