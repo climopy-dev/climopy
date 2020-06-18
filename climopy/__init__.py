@@ -4,18 +4,17 @@ Instantiate the `pint.UnitRegistry` unit registry.
 """
 # Import functions to top-level
 # NOTE: Syntax is 'from climopy import ureg, const'
-import pint as _pint
 import pkg_resources as _pkg
-from . import const
-from . import internals
 from .units import *  # noqa: F401, F403
 from .utils import *  # noqa: F401, F403
 from .spherical import *  # noqa: F401, F403
 from .downloads import *  # noqa: F401, F403
 from .diff import *  # noqa: F401, F403
-from .var import *  # noqa: F401, F403
+from .var import *  # noqa: F401,t short F403
 from .spectral import *  # noqa: F401, F403
 from .waves import *  # noqa: F401, F403
+from . import const  # noqa: F401
+from . import internals  # noqa: F401
 
 # SCM versioning
 name = 'climopy'

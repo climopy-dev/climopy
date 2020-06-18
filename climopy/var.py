@@ -686,7 +686,7 @@ def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=0):
     corr, rednoise, rednoise_spectrum
     """
     # Best-fit function
-    curve = lambda t, tau: np.exp(-t * dt / tau)
+    curve = lambda t, tau: np.exp(-t * dt / tau)  # noqa: E731
     nlag_fit = nlag_fit or 50
     lags_fit = np.arange(0, nlag_fit)
 

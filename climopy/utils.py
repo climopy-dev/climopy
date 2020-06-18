@@ -152,10 +152,10 @@ def intersection(x, y1, y2, xlog=False):
     y1 = np.asanyarray(y1)
     y2 = np.asanyarray(y2)
     if xlog:  # transform x coordinates optionally
-        transform = lambda x: np.log10(x)
-        itransform = lambda x: 10 ** x
+        transform = lambda x: np.log10(x)  # noqa: E731
+        itransform = lambda x: 10 ** x  # noqa: E731
     else:
-        transform = itransform = lambda x: x
+        transform = itransform = lambda x: x  # noqa: E731
     if x.size != y1.size or x.size != y2.size:
         raise ValueError(f'Incompatible sizes {x.size=}, {y1.size=}, {y2.size=}.')
 
@@ -178,7 +178,7 @@ def intersection(x, y1, y2, xlog=False):
 
 
 # TODO: Support pint quantities here
-def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=None):
+def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=None):  # noqa: E225
     """
     Track individual "lines" across lists of coordinates.
 
@@ -241,7 +241,7 @@ def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=None):
         # WARNING: np.isscalar(np.array(1)) returns False so need to take
         # great pains to avoid length of unsized object errors
         ntrack = max(
-            size if (size := getattr(x, 'size', None)) is not None
+            size if (size := getattr(x, 'size', None)) is not None  # noqa: E203, E231
             else 1 if np.isscalar(x) else len(x) for x in xs
         )
 

@@ -2,8 +2,6 @@
 """
 Integration with `pint`.
 """
-import xarray as xr
-import numpy as np
 import pint
 
 __all__ = ['ureg']

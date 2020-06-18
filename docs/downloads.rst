@@ -10,7 +10,7 @@ Reanalysis downloads
 --------------------
 
 Easily download ERA-interim reanalysis data with the
-`~climopy.downloads.eraint` function! Hoping to expand this to provide
+`~climopy.downloads.era` function! Hoping to expand this to provide
 tools for downloading MERRA reanalysis data, NCEP-NCAR reanalysis data,
 and archived CMIP model data.
 
@@ -32,7 +32,7 @@ and archived CMIP model data.
            print(
                f'\n\nTemperature tendency for years {year}, months {month}, file {file}.'
            )
-           climo.eraint(
+           climo.era(
                ('tdt', 'msp'),
                'oper',
                'ml',

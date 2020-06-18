@@ -6,7 +6,6 @@ A variety of physical constants.
 import math
 import pint
 import functools
-import itertools
 from .units import ureg
 Quant = ureg.Quantity
 
@@ -111,17 +110,15 @@ sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
 # *additional* units like an extra [joule] cause this to fail, and adding things
 # together e.g. with [length]**2 + [mass] fails.
 context = pint.Context('climopy')
-
-# Transform temperature to heat energy
-def _add_transformation(source, dest, scale):
+def _add_transformation(source, dest, scale):  # noqa: E302
     """
     Add a custom unit transformation.
     """
     context.add_transformation(
-        source, dest, functools.partial(lambda scale, ureg, x : x * scale, scale)
+        source, dest, functools.partial(lambda scale, ureg, x: x * scale, scale)
     )
     context.add_transformation(
-        dest, source, functools.partial(lambda scale, ureg, x : x / scale, scale)
+        dest, source, functools.partial(lambda scale, ureg, x: x / scale, scale)
     )
 
 # Static energy components, their rates of change from flux convergence or
@@ -130,7 +127,7 @@ def _add_transformation(source, dest, scale):
 # NOTE: Converting integrated geopotential height m * hPa to J / m^2 does
 # not need extra transformation. Functionally this is (height * g) / g to get
 # geopotential then convert the pressure integration to a mass integration.
-for suffix in ('', ' / [time]', '* [length] / [time]', '* [area] / [time]'):
+for suffix in ('', ' / [time]', '* [length] / [time]', '* [area] / [time]'):  # noqa: E305, E501
     # Thermal energy
     _add_transformation(
         '[temperature]' + suffix,
