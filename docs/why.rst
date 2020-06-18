@@ -1,2 +1,2 @@
-Why ClimPy?
------------
+Why ClimoPy?
+------------

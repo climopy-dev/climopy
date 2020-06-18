@@ -1,2 +1,2 @@
-Using ClimPy
-------------
+Using ClimoPy
+-------------
