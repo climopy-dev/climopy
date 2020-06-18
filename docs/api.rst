@@ -4,7 +4,7 @@ API Reference
 Unit registry
 -------------
 
-.. currentmodule:: climpy
+.. currentmodule:: climopy
 
 .. autosummary::
    :toctree: api
@@ -14,64 +14,64 @@ Unit registry
 Dataset downloads
 -----------------
 
-.. automodule:: climpy.downloads
+.. automodule:: climopy.downloads
 
-.. automodsumm:: climpy.downloads
+.. automodsumm:: climopy.downloads
    :toctree: api
 
 Finite differences
 ------------------
 
-.. automodule:: climpy.diff
+.. automodule:: climopy.diff
 
-.. automodsumm:: climpy.diff
+.. automodsumm:: climopy.diff
    :toctree: api
 
 Spectral analysis
 -----------------
 
-.. automodule:: climpy.spectral
+.. automodule:: climopy.spectral
 
-.. automodsumm:: climpy.spectral
+.. automodsumm:: climopy.spectral
    :toctree: api
 
 Variability analysis
 --------------------
 
-.. automodule:: climpy.var
+.. automodule:: climopy.var
 
-.. automodsumm:: climpy.var
+.. automodsumm:: climopy.var
    :toctree: api
 
 Spherical coordinates
 ---------------------
 
-.. automodule:: climpy.spherical
+.. automodule:: climopy.spherical
 
-.. automodsumm:: climpy.spherical
+.. automodsumm:: climopy.spherical
    :toctree: api
 
 Wave diagnostics
 ----------------
 
-.. automodule:: climpy.waves
+.. automodule:: climopy.waves
 
-.. automodsumm:: climpy.waves
+.. automodsumm:: climopy.waves
    :toctree: api
 
 Miscellaneous utilities
 -----------------------
 
-.. automodule:: climpy.utils
+.. automodule:: climopy.utils
 
-.. automodsumm:: climpy.utils
+.. automodsumm:: climopy.utils
    :toctree: api
 
 Physical constants
 ------------------
 
-.. automodule:: climpy.const
+.. automodule:: climopy.const
 
-.. automodsumm:: climpy.const
+.. automodsumm:: climopy.const
    :toctree: api
 

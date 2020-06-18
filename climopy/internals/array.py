@@ -45,7 +45,7 @@ class _ArrayContext(object):
         -------
         The general usage is as follows:
 
-        >>> from climpy.internals import array
+        >>> from climopy.internals import array
         ... with array._ArrayContext(data1, data2, **kwargs) as context:
         ...     # Get flattened data
         ...     data1, data2 = context.data
@@ -58,7 +58,7 @@ class _ArrayContext(object):
 
         Here is a worked example used with the EOF algorithm:
 
-        >>> from climpy.internals.array import logger, logging, _ArrayContext
+        >>> from climopy.internals.array import logger, logging, _ArrayContext
         ... logger.setLevel(logging.INFO)
         ... import xarray as xr
         ... import numpy as np
@@ -280,7 +280,7 @@ class _ArrayContext(object):
         insert_left, insert_right : int, optional
             Number of new dimensions added to the left or right of the array.
             Dimensions can only be added to the left or the right of the
-            unflattened middle-dimensions of the array. For example, `climpy.eof`
+            unflattened middle-dimensions of the array. For example, `climopy.eof`
             adds a new `neof` dimension so that dimensions are transformed
             from ``(nextra, ntime, nspace)`` to ``(nextra, neof, ntime, nspace)``.
             Use lists of numbers to transform input arguments differently.
@@ -298,7 +298,7 @@ class _ArrayContext(object):
         # Check input array shapes
         # WARNING: The *flattened* dimensions of the new data must match the size
         # of the *flattened* dimensions of the input data. Flattened dimensions should
-        # only be iterated over or reduced to length 1 by climpy functions like `eof`.
+        # only be iterated over or reduced to length 1 by climopy functions like `eof`.
         shape_template = self._shapes[0]
         if not all(shape == shape_template for shape in self._shapes):
             raise ValueError(

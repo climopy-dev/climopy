@@ -9,16 +9,16 @@ Empirical orthogonal functions
 1-dimensional EOFs
 ------------------
 
-Use the `~climpy.oa.eof` function to calculate empirical orthogonal
+Use the `~climopy.oa.eof` function to calculate empirical orthogonal
 functions and their associated eigenvalues and principle component
 series. The below tests our function with an artifical “zonal-mean zonal
-wind” dataset, generated with `~climpy.oa.rednoise`. The peak strength
+wind” dataset, generated with `~climopy.oa.rednoise`. The peak strength
 and peak strength position vary in time (the *y*-axis). The PCs are
 shown in the panel on the right.
 
 .. code:: ipython3
 
-    import climpy
+    import climopy as climo
     import numpy as np
     import proplot as plot
     plot.nbsetup()
@@ -28,15 +28,15 @@ shown in the panel on the right.
         # Construct a see-saw of scale factors, varying from some number **smaller** than zero to **larger** than zero, and the 
         # **position** of the **center** of that see-saw (i.e. where factors equal 1) is a red noise time series.
         # Actually it didn't work and was dumb, nevermind
-        # mid = climpy.rednoise(nt, 0.95, mean=np.pi/4, stdev=np.pi/24)
+        # mid = climo.rednoise(nt, 0.95, mean=np.pi/4, stdev=np.pi/24)
         # data = data*(1 + ((x[:,None] - mid[None,:]))) # so the scaling looks more linear
         
         # Just impose a random *phase* and *amplitude*.
         x = np.linspace(0, np.pi/2, nx)
         t = np.linspace(0, nt/4, nt)
         # scale1, scale2 = np.atleast_1d(scale1), np.atleast_1d(scale2)
-        phase = climpy.rednoise(nt, alpha, mean=0, stdev=np.pi/12)
-        amplitude = climpy.rednoise(nt, alpha, mean=1, stdev=0.2)
+        phase = climo.rednoise(nt, alpha, mean=0, stdev=np.pi/12)
+        amplitude = climo.rednoise(nt, alpha, mean=1, stdev=0.2)
         data = scale2*amplitude[None,:]*np.sin(scale1*phase[None,:] + (x*2)[:,None])**2 # big scale equals strong phase effect
         return x, t, data
 
@@ -45,7 +45,7 @@ shown in the panel on the right.
 .. code:: ipython3
 
     import numpy as np
-    import climpy
+    import climopy as climo
     import proplot as plot
     plot.nbsetup()
     # Coordinates
@@ -53,7 +53,7 @@ shown in the panel on the right.
     t, x, data = eofdata(500, 500, alpha=0.98) # 500 x, 500 times
     
     # Next get the EOFs
-    evals, nstar, projs, pcs = climpy.eof(data, record=-1, space=[-2], neof=5)
+    evals, nstar, projs, pcs = climo.eof(data, record=-1, space=[-2], neof=5)
     print('Data', data.shape)
     print('Evals', evals.shape, 'Nstar', nstar.shape, 'Projection', projs.shape, 'PCs', pcs.shape)
     
@@ -90,7 +90,7 @@ shown in the panel on the right.
 N-dimensional EOFs
 ------------------
 
-Easily use `~climpy.oa.eof` to get an EOF along **arbitrary sample
+Easily use `~climopy.oa.eof` to get an EOF along **arbitrary sample
 dimensions** – for example, latitude, longitude, and pressure. The below
 demonstrates this for an **artificial** zonal-mean zonal wind dataset
 with a “baroclinic” mode and a “barotropic” mode.
@@ -98,7 +98,7 @@ with a “baroclinic” mode and a “barotropic” mode.
 .. code:: ipython3
 
     import numpy as np
-    import climpy
+    import climopy as climo
     import proplot as plot
     import scipy.stats as st
     plot.nbsetup()
@@ -122,7 +122,7 @@ with a “baroclinic” mode and a “barotropic” mode.
     y = x # the extra dimension; use same coordinates
     
     # Get the EOFs
-    evals, nstar, projs, pcs = climpy.eof(data, record=-1, space=(-3,-2), neof=5, debug=True)
+    evals, nstar, projs, pcs = climo.eof(data, record=-1, space=(-3,-2), neof=5, debug=True)
     print('Data', data.shape)
     print('Evals', evals.shape, 'Nstar', nstar.shape, 'Projection', projs.shape, 'PCs', pcs.shape)
     f, axs = plot.subplots(innercolorbars='b', axwidth=3, ncols=2, span=0, share=0, wspace=0.5)

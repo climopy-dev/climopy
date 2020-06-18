@@ -3,12 +3,12 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-ClimPy
-======
+ClimoPy
+=======
 
 This package is meant to help climate scientists complete a variety of data analysis tasks.
 It provides handy functions for objective and statistical analysis methods, deriving physical quantities, and downloading archived observational and model data.
-The Github page is `here <https://github.com/lukelbd/climpy>`__.
+The Github page is `here <https://github.com/lukelbd/climopy>`__.
 
 Please note this package is a work-in-progress! The examples and documentation
 are incomplete, and undiscovered bugs may exist.

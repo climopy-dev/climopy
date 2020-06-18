@@ -25,14 +25,14 @@ import os
 import sys
 import datetime
 
-# Add climpy to path for sphinx-automodapi
+# Add climopy to path for sphinx-automodapi
 sys.path.insert(0, os.path.abspath('..'))
 
 
 # -- Project information -----------------------------------------------------
 
 _today = datetime.datetime.today()
-project = 'ClimPy'
+project = 'ClimoPy'
 copyright = f'{_today.year}, Luke L. B. Davis'
 author = 'Luke L. B. Davis'
 
@@ -68,9 +68,9 @@ extensions = [
 ]
 
 extlinks = {
-    'issue': ('https://github.com/lukelbd/climpy/issues/%s', 'GH#'),
-    'commit': ('https://github.com/lukelbd/climpy/commit/%s', '@'),
-    'pr': ('https://github.com/lukelbd/climpy/pull/%s', 'GH#'),
+    'issue': ('https://github.com/lukelbd/climopy/issues/%s', 'GH#'),
+    'commit': ('https://github.com/lukelbd/climopy/commit/%s', '@'),
+    'pr': ('https://github.com/lukelbd/climopy/pull/%s', 'GH#'),
 }
 
 # Do not run doctest tests, these are just to show syntax and expected
@@ -219,7 +219,7 @@ html_favicon = os.path.join('_static', 'logo_blank.ico')
 # -- Options for HTMLHelp output ---------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'climpydoc'
+htmlhelp_basename = 'climopydoc'
 
 
 # -- Options for LaTeX output ------------------------------------------------
@@ -246,7 +246,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'climpy.tex', 'ClimPy Documentation',
+    (master_doc, 'climopy.tex', 'ClimoPy Documentation',
      'Luke L. B. Davis', 'manual'),
 ]
 
@@ -256,8 +256,13 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'climpy', 'ClimPy Documentation',
-     [author], 1)
+    (
+        master_doc,
+        'climopy',
+        'ClimoPy Documentation',
+        [author],
+        1
+    )
 ]
 
 
@@ -267,9 +272,15 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'climpy', 'ClimPy Documentation',
-     author, 'climpy', 'One line description of project.',
-     'Miscellaneous'),
+    (
+        master_doc,
+        'climopy',
+        'ClimoPy Documentation',
+        author,
+        'climopy',
+        'Tools for working with climatological data.',
+        'Miscellaneous'
+    )
 ]
 
 

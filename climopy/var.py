@@ -363,9 +363,9 @@ def eof(
     Example
     -------
 
-    >>> from climpy.internals.array import logger, logging
+    >>> from climopy.internals.array import logger, logging
     ... import xarray as xr
-    ... import climpy
+    ... import climopy as climo
     ... data = xr.DataArray(
     ...     np.random.rand(10, 6, 100, 40, 20),
     ...     dims=('member', 'run', 'time', 'plev', 'lat'),
@@ -377,7 +377,7 @@ def eof(
     ...         'lat': np.linspace(-90.0, 90.0, 20),
     ...     }
     ... )
-    ... pcs, projs, evals, nstars = climpy.eof(data, axis_time=2, axis_space=(3, 4))
+    ... pcs, projs, evals, nstars = climo.eof(data, axis_time=2, axis_space=(3, 4))
 
     References
     ----------
@@ -528,10 +528,10 @@ def hist(bins, y, /, axis=0):
     Example
     -------
 
-    >>> import climpy
+    >>> import climopy as climo
     ... import numpy as np
     ... import xarray as xr
-    ... ureg = climpy.ureg
+    ... ureg = climo.ureg
     ... data = xr.DataArray(
     ...     np.random.rand(20, 1000) * ureg.m,
     ...     name='distance',
@@ -539,7 +539,7 @@ def hist(bins, y, /, axis=0):
     ...     coords={'x': np.arange(20), 'y': np.arange(1000) * 0.1}
     ... )
     ... bins = np.linspace(0, 1, 11) * ureg.m
-    ... hist = climpy.hist(bins, data, axis=1)
+    ... hist = climo.hist(bins, data, axis=1)
 
     """
     if bins.ndim != 1:
@@ -677,9 +677,9 @@ def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=0):
 
     Example
     -------
-    >>> import climpy
-        auto = climpy.autocorr(data, axis=0)
-        taus, sigmas = climpy.rednoise_fit(auto, axis=0)
+    >>> import climopy as climo
+        auto = climo.autocorr(data, axis=0)
+        taus, sigmas = climo.rednoise_fit(auto, axis=0)
 
     See Also
     --------

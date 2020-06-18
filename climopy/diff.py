@@ -158,19 +158,19 @@ def _accuracy_check(n, accuracy, order=1):
         raise ValueError('Need at least 2 points on derivative axis.')
     elif n < finitemin:
         if accuracy > 0:
-            warnings._warn_climpy(
+            warnings._warn_climopy(
                 f'Setting accuracy to 0 for derivative on length-{n} axis.'
             )
             accuracy = 0
     elif n < finitemin + 2:
         if accuracy > 2:
-            warnings._warn_climpy(
+            warnings._warn_climopy(
                 f'Setting accuracy to 2 for derivative on length-{n} axis.'
             )
             accuracy = 2
     elif n < finitemin + 4:
         if accuracy > 4:
-            warnings._warn_climpy(
+            warnings._warn_climopy(
                 f'Setting accuracy to 4 for derivative on length-{n} axis.'
             )
             accuracy = 4

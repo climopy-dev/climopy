@@ -22,19 +22,19 @@ else:
     long_description = ''
 
 setup(
-    url='https://lukelbd.github.io/climpy',
-    name='climpy',
+    url='https://climopy.readthedocs.io',
+    name='climopy',
     author='Luke Davis',
     author_email='lukelbd@gmail.com',
     maintainer='Luke Davis',
     maintainer_email='lukelbd@gmail.com',
     python_requires='>=3.8.0',
     project_urls={
-        'Bug Tracker': 'https://github.com/lukelbd/climpy/issues',
-        'Documentation': 'https://climpy.readthedocs.io',
-        'Source Code': 'https://github.com/lukelbd/climpy'
+        'Bug Tracker': 'https://github.com/lukelbd/climopy/issues',
+        'Documentation': 'https://climopy.readthedocs.io',
+        'Source Code': 'https://github.com/lukelbd/climopy'
     },
-    packages=['climpy'],
+    packages=['climopy'],
     classifiers=classifiers,
     # normally uses MANIFEST.in but setuptools_scm auto-detects tracked files
     include_package_data=True,

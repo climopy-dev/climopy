@@ -1,13 +1,13 @@
 Installation
 ------------
 
-ClimPy is published on `PyPi <https://pypi.org/project/climpy/>`__.
+ClimoPy is published on `PyPi <https://pypi.org/project/climopy/>`__.
 It can be installed or upgraded with ``pip`` as follows:
 
 .. code-block:: bash
 
-   pip install climpy
-   pip install --upgrade climpy
+   pip install climopy
+   pip install --upgrade climopy
 
 The dependencies are `xarray <http://xarray.pydata.org/en/stable/>`_, `numpy <http://www.numpy.org/>`_, and `scipy <https://www.scipy.org/>`_.
 To use the (optional) `ECMWF <https://www.ecmwf.int/>`_ `ERA-Interim <https://apps.ecmwf.int/datasets/data/interim-full-daily/levtype=sfc/>`_ downloading tool, you will also need to install the `ECMWF python API <https://confluence.ecmwf.int/display/WEBAPI/Access+ECMWF+Public+Datasets>`__.

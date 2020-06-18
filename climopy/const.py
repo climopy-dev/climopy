@@ -110,7 +110,7 @@ sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
 # [length]**2 to [mass] does not work for [length]**-2 to [mass]**-1 and vice versa,
 # *additional* units like an extra [joule] cause this to fail, and adding things
 # together e.g. with [length]**2 + [mass] fails.
-context = pint.Context('climpy')
+context = pint.Context('climopy')
 
 # Transform temperature to heat energy
 def _add_transformation(source, dest, scale):
@@ -124,8 +124,12 @@ def _add_transformation(source, dest, scale):
         dest, source, functools.partial(lambda scale, ureg, x : x / scale, scale)
     )
 
-# Static energy components, their rates of change (1/s), their fluxes (m/s),
-# and their *absolute* fluxes integrated over the latitude band (m^2/s)
+# Static energy components, their rates of change from flux convergence or
+# otherwise (1/s), their fluxes (m/s), and their *absolute* fluxes integrated
+# over the latitude band (m^2/s)
+# NOTE: Converting integrated geopotential height m * hPa to J / m^2 does
+# not need extra transformation. Functionally this is (height * g) / g to get
+# geopotential then convert the pressure integration to a mass integration.
 for suffix in ('', ' / [time]', '* [length] / [time]', '* [area] / [time]'):
     # Thermal energy
     _add_transformation(
@@ -139,7 +143,7 @@ for suffix in ('', ' / [time]', '* [length] / [time]', '* [area] / [time]'):
         '[energy] / [mass]' + suffix,
         g,
     )
-    # Static energy or Lorenz energy converted to per unit pressure
+    # Lorenz energy converted to per unit pressure
     _add_transformation(
         '[energy] / [mass]' + suffix,
         '[energy] / [area] / [pressure]' + suffix,
@@ -152,9 +156,6 @@ for suffix in ('', ' / [time]', '* [length] / [time]', '* [area] / [time]'):
         cp / g,
     )
     # Geopotential or static energy integrated with respect to pressure
-    # NOTE: Converting integrated geopotential height m * hPa to J / m^2 does
-    # not need extra transformation. Functionally this is (height * g) / g to get
-    # geopotential then convert the pressure integration to a mass integration.
     _add_transformation(
         '[energy] * [pressure] / [mass]' + suffix,
         '[energy] / [area]' + suffix,

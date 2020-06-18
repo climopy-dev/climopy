@@ -1,7 +1,7 @@
 # Hard requirements for notebook examples and documentation build
 # NOTE: PyQt5 is needed by pyplot, RTD server *happens* to already have it
 # but creating local environment will fail.
-name: climpy-dev
+name: climopy-dev
 channels:
   - conda-forge
 dependencies:

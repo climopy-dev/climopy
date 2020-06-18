@@ -300,7 +300,7 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
             # Interpolate
             nanfilt = np.isnan(waq_k)
             if sum(~nanfilt) == 0:
-                warnings._warn_climpy(f'Warning: No valid waqs calculated for k {k}.')
+                warnings._warn_climopy(f'Warning: No valid waqs calculated for k {k}.')
                 waq[0, :, k] = np.nan
             else:
                 waq[0, :, k] = np.interp(lat, bands[0, ~nanfilt, k], waq_k[~nanfilt])

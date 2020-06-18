@@ -9,22 +9,22 @@ Time series analysis
 Trends and windows
 ------------------
 
-Get the trend rate-of-change with the `~climpy.oa.linefit` function.
+Get the trend rate-of-change with the `~climopy.oa.linefit` function.
 Get the actual best-fit line *y*-coordinates with using the ``build``
 keyword arg.
 
 .. code:: ipython3
 
     import proplot as plot
-    import climpy
+    import climopy as climo
     import numpy as np
     plot.nbsetup()
-    d = climpy.rednoise(500, 0.98, init=[-3,0,3], samples=3)
-    # d = climpy.rednoise(500, 0.99, init=0, samples=[3,3])
-    r = climpy.rolling(d, 50, axis=0, fillvalue=np.nan)
-    s = climpy.linefit(d, axis=0, build=True)
-    # fit = climpy.linefit(d, axis=0, stderr=True)
-    # l = climpy.lanczos(30)
+    d = climo.rednoise(500, 0.98, init=[-3,0,3], samples=3)
+    # d = climo.rednoise(500, 0.99, init=0, samples=[3,3])
+    r = climo.rolling(d, 50, axis=0, fillvalue=np.nan)
+    s = climo.linefit(d, axis=0, build=True)
+    # fit = climo.linefit(d, axis=0, stderr=True)
+    # l = climo.lanczos(30)
     f, ax = plot.subplots()
     for i in range(d.shape[1]):
         color = f'C{i}'
@@ -44,7 +44,7 @@ keyword arg.
 Lagged correlation
 ------------------
 
-This is facilitated with the `~climpy.oa.covar`, and
-`~climpy.oa.corr` functions. These functions also support
+This is facilitated with the `~climopy.oa.covar`, and
+`~climopy.oa.corr` functions. These functions also support
 **autocorrelation** and **autocovariance**. An example is coming soon!
 

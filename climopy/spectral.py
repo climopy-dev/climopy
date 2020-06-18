@@ -152,8 +152,8 @@ non-boxcar windowing depends on the character of the signal.
 .. code-block:: python
 
     import numpy as np
-    import climpy
-    w = climpy.window('hanning', 200)
+    import climopy as climo
+    w = climo.window('hanning', 200)
     y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
     y2 = np.random.rand(200) # complex signal
     for y in (y1, y2):
@@ -487,7 +487,7 @@ def _window_data(data1, data2, nperseg=None, wintype=None):
     if rem != 0:
         data1 = data1[:, -rem:, ...]
         data2 = data2[:, -rem:, ...]
-        warnings._warn_climpy(
+        warnings._warn_climopy(
             f'Trimmed {rem} out of {ntime} points to accommodate '
             f'length-{nperseg} window.'
         )
@@ -538,7 +538,7 @@ def _power_driver(
         # only have half the coefficients (rfft not fft).
         for k in range(nextra):
             if np.any(~np.isfinite(y1[k, :])) or np.any(~np.isfinite(y2[k, :])):
-                warnings._warn_climpy('Skipping array with missing values.')
+                warnings._warn_climopy('Skipping array with missing values.')
                 continue
             for i, l in enumerate(winloc):
                 # Auto approach with scipy.csd. 'one-sided' says to only return first
@@ -637,7 +637,7 @@ def _power2d_driver(
                 np.any(~np.isfinite(y1[k, :, :]))
                 or np.any(~np.isfinite(y2[k, :, :]))
             ):
-                warnings._warn_climpy('Skipping array with missing values.')
+                warnings._warn_climopy('Skipping array with missing values.')
                 continue
             for i, idx in enumerate(winloc):
                 Fy1 = _fft2d(pm, win, y1[k, idx - pm:idx + pm, :], detrend)
@@ -707,16 +707,16 @@ def power(dx, y1, /, axis=0, **kwargs):
     Example
     -------
 
-    >>> import climpy
+    >>> import climopy as climo
     ... import xarray as xr
-    ... ureg = climpy.ureg
+    ... ureg = climo.ureg
     ... x = xr.DataArray(
     ...     np.arange(1000, dtype=float) * ureg.day, dims=('time',), name='time'
     ... )
     ... y = xr.DataArray(
     ...     np.random.rand(1000, 50) * ureg.K, dims=('time', 'space'), name='variable'
     ... )
-    ... f, P = climpy.power(x, y, axis=0)
+    ... f, P = climo.power(x, y, axis=0)
 
     """
     return _power_driver(dx, y1, y1, axis=axis, **kwargs)
@@ -746,9 +746,9 @@ def copower(dx, y1, y2, axis=0, **kwargs):
     Example
     -------
 
-    >>> import climpy
+    >>> import climopy as climo
     ... import xarray as xr
-    ... ureg = climpy.ureg
+    ... ureg = climo.ureg
     ... x = xr.DataArray(
     ...     np.arange(1000, dtype=float) * ureg.day, dims=('time',), name='time'
     ... )
@@ -759,7 +759,7 @@ def copower(dx, y1, y2, axis=0, **kwargs):
     ...     np.random.rand(1000, 50) * ureg.m / ureg.s,
     ...     dims=('time', 'space'), name='variable',
     ... )
-    ... f, C, Q, P1, P2, Coh, Phi = climpy.copower(x, y1, y2, axis=0)
+    ... f, C, Q, P1, P2, Coh, Phi = climo.copower(x, y1, y2, axis=0)
 
     """
     return _power_driver(dx, y1, y2, axis=axis, **kwargs)
@@ -961,7 +961,7 @@ def running(x, w, /, axis=-1, pad=True, pad_value=np.nan):
         n_left = (n_orig - n_new) // 2
         n_right = n_orig - n_new - n_left
         if n_left != n_right:
-            warnings._warn_climpy('Data shifted left by one.')
+            warnings._warn_climopy('Data shifted left by one.')
         d_left = pad_value * np.ones((*x.shape[:axis], n_left, *x.shape[axis + 1:]))
         d_right = pad_value * np.ones((*x.shape[:axis], n_right, *x.shape[axis + 1:]))
         x = np.concatenate((d_left, x, d_right), axis=axis)

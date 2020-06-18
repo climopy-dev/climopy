@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Warnings used internally by climpy.
+Warnings used internally by climo.
 """
 import contextlib
 import re

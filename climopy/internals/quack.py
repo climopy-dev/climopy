@@ -50,7 +50,7 @@ def _get_step(h):
 def _apply_units(data):
     """
     Apply units from attribute and get magnitudes. This will make more sense
-    when the accessor is added to climpy.
+    when the accessor is added to climo.
     """
     if isinstance(data.data, ureg.Quantity):
         data = data.data
@@ -60,7 +60,7 @@ def _apply_units(data):
             data = data.data * ureg(units)
         except Exception:  # many, many things could go wrong here
             if units is not None:
-                warnings._warn_climpy(f'Failed to apply units {units!r} with pint.')
+                warnings._warn_climopy(f'Failed to apply units {units!r} with pint.')
             data = data.data
     return data
 
@@ -104,7 +104,7 @@ def _to_arraylike(func, x, *ys, suffix='', infer_axis=True, **kwargs):
         dim = kwargs.pop('dim' + suffix, None)
         if dim is not None:
             if axis is not None:
-                warnings._warn_climpy('Ambiguous axis specification.')
+                warnings._warn_climopy('Ambiguous axis specification.')
             axis = ys[0].dims.index(dim)
 
     # If both are dataarrays and *x* is coordinates, infer axis from dimension names
@@ -502,9 +502,9 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
     -------
     Here is a simple example for a derivative wrapper.
 
-    >>> import climpy
-    ... from climpy.internals import quack
-    ... ureg = climpy.ureg
+    >>> import climopy as climo
+    ... from climopy.internals import quack
+    ... ureg = climo.ureg
     ... @quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
     ... def deriv(x, y, order=1):
     ...     return y / x ** order

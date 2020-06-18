@@ -8,7 +8,7 @@ import pint
 
 __all__ = ['ureg']
 
-#: The `pint.UnitRegistry` used throughout climpy. Adds flexible aliases for
+#: The `pint.UnitRegistry` used throughout climopy. Adds flexible aliases for
 #: the meter, Kelvin, degree Celsius, and degree Fahrenheit.
 #: Also adds definitions for the bar, percent, permille, potential vorticity
 #: unit, inches mercury, and the "degree North" and "degree East" coordinate

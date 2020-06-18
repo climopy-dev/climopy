@@ -140,11 +140,11 @@ def intersection(x, y1, y2, xlog=False):
     Example
     -------
 
-    >>> import climpy
+    >>> import climopy as climo
     ... x = 10 + np.arange(4)
     ... y1 = np.array([4, 2, 0, -2])
     ... y2 = np.array([0, 1, 2, 3])
-    ... climpy.intersection(x, y1, y2)
+    ... climo.intersection(x, y1, y2)
 
     """
     # Initial stuff
@@ -162,11 +162,11 @@ def intersection(x, y1, y2, xlog=False):
     # Get intersection
     dy = y1 - y2
     if np.all(dy > 0) or np.all(dy < 0):
-        warnings._warn_climpy(f'No intersections found for data {y1!r} and {y2!r}.')
+        warnings._warn_climopy(f'No intersections found for data {y1!r} and {y2!r}.')
         return np.nan, np.nan
     idx, = np.where(np.diff(np.sign(dy)) != 0)  # e.g. 6, 2, -3 --> 1, 1, -1 --> 0, -2
     if idx.size > 1:
-        warnings._warn_climpy('Multiple intersections found. Using the first one.')
+        warnings._warn_climopy('Multiple intersections found. Using the first one.')
     idx = idx[0]
 
     # Get coordinates
@@ -211,8 +211,8 @@ def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=None):
     Example
     -------
 
-    >>> import climpy
-    ... climpy.linetrack(
+    >>> import climopy as climo
+    ... climo.linetrack(
     ...    [
     ...        [30, 20],
     ...        [22],
@@ -374,8 +374,8 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     -------
 
     >>> import xarray as xr
-    ... import climpy
-    ... ureg = climpy.ureg
+    ... import climopy as climo
+    ... ureg = climo.ureg
     ... x = np.arange(100)
     ... y = np.sort(np.random.rand(50, 10) - 0.5, axis=0)
     ... y = np.concatenate((y, y[::-1, :]), axis=0)
@@ -383,12 +383,12 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     ...     x * ureg.s,
     ...     dims=('x',), attrs={'long_name': 'x coordinate'}
     ... )
-    ... with climpy.internals.warnings._unit_stripped_ignore():
+    ... with climo.internals.warnings._unit_stripped_ignore():
     ...     yarr = xr.DataArray(
     ...         y * ureg.m, name='variable',
     ...         dims=('x', 'y'), coords={'x': xarr}
     ...     )
-    ... zx, zy = climpy.zerofind(xarr, yarr, ntrack=2)
+    ... zx, zy = climo.zerofind(xarr, yarr, ntrack=2)
 
     """
     # Tests
@@ -466,7 +466,7 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     # Return locations and values
     zxs, zys = linetrack(zxs, zys, **kwargs)
     if not zxs.size:
-        warnings._warn_climpy(f'No zeros found for data {y!r}.')
+        warnings._warn_climopy(f'No zeros found for data {y!r}.')
     if is1d:
         zxs, zys = zxs[0, :], zys[0, :]
     zxs = np.moveaxis(zxs, -1, axis)

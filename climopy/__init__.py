@@ -3,7 +3,7 @@
 Instantiate the `pint.UnitRegistry` unit registry.
 """
 # Import functions to top-level
-# NOTE: Syntax is 'from climpy import ureg, const'
+# NOTE: Syntax is 'from climopy import ureg, const'
 import pint as _pint
 import pkg_resources as _pkg
 from . import const
@@ -18,7 +18,7 @@ from .spectral import *  # noqa: F401, F403
 from .waves import *  # noqa: F401, F403
 
 # SCM versioning
-name = 'climpy'
+name = 'climopy'
 try:
     version = __version__ = _pkg.get_distribution(__name__).version
 except _pkg.DistributionNotFound:

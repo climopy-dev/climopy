@@ -10,7 +10,7 @@ Spectral analysis
 Spectral filtering
 ------------------
 
-Use `~climpy.oa.filter` to filter data. Note this feature needs more
+Use `~climopy.oa.filter` to filter data. Note this feature needs more
 testing! But feel free to copy my code. The below shows response
 functions and impulse response curves, and applies the filter to some
 sample data.
@@ -18,11 +18,11 @@ sample data.
 .. code:: ipython3
 
     import proplot as plot
-    import climpy
+    import climopy as climo
     import numpy as np
     plot.nbsetup()
     x = np.linspace(0,20,1000) # 20 days, but with tons of data in-between
-    d = climpy.waves(x, wavelens=[1, 2])
+    d = climo.waves(x, wavelens=[1, 2])
 
 .. code:: ipython3
 
@@ -33,7 +33,7 @@ sample data.
     cutoff2 = 0.5
     waves = [0.3, 0.7, 2]
     x = np.linspace(0,wsample,n) # 20 days, but with tons of data in-between
-    data = climpy.waves(x, np.array(waves), phase=None)
+    data = climo.waves(x, np.array(waves), phase=None)
     # Iterate
     filters = ['lanczos', 'butterworth']
     # filters = ['butterworth', 'lanczos']
@@ -43,15 +43,15 @@ sample data.
         dx = x[1]-x[0]
         if filt=='lanczos':
             wfilter = 2
-            w = climpy.lanczos(dx, wfilter, cutoff)
-            w2 = climpy.lanczos(dx, wfilter, cutoff2)
+            w = climo.lanczos(dx, wfilter, cutoff)
+            w2 = climo.lanczos(dx, wfilter, cutoff2)
             suptitle = f'{wfilter}-day Lanczos filter'
             # suptitle = f'{len(w[0])}-day Lanczos filter'
             # w, w2 = [w], [w2]
         elif filt=='butterworth':
             wfilter = 11 # should be odd-numbered
-            w = climpy.butterworth(dx, wfilter, cutoff)
-            w2 = climpy.butterworth(dx, wfilter, cutoff2)
+            w = climo.butterworth(dx, wfilter, cutoff)
+            w2 = climo.butterworth(dx, wfilter, cutoff2)
             suptitle =  f'order-{len(w[1])} Butterworth filter'
         colors = ('red5', 'blue5')
         nf = 2 if filt=='butterworth' else 1 # in *this case*, for display purposes, need to prevent shifting to left or right
@@ -65,8 +65,8 @@ sample data.
                                sharex=False, spany=False, hspace=.7, aspect=2)
         ax = axs[1]
         for ic,iw,color in zip(cutoffs,weights,colors):
-            # s, r = climpy.lanczos(width, ic, dx, response=True)
-            s, r = climpy.response(dx, *iw) # b and a coefficients, or maybe just b
+            # s, r = climo.lanczos(width, ic, dx, response=True)
+            s, r = climo.response(dx, *iw) # b and a coefficients, or maybe just b
             # print(s.max()), print(x.max())
             s = s*scale # optionally convert to radians
             r = r.copy()
@@ -102,8 +102,8 @@ sample data.
         idata[:] = 0
         idata[0] = 1
         idata[len(idata)//2] = 1
-        ifilter = climpy.filter(idata, *w, n=nf, axis=0, fix=False)
-        ifilter2 = climpy.filter(idata, *w2, n=nf, axis=0, fix=False)
+        ifilter = climo.filter(idata, *w, n=nf, axis=0, fix=False)
+        ifilter2 = climo.filter(idata, *w2, n=nf, axis=0, fix=False)
         ax.plot(x, idata, color='k', label='raw', alpha=0.8)
         ax.plot(x, ifilter, color=colors[0], alpha=0.8, ls='-', lw=2, label='lowpass 1')
         ax.plot(x, ifilter2, color=colors[1], alpha=0.8, ls='-', lw=2, label='lowpass 2')
@@ -113,11 +113,11 @@ sample data.
                   xlabel='x (day)', ylabel='response', title='Impulse response', ylim=(-ylim, ylim))
         # Next play with sample data
         # Can show that, given some weights, lfilter does exact same thing as rolling() function
-        # lanczos_roll = climpy.rolling(data, w, axis=0)
-        # lanczos_roll2 = climpy.rolling(data, w2, axis=0)
+        # lanczos_roll = climo.rolling(data, w, axis=0)
+        # lanczos_roll2 = climo.rolling(data, w2, axis=0)
         ax = axs[2]
-        lfilter = climpy.filter(data, *w, n=nf, axis=0) # with builtin signal method
-        lfilter2 = climpy.filter(data, *w2, n=nf, axis=0)
+        lfilter = climo.filter(data, *w, n=nf, axis=0) # with builtin signal method
+        lfilter2 = climo.filter(data, *w2, n=nf, axis=0)
         ax.plot(x, data, color='gray5', label='raw', alpha=0.8)
         # ax.plot(x, lanczos_roll, color='r', alpha=1, ls='--', lw=2, label='Lanczos')
         # ax.plot(x, data-lanczos_roll2, color='orange', alpha=0.2, ls='-', lw=2, label='Lanczos')
@@ -148,16 +148,16 @@ sample data.
 1D power spectra
 ----------------
 
-Use the `~climpy.oa.power` function to get the spectral power. You can
+Use the `~climopy.oa.power` function to get the spectral power. You can
 use the **exact same function** for getting the co-spectra, quadrature
 spectra, and individual power spectra for two different time series! The
 below tests its performance with an artificial dataset consisting of 3
-sine curves, generated with `~climpy.oa.waves`.
+sine curves, generated with `~climopy.oa.waves`.
 
 .. code:: ipython3
 
     import proplot as plot
-    import climpy
+    import climopy as climo
     import numpy as np
     plot.nbsetup()
     x = np.linspace(0,100,10000) # 20 days
@@ -166,12 +166,12 @@ sine curves, generated with `~climpy.oa.waves`.
     # waves = [0.1, 0.2, 0.4, 0.6, 0.8, 3, 4, 5, 10, 30]
     waves = [0.5, 1, 4]
     window = len(x)//3 # 3 windows, or *5* overlapping windows
-    data = climpy.waves(x, waves, phase=None)
+    data = climo.waves(x, waves, phase=None)
     
     # Spectrum
-    # freq, power = climpy.power(data, dx, wintype=('gaussian',2000))
-    # freq, power = climpy.power(data, dx, wintype='boxcar', nperseg=2000)
-    freq, power = climpy.power(data, dx=dx, cyclic=False, manual=True, wintype='hann', nperseg=2000, scaling='spectrum')
+    # freq, power = climo.power(data, dx, wintype=('gaussian',2000))
+    # freq, power = climo.power(data, dx, wintype='boxcar', nperseg=2000)
+    freq, power = climo.power(data, dx=dx, cyclic=False, manual=True, wintype='hann', nperseg=2000, scaling='spectrum')
     freq = 1/freq # to wavelengths
     
     # Figure
@@ -210,7 +210,7 @@ propagating up the *y* axis with negative phase speed.
 
     # Data
     import proplot as plot
-    import climpy
+    import climopy as climo
     import numpy as np
     plot.nbsetup()
     n2 = 1800
@@ -222,8 +222,8 @@ propagating up the *y* axis with negative phase speed.
     offset = np.linspace(0,1.5*np.pi,n2)[::-1]
     w1 = [2]
     w2 = [5]
-    d1 = climpy.waves(x1[:,None] + offset[None,:], w1)
-    d2 = climpy.waves(x2[None,:], w2) # changing phase as we go up
+    d1 = climo.waves(x1[:,None] + offset[None,:], w1)
+    d2 = climo.waves(x2[None,:], w2) # changing phase as we go up
     dx1 = x1[1]-x1[0]
     dx2 = x2[1]-x2[0]
     data = d1 + d2
@@ -232,7 +232,7 @@ propagating up the *y* axis with negative phase speed.
 
     # Note: -2 transform will be transform of *real* data (i.e. symmetric), so left-half taken, but -1 transform
     # will be transform of *complex* data, so both halves remain
-    f1, f2, result = climpy.power2d(data, dx=dx1, dy=dx2, nperseg=nperseg, axes=(0,1))
+    f1, f2, result = climo.power2d(data, dx=dx1, dy=dx2, nperseg=nperseg, axes=(0,1))
     fig, axs = plot.subplots(nrows=2, aspect=2, width=5, sharex=False, spany=False, bottomcolorbar=True)
     # result = 10*np.log10(result)
     ax = axs[0]
