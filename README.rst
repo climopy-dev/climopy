@@ -7,7 +7,7 @@
 ClimoPy
 =======
 
-|build-status| |coverage| |docs| |license| |pr-welcome|
+|build-status| |docs| |pypi| |code-style| |pr-welcome| |license|
 
 This package provides tools to help climate scientists complete a variety of
 data analysis tasks, including objective and statistical analysis methods,
@@ -38,6 +38,10 @@ The documentation is `published on readthedocs <https://climopy.readthedocs.io>`
     :alt: build status
     :target: https://travis-ci.org/lukelbd/climopy
 
+.. |code-style| image:: https://img.shields.io/badge/code%20style-pep8-green.svg
+   :alt: pep8
+   :target: https://www.python.org/dev/peps/pep-0008/
+
 .. |coverage| image:: https://codecov.io/gh/lukelbd/climopy.org/branch/master/graph/badge.svg
     :alt: coverage
     :target: https://codecov.io/gh/lukelbd/climopy.org
@@ -53,6 +57,10 @@ The documentation is `published on readthedocs <https://climopy.readthedocs.io>`
 .. |pr-welcome| image:: https://img.shields.io/badge/PR-Welcome-%23FF8300.svg?
    :alt: PR welcome
    :target: https://git-scm.com/book/en/v2/GitHub-Contributing-to-a-Project
+
+.. |pypi| image:: https://img.shields.io/pypi/v/climopy?color=83%20197%2052
+   :alt: pypi
+   :target: https://pypi.org/project/climopy/
 
 ..
 .. |quality| image:: https://api.codacy.com/project/badge/Grade/931d7467c69c40fbb1e97a11d092f9cd
