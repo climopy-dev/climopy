@@ -15,5 +15,5 @@ def add_snippets(func):
     that the `snippets` keys can be invalid variable names."""
     func.__doc__ = inspect.getdoc(func)
     if func.__doc__:
-        func.__doc__ %= snippets
+        func.__doc__ %= {key: value.strip() for key, value in snippets.items()}
     return func
