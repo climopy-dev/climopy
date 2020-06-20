@@ -15,7 +15,7 @@ before_install:
   - |
         MODIFIED_FILES=$(git diff --name-only "$TRAVIS_COMMIT_RANGE" 2>/dev/null)
         if [ $? -eq 0 ]; then
-          if ! echo "$MODIFIED_FILES" | grep -qvE '(.md)|(.rst)|(.yml)|(.html)'
+          if ! echo "$MODIFIED_FILES" | grep -qvE '(.md)|(.rst)|(.yml)|(.html)|(.png)|(.ico)'
           then
             echo "Only doc files were updated, not running the CI."
             exit
