@@ -168,17 +168,17 @@ def _from_dataarray(
             del coords[dim]
 
     # Strip unit if present
-    coords_unquantified = {}
+    coords_fixed = {}
     for key, coord in coords.items():
         if not isinstance(coord, xr.DataArray):
             coord = xr.DataArray(coord, dims=key, name=key)
         if isinstance(coord.data, ureg.Quantity):
             coord.attrs.setdefault('units', format(coord.data.units, '~'))
             coord.data = coord.data.magnitude
-        coords_unquantified[key] = coord
+        coords_fixed[key] = coord
 
     # Return new dataarray
-    return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords)
+    return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords_fixed)
 
 
 def _xarray_fit_wrapper(func):
