@@ -3,10 +3,13 @@ A variety of physical constants.
 """
 # WARNING: Putting hyperlink on first line seems to break the sphinx docstring
 # because colon is interpreted as start of docstring. Must appear on line 2.
-import math
-import pint
 import functools
+import math
+
+import pint
+
 from .units import ureg
+
 Quant = ureg.Quantity
 
 __all__ = [
@@ -104,6 +107,7 @@ kb = R / Na
 #: <https://en.wikipedia.org/wiki/Stefan–Boltzmann_constant>`__
 sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
 
+
 # Add context definitions for otherwise impossible definitions
 # NOTE: This feature is extremely limited for now, e.g. defining the transformation
 # [length]**2 to [mass] does not work for [length]**-2 to [mass]**-1 and vice versa,
@@ -121,13 +125,17 @@ def _add_transformation(source, dest, scale):  # noqa: E302
         dest, source, functools.partial(lambda scale, ureg, x: x / scale, scale)
     )
 
+
 # Static energy components, their rates of change from flux convergence or
 # otherwise (1/s), their fluxes (m/s), and their *absolute* fluxes integrated
 # over the latitude band (m^2/s)
+# NOTE: Converters are not multiplicative (do not work for arbitrary additional
+# units appended to source and dest) but are commutative. For example first two
+# transformations permit converting 'temperature' to 'length'!
 # NOTE: Converting integrated geopotential height m * hPa to J / m^2 does
 # not need extra transformation. Functionally this is (height * g) / g to get
 # geopotential then convert the pressure integration to a mass integration.
-for suffix in ('', ' / [time]', '* [length] / [time]', '* [area] / [time]'):  # noqa: E305, E501
+for suffix in ('', ' / [time]', '* [length] / [time]', '* [area] / [time]'):
     # Thermal energy
     _add_transformation(
         '[temperature]' + suffix,
