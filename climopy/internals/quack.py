@@ -11,15 +11,17 @@ Note
 Cannot do xarray processing inside main functions because it must happen
 outside of pint processing.
 """
-import re
-import inspect
 import functools
+import inspect
 import itertools
+import re
+
 import numpy as np
-import xarray as xr
 import pint.util as putil
-from . import warnings
+import xarray as xr
+
 from ..units import ureg
+from . import warnings
 
 # Regex to find terms surrounded by curly braces that can be filled with str.format()
 REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside brackets
@@ -166,10 +168,14 @@ def _from_dataarray(
             del coords[dim]
 
     # Strip unit if present
-    for coord in coords.values():
+    coords_unquantified = {}
+    for key, coord in coords.items():
+        if not isinstance(coord, xr.DataArray):
+            coord = xr.DataArray(coord, dims=key, name=key)
         if isinstance(coord.data, ureg.Quantity):
             coord.attrs.setdefault('units', format(coord.data.units, '~'))
             coord.data = coord.data.magnitude
+        coords_unquantified[key] = coord
 
     # Return new dataarray
     return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords)
