@@ -269,7 +269,7 @@ def _xarray_xy_xy_wrapper(func):
         if isinstance(y, xr.DataArray):
             y_out = _from_dataarray(y, y_out, dim_coords=dim_coords)
 
-        return y_out
+        return x_out, y_out
 
     return wrapper
 
