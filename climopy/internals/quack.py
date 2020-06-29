@@ -148,6 +148,8 @@ def _from_dataarray(
         Used to rename dimensions.
     dim_coords : (dim1, coords1, dim2, coords2, ...), optional
         The new array coordinates for an arbitrary dimension
+    keep_attrs : bool, optional
+        Whether to keep the original attributes.
     """
     # Get source info
     name = name or dataarray.name
@@ -436,7 +438,7 @@ def _xarray_hist_wrapper(func):
             name = y.name
             yb_centers = 0.5 * (yb_in[1:] + yb_in[:-1])
             coords = _from_dataarray(
-                y, yb_centers, dims=(name,), coords={}
+                y, yb_centers, dims=(name,), coords={}, keep_attrs=True,
             )
             y_out = _from_dataarray(
                 y, y_out, name='count', attrs={},
