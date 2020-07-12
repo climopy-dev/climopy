@@ -106,3 +106,6 @@ ureg.define(
 ureg.define(
     '_100hPa = 100 * hPa = 100hPa'
 )
+
+# Set up for use with matplotlib
+ureg.setup_matplotlib()
