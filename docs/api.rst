@@ -4,12 +4,8 @@ API Reference
 Unit registry
 -------------
 
-.. currentmodule:: climopy
-
-.. autosummary::
+.. automodsumm:: climopy.units
    :toctree: api
-
-   ureg
 
 Dataset downloads
 -----------------
@@ -74,4 +70,3 @@ Physical constants
 
 .. automodsumm:: climopy.const
    :toctree: api
-
