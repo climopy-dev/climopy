@@ -7,11 +7,11 @@ and `Dennis Hartmann \
 <https://atmos.washington.edu/~dennis/552_Notes_ftp.html>`__.
 """
 import numpy as np
-import scipy.stats as stats
 import scipy.linalg as linalg
 import scipy.optimize as optimize
-from .internals import quack
-from .internals import docstring
+import scipy.stats as stats
+
+from .internals import docstring, quack
 from .internals.array import _ArrayContext
 
 __all__ = [
@@ -531,7 +531,7 @@ def hist(bins, y, /, axis=0):
     >>> import climopy as climo
     ... import numpy as np
     ... import xarray as xr
-    ... ureg = climo.ureg
+    ... from climopy import ureg
     ... data = xr.DataArray(
     ...     np.random.rand(20, 1000) * ureg.m,
     ...     name='distance',

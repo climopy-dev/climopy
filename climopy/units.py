@@ -6,22 +6,30 @@ import pint
 
 __all__ = ['ureg']
 
+
 #: The `pint.UnitRegistry` used throughout climopy. Adds flexible aliases for
-#: the meter, Kelvin, degree Celsius, and degree Fahrenheit.
-#: Also adds definitions for the bar, percent, permille, potential vorticity
-#: unit, inches mercury, and the "degree North" and "degree East" coordinate
-#: variables. The units are defined as follows:
+#: the meter, Kelvin, degree Celsius, degree Fahrenheit, bar, and inches mercury.
+#: Also adds definitions for the percent, permille, potential vorticity
+#: unit, and the "degree North" and "degree East" coordinate variables. These
+#: units and aliases are defined as follows:
 #:
 #: .. code-block:: txt
 #:
-#:    bar = 10^5 Pa = b
-#:    percent = 0.01 * count = % = per_cent
-#:    permille = 0.001 * count = %% = per_mille
-#:    potential_vorticity_unit = 10^6 K m^2 kg^-1 s^-1 = PVU
-#:    inch_mercury = 3386.389 Pa = inch_Hg = in_mercury = in_Hg = ...
-#:    degree_North = degree = °N = degree_north = degN = deg_N = ...
-#:    degree_East = degree = °E = degree_east = degE = deg_E = ...
+#:     bar = 10^5 Pa = b
+#:     percent = 0.01 * count = % = per_cent
+#:     permille = 0.001 * count = %% = per_mille
+#:     potential_vorticity_unit = 10^6 K m^2 kg^-1 s^-1 = PVU
+#:     inch_mercury = 3386.389 Pa = inch_Hg = in_mercury = in_Hg = ...
+#:     degree_North = degree = °N = degree_north = degN = deg_N = ...
+#:     degree_East = degree = °E = degree_east = degE = deg_E = ...
 #:
+#: The registry also includes a global `pint.Context` manager for converting
+#: static energy components, their rates of change (:math:`s^{-1}`), their fluxes
+#: (:math:`m\,s^{-1}`), and their *absolute* fluxes integrated over latitude bands
+#: (:math:`m^2\,s^{-1}`) between temperature and sensible heat (:math:`x \cdot c_p`),
+#: between absolute humidity and latent heat (:math:`x \cdot L`), and between
+#: geopotential height and geopotential (:math:`x \cdot g`). It also permits converting
+#: quantities integrated with respect to pressure to :math:`kg \, m^{-2}`.
 ureg = pint.UnitRegistry(
     preprocessors=[
         lambda s: s.replace('%%', ' permille '),
