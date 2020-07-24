@@ -4,6 +4,7 @@ A variety of physical constants.
 # WARNING: Putting hyperlink on first line seems to break the sphinx docstring
 # because colon is interpreted as start of docstring. Must appear on line 2.
 import functools
+import itertools
 import math
 
 import pint
@@ -113,10 +114,12 @@ sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
 # [length]**2 to [mass] does not work for [length]**-2 to [mass]**-1 and vice versa,
 # *additional* units like an extra [joule] cause this to fail, and adding things
 # together e.g. with [length]**2 + [mass] fails.
-context = pint.Context('climopy')
-def _add_transformation(source, dest, scale):  # noqa: E302
+# NOTE: While converters are not multiplicative (do not work for arbitrary additional
+# units appended to source and dest) they are commutative. For example first two
+# transformations permit converting 'temperature' to 'length'!
+def _add_transformation(context, source, dest, scale):  # noqa: E302
     """
-    Add a custom unit transformation.
+    Add linear forward and inverse unit transformations.
     """
     context.add_transformation(
         source, dest, functools.partial(lambda scale, ureg, x: x * scale, scale)
@@ -128,44 +131,32 @@ def _add_transformation(source, dest, scale):  # noqa: E302
 
 # Static energy components, their rates of change from flux convergence or
 # otherwise (1/s), their fluxes (m/s), and their *absolute* fluxes integrated
-# over the latitude band (m^2/s)
-# NOTE: Converters are not multiplicative (do not work for arbitrary additional
-# units appended to source and dest) but are commutative. For example first two
-# transformations permit converting 'temperature' to 'length'!
-# NOTE: Converting integrated geopotential height m * hPa to J / m^2 does
-# not need extra transformation. Functionally this is (height * g) / g to get
-# geopotential then convert the pressure integration to a mass integration.
-for suffix in ('', ' / [time]', '* [length] / [time]', '* [area] / [time]'):
-    # Thermal energy
+# over the latitude band (m^2/s). Also permit converting energy terms from Joules
+# and Watts per unit mass to per unit pressure per unit area (useful for Lorenz).
+climo = pint.Context('climo')
+for suffix1, suffix2 in itertools.product(
+    ('', ' / [time]', ' * [velocity]', ' * [length] * [velocity]'),
+    ('', ' * [mass] / [area]'),
+):
+    suffix = suffix1 + suffix2
     _add_transformation(
-        '[temperature]' + suffix,
-        '[energy] / [mass]' + suffix,
-        cp,
-    )
-    # Geopotential energy
-    _add_transformation(
+        climo,
         '[length]' + suffix,
         '[energy] / [mass]' + suffix,
         g,
     )
-    # Lorenz energy converted to per unit pressure
     _add_transformation(
+        climo,
+        '[temperature]' + suffix,
+        '[energy] / [mass]' + suffix,
+        cp,
+    )
+    _add_transformation(
+        climo,
         '[energy] / [mass]' + suffix,
         '[energy] / [area] / [pressure]' + suffix,
         1.0 / g,
     )
-    # Thermal energy integrated with respect to pressure
-    _add_transformation(
-        '[temperature] * [pressure]' + suffix,
-        '[energy] / [area]' + suffix,
-        cp / g,
-    )
-    # Geopotential or static energy integrated with respect to pressure
-    _add_transformation(
-        '[energy] * [pressure] / [mass]' + suffix,
-        '[energy] / [area]' + suffix,
-        1.0 / g,
-    )
 
 # Add context object
-ureg.enable_contexts(context)
+ureg.add_context(climo)
