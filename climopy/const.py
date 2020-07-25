@@ -116,7 +116,8 @@ sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
 # together e.g. with [length]**2 + [mass] fails.
 # NOTE: While converters are not multiplicative (do not work for arbitrary additional
 # units appended to source and dest) they are commutative. For example first two
-# transformations permit converting 'temperature' to 'length'!
+# transformations permit converting 'temperature' to 'length'! For this reason
+# do not make the context object global, would yield unexpected results.
 def _add_transformation(context, source, dest, scale):  # noqa: E302
     """
     Add linear forward and inverse unit transformations.
@@ -133,6 +134,9 @@ def _add_transformation(context, source, dest, scale):  # noqa: E302
 # otherwise (1/s), their fluxes (m/s), and their *absolute* fluxes integrated
 # over the latitude band (m^2/s). Also permit converting energy terms from Joules
 # and Watts per unit mass to per unit pressure per unit area (useful for Lorenz).
+# NOTE: Common to want to convert [energy] / [mass] to [energy] / [area] / [pressure]
+# for displaying static or Lorenz energy terms. But this is already covered by
+# the geopotential height transformations! Latter units are equivalent to [length]!
 climo = pint.Context('climo')
 for suffix1, suffix2 in itertools.product(
     ('', ' / [time]', ' * [velocity]', ' * [length] * [velocity]'),
@@ -150,12 +154,6 @@ for suffix1, suffix2 in itertools.product(
         '[temperature]' + suffix,
         '[energy] / [mass]' + suffix,
         cp,
-    )
-    _add_transformation(
-        climo,
-        '[energy] / [mass]' + suffix,
-        '[energy] / [area] / [pressure]' + suffix,
-        1.0 / g,
     )
 
 # Add context object
