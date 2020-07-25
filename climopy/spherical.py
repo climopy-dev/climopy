@@ -3,6 +3,7 @@
 Mathematical operations on the surface of the sphere.
 """
 import numpy as np
+
 from . import const, diff
 
 __all__ = [

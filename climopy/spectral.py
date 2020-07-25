@@ -15,8 +15,8 @@ wavelength in <units> per :math:`2\\pi` radians, and wavenumber
 # TODO: Support applying 'lanczos' filter with lanczos
 import numpy as np
 import scipy.signal as signal
-from .internals import quack
-from .internals import docstring, warnings
+
+from .internals import docstring, quack, warnings
 from .internals.array import _ArrayContext
 
 __all__ = [

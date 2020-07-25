@@ -3,8 +3,9 @@
 Array tools. Includes context object used to perform tasks "along an axis"
 for arbitrary n-dimensional arrays.
 """
-import numpy as np
 import logging
+
+import numpy as np
 
 # Set up logger
 # See: https://stackoverflow.com/q/43109355/4970632
