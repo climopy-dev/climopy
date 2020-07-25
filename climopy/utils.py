@@ -2,10 +2,12 @@
 """
 Includes miscellaneous mathematical functions.
 """
-import numpy as np
 import datetime
-import pandas as pd
 from functools import partial
+
+import numpy as np
+import pandas as pd
+
 from .diff import deriv_half, deriv_uneven
 from .internals import quack, warnings
 
@@ -178,7 +180,7 @@ def intersection(x, y1, y2, xlog=False):
 
 
 # TODO: Support pint quantities here
-def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=None):  # noqa: E225
+def linetrack(xs, ys=None, /, sep=None, seed=None, ntrack=None):  # noqa: E225
     """
     Track individual "lines" across lists of coordinates.
 
@@ -230,6 +232,8 @@ def linetrack(xs, ys=None, /, sep=np.inf, seed=None, ntrack=None):  # noqa: E225
     # Parse input
     if ys is None:
         ys = xs  # not pretty but this simplifies the loop code
+    if sep is None:
+        sep = np.inf
     if seed is None:
         seed = []
     if (
