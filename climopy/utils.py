@@ -419,12 +419,16 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
             # Centered differencing onto same levels
             dy = deriv_uneven(x, y, axis=-1, order=diff, keepedges=True)
         else:
-            # More accurate differencing onto half levels, then inteprolate back
+            # More accurate differencing onto half levels, then interpolate back
             dx, dy = deriv_half(x, y, axis=-1, order=diff)
-            dyi = dy.copy()
+            yi = dy.copy()
             for i in range(nextra):
-                dyi[i, :] = np.interp(dx, x, dy[i, :])
-            x, y = dx, dyi
+                yi[i, :] = np.interp(dx, x, y[i, :])
+            x, y = dx, dy
+            # dyi = y.copy()
+            # for i in range(nextra):
+            #     dyi[i, :] = np.interp(x, dx, dy[i, :])
+            # dy = dyi
 
     # Find where sign switches from +ve to -ve and vice versa
     zxs = []
@@ -435,13 +439,19 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
         posneg = negpos = ()
         with np.errstate(invalid='ignore'):
             if which in ('negpos', 'both'):
-                negpos = np.diff(np.sign(y[k, :])) > 0
+                negpos = np.diff(np.sign(dy[k, :])) == 2
             if which in ('posneg', 'both'):
-                posneg = np.diff(np.sign(dy[k, :])) < 0
+                posneg = np.diff(np.sign(dy[k, :])) == -2
 
-        # Interpolate to exact zero locations and values at those locations
+        # Get exact zero locations
+        idxs, = np.where(dy[k, :] == 0)
         izxs = []
         izys = []
+        for idx in idxs:
+            izxs.append(x[idx])
+            izys.append(y[k, idx])
+
+        # Interpolate to zero locations and values at those locations
         for j, mask in enumerate((negpos, posneg)):
             idxs, = np.where(mask)  # NOTE: for empty array, yields nothing
             for idx in idxs:
