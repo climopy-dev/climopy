@@ -17,6 +17,7 @@ import itertools
 import re
 
 import numpy as np
+import pint
 import pint.util as putil
 import xarray as xr
 
@@ -57,7 +58,7 @@ def _apply_units(data):
     if isinstance(data.data, ureg.Quantity):
         data = data.data
     else:
-        units = data.attrs.pop('units', None)
+        units = data.attrs.get('units', None)
         try:
             data = data.data * ureg(units)
         except Exception:  # many, many things could go wrong here
@@ -178,6 +179,14 @@ def _from_dataarray(
             coord.attrs.setdefault('units', format(coord.data.units, '~'))
             coord.data = coord.data.magnitude
         coords_fixed[key] = coord
+
+    # Unquantify if DataArray was quantified
+    if (
+        not isinstance(dataarray.data, pint.Quantity)
+        and isinstance(data.data, pint.Quantity)
+    ):
+        attrs['units'] = data.data.units
+        data.data = data.data.magnitude
 
     # Return new dataarray
     return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords_fixed)
@@ -464,6 +473,8 @@ def _xarray_zerofind_wrapper(func):
         x_out, y_out = func(x_in, y_in, **kwargs)
 
         # Add metadata to x_out and y_out
+        # NOTE: x_out inherits *shape* from y_out but should inherit
+        # *attributes* from x_in.
         if isinstance(y, xr.DataArray):
             attrs = {}
             dim = y.dims[kwargs['axis']]

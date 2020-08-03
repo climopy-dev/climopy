@@ -109,7 +109,7 @@ kb = R / Na
 sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
 
 
-# Add context definitions for otherwise impossible definitions
+# Add forward and inverse context definitions for scalar multiple transformations
 # NOTE: This feature is extremely limited for now, e.g. defining the transformation
 # [length]**2 to [mass] does not work for [length]**-2 to [mass]**-1 and vice versa,
 # *additional* units like an extra [joule] cause this to fail, and adding things
@@ -130,10 +130,8 @@ def _add_transformation(context, source, dest, scale):  # noqa: E302
     )
 
 
-# Static energy components, their rates of change from flux convergence or
-# otherwise (1/s), their fluxes (m/s), and their *absolute* fluxes integrated
-# over the latitude band (m^2/s). Also permit converting energy terms from Joules
-# and Watts per unit mass to per unit pressure per unit area (useful for Lorenz).
+# Static energy components, their rates of change (1/s), their fluxes (m/s), and
+# their *absolute* fluxes integrated over the latitude band (m^2/s).
 # NOTE: Common to want to convert [energy] / [mass] to [energy] / [area] / [pressure]
 # for displaying static or Lorenz energy terms. But this is already covered by
 # the geopotential height transformations! Latter units are equivalent to [length]!
