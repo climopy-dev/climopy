@@ -424,7 +424,7 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
             yi = dy.copy()
             for i in range(nextra):
                 yi[i, :] = np.interp(dx, x, y[i, :])
-            x, y = dx, dy
+            x, y = dx, yi
             # dyi = y.copy()
             # for i in range(nextra):
             #     dyi[i, :] = np.interp(x, dx, dy[i, :])
