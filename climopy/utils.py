@@ -417,7 +417,7 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     if diff:  # not zero or None
         if centered:
             # Centered differencing onto same levels
-            dy = deriv_uneven(x, y, axis=-1, order=diff)
+            dy = deriv_uneven(x, y, axis=-1, order=diff, keepedges=True)
         else:
             # More accurate differencing onto half levels, then inteprolate back
             dx, dy = deriv_half(x, y, axis=-1, order=diff)
