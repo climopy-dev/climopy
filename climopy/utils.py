@@ -419,16 +419,12 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
             # Centered differencing onto same levels
             dy = deriv_uneven(x, y, axis=-1, order=diff, keepedges=True)
         else:
-            # More accurate differencing onto half levels, then interpolate back
+            # More accurate differencing onto half levels
             dx, dy = deriv_half(x, y, axis=-1, order=diff)
             yi = dy.copy()
             for i in range(nextra):
                 yi[i, :] = np.interp(dx, x, y[i, :])
             x, y = dx, yi
-            # dyi = y.copy()
-            # for i in range(nextra):
-            #     dyi[i, :] = np.interp(x, dx, dy[i, :])
-            # dy = dyi
 
     # Find where sign switches from +ve to -ve and vice versa
     zxs = []
@@ -455,20 +451,21 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
         for j, mask in enumerate((negpos, posneg)):
             idxs, = np.where(mask)  # NOTE: for empty array, yields nothing
             for idx in idxs:
-                # Need 'x' of segment to be *increasing* for interpolation
+                # Need dy to be *increasing* for numpy.interp to work
                 if (not reverse and j == 0) or (reverse and j == 1):
-                    segment = slice(idx, idx + 2)
+                    slice_ = slice(idx, idx + 2)
                 else:
-                    segment = slice(idx + 1, idx - 1, -1)
-                x_segment = x[segment]
-                y_segment = y[k, segment]
-                dy_segment = dy[k, segment]
-                if x_segment.size in (0, 1):
+                    slice_ = slice(idx + 1, idx - 1, -1)
+                ix = x[slice_]
+                iy = y[k, slice_]
+                idy = dy[k, slice_]
+                if ix.size in (0, 1):
                     continue  # weird error
-                zx = np.interp(0, dy_segment, x_segment, left=np.nan, right=np.nan)
+                zx = np.interp(0, idy, ix, left=np.nan, right=np.nan)
                 if np.isnan(zx):  # no extrapolation!
                     continue
-                zy = np.interp(zx, x_segment, y_segment)
+                slice_ = slice(None) if ix[1] > ix[0] else slice(None, None, -1)
+                zy = np.interp(zx, ix[slice_], iy[slice_])
                 izxs.append(zx)
                 izys.append(zy)  # record
 
