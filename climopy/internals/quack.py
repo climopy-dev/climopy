@@ -86,13 +86,18 @@ def _to_arraylike(func, x, *ys, suffix='', infer_axis=True, **kwargs):
     ``infer_axis=True``. The axis suffix can be e.g. ``'_time'``, and then
     we look for the ``dim_time`` keyword.
     """
-    # Ensure all *ys* have identical dimensions, type, and shape
-    axis_default = _get_default(func, 'axis' + suffix)
+    # Convert builtin python types to arraylike
+    if isinstance(x, (list, tuple)):
+        x = np.array(x)
+    ys = tuple(np.array(y) if isinstance(y, (list, tuple)) else y for y in ys)
     x_dataarray = isinstance(x, xr.DataArray)
     y_dataarray = all(isinstance(y, xr.DataArray) for y in ys)
-    types = tuple(type(y) for y in ys)
-    if len(set(types)) != 1:
-        raise ValueError(f'Expected one type for y inputs, got {types=}.')
+    y_types = tuple(type(y) for y in ys)
+
+    # Ensure all *ys* have identical dimensions, type, and shape
+    axis_default = _get_default(func, 'axis' + suffix)
+    if len(set(y_types)) != 1:
+        raise ValueError(f'Expected one type for y inputs, got {y_types=}.')
     shapes = tuple(y.shape for y in ys)
     if any(_ != shapes[0] for _ in shapes):
         raise ValueError(f'Shapes should be identical, got {shapes}.')
