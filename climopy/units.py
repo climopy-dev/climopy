@@ -116,4 +116,4 @@ ureg.define(
 )
 
 # Set up for use with matplotlib
-# ureg.setup_matplotlib()
+ureg.setup_matplotlib()
