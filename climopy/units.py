@@ -8,28 +8,26 @@ __all__ = ['ureg']
 
 
 #: The `pint.UnitRegistry` used throughout climopy. Adds flexible aliases for
-#: the meter, Kelvin, degree Celsius, degree Fahrenheit, bar, and inches mercury.
-#: Also adds definitions for the percent, permille, potential vorticity
-#: unit, and the "degree North" and "degree East" coordinate variables. These
-#: units and aliases are defined as follows:
+#: temperature, pressure, vorticity, and various dimensionless quantities as follows:
 #:
 #: .. code-block:: txt
 #:
-#:     bar = 10^5 Pa = b
 #:     percent = 0.01 * count = % = per_cent
 #:     permille = 0.001 * count = %% = per_mille
-#:     potential_vorticity_unit = 10^6 K m^2 kg^-1 s^-1 = PVU
+#:     bar = 10^5 Pa = b
 #:     inch_mercury = 3386.389 Pa = inch_Hg = in_mercury = in_Hg = ...
+#:     vorticity_unit = 10^-5 s^-1 = VU
+#:     potential_vorticity_unit = 10^-6 K m^2 kg^-1 s^-1 = PVU
+#:     degree =  π / 180 * radian = ° = deg = ...
 #:     degree_North = degree = °N = degree_north = degN = deg_N = ...
 #:     degree_East = degree = °E = degree_east = degE = deg_E = ...
 #:
-#: The registry also includes a global `pint.Context` manager for converting
+#: This also registers a `pint.Context` manager named ``'climo'`` for converting
 #: static energy components, their rates of change (:math:`s^{-1}`), their fluxes
 #: (:math:`m\,s^{-1}`), and their *absolute* fluxes integrated over latitude bands
 #: (:math:`m^2\,s^{-1}`) between temperature and sensible heat (:math:`x \cdot c_p`),
 #: between absolute humidity and latent heat (:math:`x \cdot L`), and between
-#: geopotential height and geopotential (:math:`x \cdot g`). It also permits converting
-#: quantities integrated with respect to pressure to :math:`kg \, m^{-2}`.
+#: geopotential height and geopotential (:math:`x \cdot g`).
 ureg = pint.UnitRegistry(
     preprocessors=[
         lambda s: s.replace('%%', ' permille '),
@@ -37,7 +35,7 @@ ureg = pint.UnitRegistry(
     ]
 )
 
-# Percent definitions (see https://github.com/hgrecco/pint/issues/185)
+# Dimensionless definitions (see https://github.com/hgrecco/pint/issues/185)
 ureg.define(
     pint.unit.UnitDefinition(
         'permille', '%%', (), pint.converters.ScaleConverter(0.001),
@@ -48,23 +46,36 @@ ureg.define(
         'percent', '%', (), pint.converters.ScaleConverter(0.01),
     )
 )
-
-# Canonical unit definitions
 ureg.define(  # cannot add alias for 'dimensionless', this is best way
     'none = 1'
 )
+
+# Pressure definitions (replace 'barn' with 'bar' as default 'b' unit)
 ureg.define(  # automatically adds milli, hecta, etc.
     'bar = 10^5 Pa = b'
 )
+ureg.define(
+    'inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = '
+    'in_Hg = inch_Hg = inches_Hg = inches_mercury'
+)
+
+# Vorticity definitions
 ureg.define(
     'potential_vorticity_unit = 10^-6 K m^2 s^-1 kg^-1 = PVU'
 )
 ureg.define(
     'vorticity_unit = 10^-5 s^-1 = 10^-5 s^-1 = VU'
 )
+
+# Flexible degree definitions with unicode short repr
 ureg.define(
-    'inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = '
-    'in_Hg = inch_Hg = inches_Hg = inches_mercury'
+    'degree = π / 180 * radian = ° = deg = arcdeg = arcdegree = angular_degree'
+)
+ureg.define(
+    'arcminute = degree / 60 = ′ = arcmin = arc_minute = angular_minute'
+)
+ureg.define(
+    'arcsecond = arcminute / 60 = ″ = arcsec = arc_second = angular_second'
 )
 ureg.define(
     'degree_North = degree = °N = degree_north = degrees_North = degrees_north = '
@@ -77,10 +88,7 @@ ureg.define(
     'degE = degreeE = degreesE = degEast = degreeEast = degreesEast'
 )
 
-# Additional aliases
-ureg.define(
-    '@alias meter = metre = geopotential_meter = geopotential_metre = gpm'
-)
+# Temperature aliases
 ureg.define(
     '@alias kelvin = Kelvin = K = k = '
     'degree_kelvin = degree_Kelvin = degrees_kelvin = degrees_Kelvin = '
@@ -101,7 +109,12 @@ ureg.define(
     'deg_F = deg_f = degF = degf'
 )
 
-# Common units with constants
+# Length aliases relatd to geopotential height
+ureg.define(
+    '@alias meter = metre = geopotential_meter = geopotential_metre = gpm'
+)
+
+# Common unit constants
 ureg.define(
     '_10km = 10 * km = 10km'
 )
