@@ -8,7 +8,8 @@ __all__ = ['ureg']
 
 
 #: The `pint.UnitRegistry` used throughout climopy. Adds flexible aliases for
-#: temperature, pressure, vorticity, and various dimensionless quantities as follows:
+#: temperature, pressure, vorticity, and various dimensionless quantities with
+#: support for nice short-form ``'~'`` formatting as follows:
 #:
 #: .. code-block:: txt
 #:
@@ -18,7 +19,9 @@ __all__ = ['ureg']
 #:     inch_mercury = 3386.389 Pa = inch_Hg = in_mercury = in_Hg = ...
 #:     vorticity_unit = 10^-5 s^-1 = VU
 #:     potential_vorticity_unit = 10^-6 K m^2 kg^-1 s^-1 = PVU
-#:     degree =  π / 180 * radian = ° = deg = ...
+#:     degree =  π / 180 * radian = ° = deg = arcdeg = arcdegree = angular_degree
+#:     arcminute = degree / 60 = ′ = arcmin = arc_minute = angular_minute
+#:     arcsecond = arcminute / 60 = ″ = arcsec = arc_second = angular_second
 #:     degree_North = degree = °N = degree_north = degN = deg_N = ...
 #:     degree_East = degree = °E = degree_east = degE = deg_E = ...
 #:
