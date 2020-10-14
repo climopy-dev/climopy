@@ -61,19 +61,24 @@ z2 : array-like, optional
 """
 
 _var_template = """
-Return the {name} spectrum at successive lags.
+Return the {name} spectrum at a single lag or successive lags. Default
+behavior returns the lag-0 {name}.
 
 Parameters
 ----------
-dt : float or array-like
-    The timestep or regularly-spaced time coordinates.
+dt : float or array-like, optional
+    The timestep or time series (from which the timestep is inferred).
 {data}
 axis : int, optional
     Axis along which {name} is taken.
-lag : int, optional
-    Return {name} at the single lag `lag`.
-nlag : int, optional
-    Return lagged {name} from ``0`` timesteps up to `nlag` timesteps.
+lag : float, optional
+    Return {name} for the single lag `lag` (must be divisible by `dt`).
+ilag : int, optional
+    As with `lag`, but specifies the index instead of the timestep.
+maxlag : float, optional
+    Return lagged {name} up to the lag `maxlag` (must be divisible by `dt`).
+imaxlag : int, optional
+    As with `maxlag`, but specifies the index instead of the timestep.
 
 Returns
 -------
@@ -176,32 +181,42 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1):
 
 
 def _covar_driver(
-    dt, z1, z2, /, *, lag=None, nlag=None,
+    dt, z1, z2, /, *, lag=None, ilag=None, maxlag=None, imaxlag=None,
     axis=0, standardize=False, verbose=False,
 ):
     """
     Driver function for getting covariance.
     """
     # Preparation, and stdev/means
+    dt = quack._get_step(dt)
     auto = z1 is z2
     if z1.shape != z2.shape:
         raise ValueError(f'Incompatible shapes {z1.shape=} and {z2.shape=}.')
     naxis = z1.shape[axis]  # length
 
-    # Checks
-    if lag is None and nlag is None:
-        lag = 0
-    if lag is not None and nlag is not None:
-        raise ValueError(f'Conflicting arguments {lag=} and {nlag=}.')
-    if nlag is not None and nlag >= naxis / 2:
-        raise ValueError(f'Lag {nlag} must be greater than axis length {naxis}.')
+    # Parse input args
+    npassed = sum(_ is not None for _ in (lag, ilag, maxlag, imaxlag))
+    if npassed == 0:
+        ilag = 0
+    if npassed != 1:
+        raise ValueError(f'Conflicting kwargs {lag=}, {ilag=}, {maxlag=}, {imaxlag=}.')
+    if any(_ is not None and not 0 <= _ < naxis - 3 for _ in (ilag, imaxlag)):
+        raise ValueError(f'Lag index must satisfy 0 <= lag < {naxis - 3}.')
+    if any(_ is not None and not 0 <= _ < dt * (naxis - 3) for _ in (lag, maxlag)):
+        raise ValueError(f'Lag time must satisfy 0 <= lag < {dt * (naxis - 3)}.')
+    if any(_ is not None and not np.isclose(lag % dt, 0) for _ in (lag, maxlag)):
+        raise ValueError(f'Lag time must be divisible by timestep {dt}.')
+    if lag is not None:
+        ilag = np.round(lag * dt).astype(int)
+    if maxlag is not None:
+        imaxlag = np.round(lag * dt).astype(int)
     if verbose:
         prefix = 'auto' if auto else ''
         suffix = 'correlation' if standardize else 'covariance'
-        if nlag is None:
+        if maxlag is None:
             print(f'Calculating lag-{lag} {prefix}{suffix}.')
         else:
-            print(f'Calculating {prefix}{suffix} to lag {nlag} for axis size {naxis}.')
+            print(f'Calculating {prefix}{suffix} to lag {maxlag} for axis size {naxis}.')  # noqa: E501
 
     # Means and permute
     z1 = np.moveaxis(z1, axis, -1)
@@ -221,47 +236,37 @@ def _covar_driver(
         else:
             std2 = z2.std(axis=-1, keepdims=True)
 
-    # This is just the variance, or *one* if autocorrelation mode is enabled
-    # corrs = np.ones((*z1.shape[:-1], 1))
-    if nlag is None and lag == 0:
+    # Covariance at zero-lag (included for consistency)
+    if ilag == 0 or imaxlag == 0:
         lags = [0]
         covar = np.sum(
             (z1 - mean1) * (z2 - mean2), axis=-1, keepdims=True
         ) / (naxis * std1 * std2)
 
-    # Correlation on specific lag
-    elif nlag is None:
-        lag = np.round(lag * dt).astype(int)
-        lags = np.atleast_1d(lag)
+    # Covariance on specific lag
+    elif ilag is not None:
+        lags = np.array([dt * ilag])
         covar = np.sum(
-            (z1[..., :-lag] - mean1) * (z2[..., lag:] - mean2), axis=-1, keepdims=True,
-        ) / ((naxis - lag) * std1 * std2),
+            (z1[..., :-ilag] - mean1) * (z2[..., ilag:] - mean2), axis=-1, keepdims=True,  # noqa: E501
+        ) / ((naxis - ilag) * std1 * std2),
 
-    # Correlation up to n timestep-lags after 0-correlation
+    # Covariance up to n timestep-lags after 0-correlation. Make this
+    # symmetric if this is not an 'auto' function (i.e. extend to negative lags).
     else:
-        # First figure out lags
-        # Negative lag means z2 leads z1 (e.g. z corr m, left-hand side is m leads z).
-        # e.g. 20 day lag, at synoptic timesteps
-        nlag = np.round(nlag / dt).astype(int)
         if not auto:
-            n = nlag * 2 + 1  # the center point, and both sides
-            lags = np.arange(-nlag, nlag + 1)
+            ilags = np.arange(-imaxlag, imaxlag + 1)
         else:
-            n = nlag + 1
-            lags = np.arange(0, nlag + 1)
-
-        # Get correlation
-        # will include the zero-lag autocorrelation
-        covar = np.empty((*z1.shape[:-1], n))
-        for i, lag in enumerate(lags):
-            if lag == 0:
+            ilags = np.arange(0, maxlag + 1)
+        lags = dt * ilags
+        covar = np.empty((*z1.shape[:-1], ilags.size))
+        for i, ilag in enumerate(ilags):
+            if ilag == 0:
                 prod = (z1 - mean1) * (z2 - mean2)
-            elif lag < 0:  # input 1 *trails* input 2
-                prod = (z1[..., -lag:] - mean1) * (z2[..., :lag] - mean2)
+            elif ilag < 0:  # input 1 *trails* input 2
+                prod = (z1[..., -ilag:] - mean1) * (z2[..., :ilag] - mean2)
             else:
-                prod = (z1[..., :-lag] - mean1) * (z2[..., lag:] - mean2)
-            covar[..., i] = prod.sum(axis=-1) / ((naxis - lag) * std1 * std2)
-        lags *= dt
+                prod = (z1[..., :-ilag] - mean1) * (z2[..., ilag:] - mean2)
+            covar[..., i] = prod.sum(axis=-1) / ((naxis - ilag) * std1 * std2)
 
     # Return lags and covariance
     return lags, np.moveaxis(covar, -1, axis)
@@ -646,8 +651,9 @@ def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=0):
 
     Parameters
     ----------
-    dt : float, optional
-        The timestep. This is used to scale timescales into physical units.
+    dt : float or array-like, optional
+        The timestep or time series (from which the timestep is inferred).
+        This is used to express the timescales in physical units.
     a : array-like
         The autocorrelation spectra.
     nlag : int, optional
@@ -686,6 +692,7 @@ def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=0):
     corr, rednoise, rednoise_spectrum
     """
     # Best-fit function
+    dt = quack._get_step(dt)
     curve = lambda t, tau: np.exp(-t * dt / tau)  # noqa: E731
     nlag_fit = nlag_fit or 50
     lags_fit = np.arange(0, nlag_fit)
