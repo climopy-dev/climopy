@@ -59,14 +59,29 @@ def _apply_units(data):
     if isinstance(data.data, ureg.Quantity):
         data = data.data
     else:
-        units = data.attrs.get('units', None)
+        units = _parse_units(data.attrs.get('units', None))
         try:
             data = data.data * ureg(units)
         except Exception:  # many, many things could go wrong here
-            if units is not None:
-                warnings._warn_climopy(f'Failed to apply units {units!r} with pint.')
+            warnings._warn_climopy(f'Failed to apply units {units!r} with pint.')
             data = data.data
     return data
+
+
+def _parse_units(units):
+    """
+    Parse `DataArray` unit attributes.
+    """
+    if isinstance(units, pint.Unit):
+        return units
+    units = re.sub(r'([a-zA-Z])([-+]?[0-9]+)', r'\1^\2', units or '')  # exponents↘
+    if ' since ' in units:  # hours since, days since, etc.↘
+        units = units.split()[0]
+    num, *denom = units.split('/')
+    return (
+        ureg.parse_units(num)
+        / np.prod((ureg.dimensionless, *map(ureg.parse_units, denom)))
+    )
 
 
 def _remove_units(data):
