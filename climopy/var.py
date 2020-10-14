@@ -257,7 +257,7 @@ def _covar_driver(
         if not auto:
             ilags = np.arange(-imaxlag, imaxlag + 1)
         else:
-            ilags = np.arange(0, maxlag + 1)
+            ilags = np.arange(0, imaxlag + 1)
         lags = dt * ilags
         covar = np.empty((*z1.shape[:-1], ilags.size))
         for i, ilag in enumerate(ilags):
