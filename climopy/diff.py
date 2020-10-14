@@ -5,6 +5,7 @@ Various finite difference schemes.
 # TODO: Add integration schemes! Will be simple to implement, they are just cumsums.
 import numpy as np
 
+from .internals import ic  # noqa: F401
 from .internals import docstring, quack, warnings
 
 __all__ = [

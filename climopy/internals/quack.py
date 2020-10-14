@@ -17,6 +17,7 @@ import itertools
 import re
 
 import numpy as np
+
 import pint
 import pint.util as putil
 import xarray as xr
@@ -740,7 +741,10 @@ def _replace_units(original_units, values_by_name):
         # NOTE: Multiply quantities successively here just to pull out units
         # after everything is done. But avoid broadcasting errors as shown.
         for arg_name, exponent in original_units.items():
-            q = q * values_by_name[arg_name] ** exponent
+            try:
+                q = q * values_by_name[arg_name] ** exponent
+            except ValueError:  # avoid negative integer powers of integer arrays
+                q = q * values_by_name[arg_name].astype(float) ** exponent
             m = getattr(q, 'magnitude', q)
             u = getattr(q, 'units', 1)
             if not np.isscalar(m):

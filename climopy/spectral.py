@@ -16,6 +16,7 @@ wavelength in <units> per :math:`2\\pi` radians, and wavenumber
 import numpy as np
 import scipy.signal as signal
 
+from .internals import ic  # noqa: F401
 from .internals import docstring, quack, warnings
 from .internals.array import _ArrayContext
 

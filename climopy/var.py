@@ -11,6 +11,7 @@ import scipy.linalg as linalg
 import scipy.optimize as optimize
 import scipy.stats as stats
 
+from .internals import ic  # noqa: F401
 from .internals import docstring, quack
 from .internals.array import _ArrayContext
 
@@ -74,11 +75,11 @@ axis : int, optional
 lag : float, optional
     Return {name} for the single lag `lag` (must be divisible by `dt`).
 ilag : int, optional
-    As with `lag`, but specifies the index instead of the timestep.
+    As with `lag` but specifies the index instead of the physical time.
 maxlag : float, optional
     Return lagged {name} up to the lag `maxlag` (must be divisible by `dt`).
 imaxlag : int, optional
-    As with `maxlag`, but specifies the index instead of the timestep.
+    As with `maxlag` but specifies the index instead of the physical time.
 
 Returns
 -------
@@ -204,12 +205,12 @@ def _covar_driver(
         raise ValueError(f'Lag index must satisfy 0 <= lag < {naxis - 3}.')
     if any(_ is not None and not 0 <= _ < dt * (naxis - 3) for _ in (lag, maxlag)):
         raise ValueError(f'Lag time must satisfy 0 <= lag < {dt * (naxis - 3)}.')
-    if any(_ is not None and not np.isclose(lag % dt, 0) for _ in (lag, maxlag)):
+    if any(_ is not None and not np.isclose(_ % dt, 0) for _ in (lag, maxlag)):
         raise ValueError(f'Lag time must be divisible by timestep {dt}.')
     if lag is not None:
-        ilag = np.round(lag * dt).astype(int)
+        ilag = np.round(lag / dt).astype(int)
     if maxlag is not None:
-        imaxlag = np.round(lag * dt).astype(int)
+        imaxlag = np.round(maxlag / dt).astype(int)
     if verbose:
         prefix = 'auto' if auto else ''
         suffix = 'correlation' if standardize else 'covariance'
@@ -228,7 +229,7 @@ def _covar_driver(
         mean2 = z2.mean(axis=-1, keepdims=True)
 
     # Standardize maybe
-    std1 = std2 = 1  # use for covariance
+    std1 = std2 = np.array([1])  # use for covariance
     if standardize:
         std1 = z1.std(axis=-1, keepdims=True)
         if auto:
@@ -248,7 +249,7 @@ def _covar_driver(
         lags = np.array([dt * ilag])
         covar = np.sum(
             (z1[..., :-ilag] - mean1) * (z2[..., ilag:] - mean2), axis=-1, keepdims=True,  # noqa: E501
-        ) / ((naxis - ilag) * std1 * std2),
+        ) / ((naxis - ilag) * std1 * std2)
 
     # Covariance up to n timestep-lags after 0-correlation. Make this
     # symmetric if this is not an 'auto' function (i.e. extend to negative lags).
@@ -266,7 +267,9 @@ def _covar_driver(
                 prod = (z1[..., -ilag:] - mean1) * (z2[..., :ilag] - mean2)
             else:
                 prod = (z1[..., :-ilag] - mean1) * (z2[..., ilag:] - mean2)
-            covar[..., i] = prod.sum(axis=-1) / ((naxis - ilag) * std1 * std2)
+            covar[..., i] = (
+                prod.sum(axis=-1, keepdims=True) / ((naxis - ilag) * std1 * std2)
+            )[..., 0]
 
     # Return lags and covariance
     return lags, np.moveaxis(covar, -1, axis)
@@ -589,8 +592,15 @@ def linefit(x, y, /, axis=0):
     stderr : array-like
         The standard errors of the slope estimates. The shape is the
         same as `slope`.
-    bestfit : array-like
+    fit : array-like
         The reconstructed best-fit line. The shape is the same as `y`.
+
+    Example
+    -------
+    >>> import climopy as climo
+        x = np.arange(500)
+        y = np.random.rand(500, 10)
+        slope, stderr, fit = climo.linefit(x, y, axis=0)
     """
     if x.ndim != 1 or x.size != y.shape[axis]:
         raise ValueError(
@@ -603,35 +613,36 @@ def linefit(x, y, /, axis=0):
         # where N is regression dimension. Permute to (N, K) then back again.
         # N gets replaced with length-2 dimension (slope, offset).
         y = context.data
-        y_params, y_var = np.polyfit(x, y.T, deg=1, cov=True)
-        y_params = np.fliplr(y_params.T)  # flip to (offset, slope)
+        params, covar = np.polyfit(x, y.T, deg=1, cov=True)
+        params = np.fliplr(params.T)  # flip to (offset column 0, slope column 1)
 
         # Get best-fit line and slope
-        y_fit = y_params[:, :1] + x * y_params[:, 1:]
-        y_slope = y_params[:, 1:]
+        fit = params[:, :1] + x * params[:, 1:]
+        slope = params[:, 1:]
 
         # Get standard error
         # See Dave's paper (TODO: add citation)
         n = y.shape[1]
-        resid = y - y_fit  # residual
-        mean = resid.mean(axis=1)
-        var = resid.var(axis=1)
+        resid = y - fit  # residual
+        mean = resid.mean(axis=1, keepdims=True)
+        var = resid.var(axis=1, keepdims=True)
         rho = np.sum(
-            (resid[:, 1:] - mean[:, None]) * (resid[:, :-1] - mean[:, None]),
-            axis=1,
+            (resid[:, 1:] - mean) * (resid[:, :-1] - mean), axis=1, keepdims=True,
         ) / ((n - 1) * var)  # correlation factor
         scale = (n - 2) / (n * ((1 - rho) / (1 + rho)) - 2)  # scale factor
-        y_stderr = np.sqrt(y_var[0, 0, :] * scale)  # replace offset with stderr
+        stderr = np.sqrt(scale * covar[0, 0, :, None])
 
         # Replace context data
-        context.replace_data(y_slope, y_stderr, y_fit)
+        context.replace_data(slope, stderr, fit)
 
     return context.data
 
 
 @quack._xarray_fit_wrapper
 @quack._pint_wrapper(('=t', ''), ('=t', '=t', ''))
-def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=0):
+def rednoisefit(
+    dt, a, /, maxlag=None, imaxlag=None, maxlag_fit=None, imaxlag_fit=None, axis=0
+):
     r"""
     Return the :math:`e`-folding autocorrelation timescale for the input
     autocorrelation spectra along an arbitrary axis. Depending on the length
@@ -645,29 +656,31 @@ def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=0):
        red noise autocorrelation spectrum at lag 1 to solve for
        :math:`\tau = \Delta t / \log a_1`.
 
-    Approach 2 is used if the length of the data along axis `axis` is ``1``,
-    or the data is scalar. In these cases, the data is assumed to represent
-    just the lag-1 autocorrelation(s).
+    Approach 2 is used if `axis` is singleton or the data is scalar. In these
+    cases, the data is assumed to represent just the lag-1 autocorrelation.
 
     Parameters
     ----------
     dt : float or array-like, optional
         The timestep or time series (from which the timestep is inferred).
-        This is used to express the timescales in physical units.
     a : array-like
         The autocorrelation spectra.
-    nlag : int, optional
-        The number of lag timesteps to include in the curve fitting. Default
-        is all the available lags.
-    nlag_fit : int, optional
-        The number of lag timesteps to include in the reconstructed pure red
-        noise autocorrelation spectrum. Default is 50 timesteps.
+    maxlag : float, optional
+        The maximum time lag to include in the red noise fit.
+    imaxlag : int, optional
+        As with `maxlag` but specifies the index instead of the physical time.
+    maxlag_fit : float, optional
+        The maximum time lag to include in the output pure red noise spectrum.
+    imaxlag_fit : int, optional
+        As with `maxlag` but specifies the index instead of the physical time.
     axis : int, optional
         The "lag" dimension. Each slice along this axis should represent an
-        autocorrelation spectrum generated with `corr`. If the length is ``1``, the
-        data are assumed to be lag-1 autocorrelations and the timescale is computed
-        from the red noise equation. Otherwise, the timescale is estimated from
-        a least-squares curve fit to a red noise spectrum.
+        autocorrelation spectrum generated with `corr`.
+
+        * If `axis` is singleton, the data are assumed to be lag-1 autocorrelations
+          and the timescale is computed from the lag-1 pure red noise formula.
+        * If `axis` is non-singleton, the timescale is estimated from a least-squares
+          curve fit to a pure red noise spectrum up to `maxlag`.
 
     Returns
     -------
@@ -677,43 +690,64 @@ def rednoisefit(dt, a, /, nlag=None, nlag_fit=None, axis=0):
     sigma : array-like
         The standard errors. If the timescale was inferred using the lag-1
         equation, this is an array of zeros. The shape is the same as `tau`.
-    bestfit : array-like
-        The best fit autocorrelation curves. The shape is the same as `data`
+    fit : array-like
+        The best fit autocorrelation spectrum. The shape is the same as `data`
         but with `axis` of length `nlag`.
 
     Example
     -------
     >>> import climopy as climo
-        auto = climo.autocorr(data, axis=0)
-        taus, sigmas = climo.rednoise_fit(auto, axis=0)
+        data = np.random.rand(500, 10).cumsum(axis=0)
+        auto = climo.autocorr(1, data, axis=0, maxlag=50)
+        taus, sigmas, fit = climo.rednoisefit(auto, axis=0)
 
     See Also
     --------
-    corr, rednoise, rednoise_spectrum
+    corr, rednoise
     """
-    # Best-fit function
+    # Initial stuff
     dt = quack._get_step(dt)
-    curve = lambda t, tau: np.exp(-t * dt / tau)  # noqa: E731
-    nlag_fit = nlag_fit or 50
-    lags_fit = np.arange(0, nlag_fit)
+    curve_func = lambda t, tau: np.exp(-t * dt / tau)  # noqa: E731
+
+    # Parse arguments
+    if maxlag is not None and imaxlag is not None:
+        raise ValueError(f'Conflicting kwargs {maxlag=} and {imaxlag=}.')
+    if maxlag_fit is not None and imaxlag_fit is not None:
+        raise ValueError(f'Conflicting kwargs {maxlag_fit=} and {imaxlag_fit=}.')
+    if any(_ is not None and not np.isclose(_ % dt, 0) for _ in (maxlag, maxlag_fit)):
+        raise ValueError(f'Lag time must be divisible by timestep {dt}.')
+    if maxlag is not None:
+        imaxlag = np.round(maxlag / dt).astype(int)
+    if maxlag_fit is not None:
+        imaxlag_fit = np.round(maxlag_fit / dt).astype(int)
 
     with _ArrayContext(a, push_right=axis) as context:
-        # Iterate over dimensions
+        # Set defaults
         a = context.data
-        nextra, nlag_in = a.shape
-        nlag = nlag or nlag_in
-        lags = np.arange(0, nlag)  # lags for the curve fit
+        nextra = a.shape[0]
+        if imaxlag is None:
+            imaxlag = max(1, a.shape[1] - 1)  # omitting zero-lag entry
+        if imaxlag_fit is None:
+            imaxlag_fit = imaxlag
+        lags = np.arange(0, imaxlag)  # lags for the curve fit
+        lags_fit = np.arange(0, imaxlag_fit)
+
+        # Iterate over dimensions
         taus = np.empty((nextra, 1))
         sigmas = np.empty((nextra, 1))
-        afit = np.empty((nextra, nlag_fit))
+        afit = np.empty((nextra, imaxlag_fit))
+        print('hi!', imaxlag)
         for i in range(nextra):
-            if nlag <= 1:
+            if imaxlag <= 1:
+                # Scalar function
                 tau = -dt / np.log(a[i, -1])
-                sigma = 0  # no sigma, because no estimate
+                sigma = 0
             else:
-                tau, sigma = optimize.curve_fit(curve, lags, a[i, :])
+                # Curve fit
+                tau, sigma = optimize.curve_fit(curve_func, lags, a[i, :])
                 sigma = np.sqrt(np.diag(sigma))
-                tau, sigma = tau[0], sigma[0]  # take only first param
+                tau, sigma = tau[0], sigma[0]
+            # Timescales, uncertainty and the curve itself
             taus[i, 0] = tau  # just store the timescale
             sigmas[i, 0] = sigma
             afit[i, :] = np.exp(-dt * lags_fit / tau)  # best-fit spectrum
