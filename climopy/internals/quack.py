@@ -394,7 +394,7 @@ def _xarray_covar_wrapper(func):
         # Create new output array
         y = ys[0]
         if isinstance(x, xr.DataArray):
-            lag = _from_dataarray(x, lag, dims=('lag',), coords={})
+            lag = _from_dataarray(x, lag, name='lag', dims=('lag',), coords={})
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
             C = _from_dataarray(y, C, dim_rename={dim: 'lag'}, dim_coords={'lag': lag})
