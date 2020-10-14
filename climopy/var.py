@@ -729,14 +729,13 @@ def rednoisefit(
             imaxlag = max(1, a.shape[1] - 1)  # omitting zero-lag entry
         if imaxlag_fit is None:
             imaxlag_fit = imaxlag
-        lags = np.arange(0, imaxlag)  # lags for the curve fit
-        lags_fit = np.arange(0, imaxlag_fit)
+        lags = np.arange(0, imaxlag + 1)  # lags for the curve fit
+        lags_fit = np.arange(0, imaxlag_fit + 1)
 
         # Iterate over dimensions
         taus = np.empty((nextra, 1))
         sigmas = np.empty((nextra, 1))
-        afit = np.empty((nextra, imaxlag_fit))
-        print('hi!', imaxlag)
+        fit = np.empty((nextra, imaxlag_fit + 1))
         for i in range(nextra):
             if imaxlag <= 1:
                 # Scalar function
@@ -750,10 +749,10 @@ def rednoisefit(
             # Timescales, uncertainty and the curve itself
             taus[i, 0] = tau  # just store the timescale
             sigmas[i, 0] = sigma
-            afit[i, :] = np.exp(-dt * lags_fit / tau)  # best-fit spectrum
+            fit[i, :] = np.exp(-dt * lags_fit / tau)  # best-fit spectrum
 
         # Replace context data
-        context.replace_data(taus, sigmas, afit)
+        context.replace_data(taus, sigmas, fit)
 
     # Return permuted data
     return context.data
