@@ -59,12 +59,14 @@ def _apply_units(data):
     if isinstance(data.data, ureg.Quantity):
         data = data.data
     else:
-        units = _parse_units(data.attrs.get('units', None))
-        try:
-            data = data.data * ureg(units)
-        except Exception:  # many, many things could go wrong here
-            warnings._warn_climopy(f'Failed to apply units {units!r} with pint.')
-            data = data.data
+        units = data.attrs.get('units', None)
+        if units is not None:
+            try:
+                units = _parse_units(units)
+            except Exception:  # many, many things could go wrong here
+                warnings._warn_climopy(f'Failed to apply units {units!r} with pint.')
+            else:
+                data = data.data * units
     return data
 
 
