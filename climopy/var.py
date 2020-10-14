@@ -199,7 +199,7 @@ def _covar_driver(
     npassed = sum(_ is not None for _ in (lag, ilag, maxlag, imaxlag))
     if npassed == 0:
         ilag = 0
-    if npassed != 1:
+    elif npassed != 1:
         raise ValueError(f'Conflicting kwargs {lag=}, {ilag=}, {maxlag=}, {imaxlag=}.')
     if any(_ is not None and not 0 <= _ < naxis - 3 for _ in (ilag, imaxlag)):
         raise ValueError(f'Lag index must satisfy 0 <= lag < {naxis - 3}.')
