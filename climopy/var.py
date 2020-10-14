@@ -236,6 +236,7 @@ def _covar_driver(
             std2 = std1
         else:
             std2 = z2.std(axis=-1, keepdims=True)
+    std1[std1 == 0] = std2[std2 == 0] = 1  # avoid nan error for constant series
 
     # Covariance at zero-lag (included for consistency)
     if ilag == 0 or imaxlag == 0:
