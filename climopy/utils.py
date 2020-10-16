@@ -277,7 +277,7 @@ def linetrack(xs, ys=None, /, sep=None, seed=None, ntrack=None):  # noqa: E225
         ixs = np.atleast_1d(ixs)
         iys = np.atleast_1d(iys)
         if ixs.size == 0 or np.all(np.isnan(xs_sorted[i - 1, :])):
-            ixs = ixs[:ntrack]
+            ixs = ixs[:ntrack]  # WARNING: just truncate the list of candidates!
             iys = iys[:ntrack]
             xs_sorted[i, :ixs.size] = ixs
             ys_sorted[i, :iys.size] = iys

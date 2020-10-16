@@ -725,11 +725,10 @@ def rednoisefit(
     with _ArrayContext(a, push_right=axis) as context:
         # Set defaults
         a = context.data
+        nlag = a.shape[1] - 1  # not including 0-lag entry
         nextra = a.shape[0]
-        if imaxlag is None:
-            imaxlag = max(1, a.shape[1] - 1)  # omitting zero-lag entry
-        if imaxlag_fit is None:
-            imaxlag_fit = imaxlag
+        imaxlag = max(1, nlag) if imaxlag is None else min(imaxlag, nlag)
+        imaxlag_fit = imaxlag if imaxlag_fit is None else imaxlag_fit  # can be anything
         lags = np.arange(0, imaxlag + 1)  # lags for the curve fit
         lags_fit = np.arange(0, imaxlag_fit + 1)
 
