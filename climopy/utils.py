@@ -400,14 +400,15 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     if which not in ('negpos', 'posneg', 'both'):
         raise ValueError(f'Invalid which {which!r}.')
     if y.ndim > 2:
-        raise ValueError(f'Currently y must be 2D, got {y.ndim}D.')
+        raise ValueError(f'Currently y must be 1D or 2D, got {y.ndim}D.')
     if x.ndim != 1 or y.shape[axis] != x.size:
         raise ValueError(f'Invalid shapes {x.shape=} and {y.shape=}.')
     is1d = y.ndim == 1
     y = np.moveaxis(y, axis, -1)
     if is1d:
         y = y[None, ...]
-    reverse = x[1] - x[0] < 0  # TODO: check this works?
+    if x[1] - x[0] < 0:  # TODO: check this works?
+        which = 'negpos' if which == 'posneg' else 'posneg' if which == 'negpos' else which  # noqa: E501
     nextra, naxis = y.shape
 
     # Optionally take derivatives onto half-levels and interpolate to
@@ -430,29 +431,34 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     zxs = []
     zys = []
     for k in range(nextra):
-        # Get indices where values go positive to negative and vice versa
+        # Get indices where values go positive [to zero] to negative or vice versa.
         # NOTE: Always have False where NaNs present
         posneg = negpos = ()
         with np.errstate(invalid='ignore'):
-            if which in ('negpos', 'both'):
-                negpos = np.diff(np.sign(dy[k, :])) == 2
-            if which in ('posneg', 'both'):
-                posneg = np.diff(np.sign(dy[k, :])) == -2
+            ddy = np.diff(np.sign(dy[k, :]))
+        mask = np.zeros((ddy.size - 1,), dtype=bool)
+        if which in ('negpos', 'both'):
+            mask = mask | (ddy[:-1] == 1) & (ddy[1:] == 1)  # *exact* zeros
+            negpos = ddy == 2
+        if which in ('posneg', 'both'):
+            mask = mask | (ddy[:-1] == -1) & (ddy[1:] == -1)
+            posneg = ddy == -2
 
-        # Get exact zero locations
-        idxs, = np.where(dy[k, :] == 0)
+        # Record exact zero locations and values
+        idxs, = np.where(mask)
+        idxs += 1
         izxs = []
         izys = []
         for idx in idxs:
             izxs.append(x[idx])
             izys.append(y[k, idx])
 
-        # Interpolate to zero locations and values at those locations
+        # Interpolate to inexact zero locations and values at those locations
         for j, mask in enumerate((negpos, posneg)):
             idxs, = np.where(mask)  # NOTE: for empty array, yields nothing
             for idx in idxs:
                 # Need dy to be *increasing* for numpy.interp to work
-                if (not reverse and j == 0) or (reverse and j == 1):
+                if j == 0:
                     slice_ = slice(idx, idx + 2)
                 else:
                     slice_ = slice(idx + 1, idx - 1, -1)
