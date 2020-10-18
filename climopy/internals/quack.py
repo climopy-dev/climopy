@@ -51,26 +51,7 @@ def _get_step(h):
         return h[1] - h[0]
 
 
-def _apply_units(data):
-    """
-    Apply units from attribute and get magnitudes. This will make more sense
-    when the accessor is added to climo.
-    """
-    if isinstance(data.data, ureg.Quantity):
-        data = data.data
-    else:
-        units = data.attrs.get('units', None)
-        if units is not None:
-            try:
-                units = _parse_units(units)
-            except Exception:  # many, many things could go wrong here
-                warnings._warn_climopy(f'Failed to apply units {units!r} with pint.')
-            else:
-                data = data.data * units
-    return data
-
-
-def _parse_units(units):
+def _pint_parse(units):
     """
     Parse `DataArray` unit attributes.
     """
@@ -86,7 +67,7 @@ def _parse_units(units):
     )
 
 
-def _remove_units(data):
+def _pint_remove(data):
     """
     Remove units before assigning as coordinate.
     """
@@ -97,7 +78,89 @@ def _remove_units(data):
     return data
 
 
-def _to_arraylike(func, x, *ys, suffix='', infer_axis=True, **kwargs):
+def _dataarray_data(data):
+    """
+    Return underlying `DataArray` data. Apply pint units if possible.
+    """
+    if isinstance(data.data, ureg.Quantity):
+        data = data.data
+    else:
+        units = data.attrs.get('units', None)
+        if units is None:
+            data = data.data
+        else:
+            try:
+                units = _pint_parse(units)
+                data = data.data * units
+            except Exception:  # many, many things could go wrong here
+                warnings._warn_climopy(f'Failed to apply units {units!r} with pint.')
+                data = data.data
+    return data
+
+
+def _dataarray_from(
+    dataarray, data, name=None, dims=None, attrs=None, coords=None,
+    dim_rename=None, dim_coords=None, keep_attrs=False,
+):
+    """
+    Create a copy of the DataArray with various modifications.
+
+    Parameters
+    ----------
+    dataarray : xarray.DataArray
+        The source.
+    data : array-like
+        The new data.
+    name, dims, attrs, coords : optional
+        Replacement values.
+    dim_rename : (dim1_old, dim1_new, dim2_old, dim2_new, ...), optional
+        Used to rename dimensions.
+    dim_coords : (dim1, coords1, dim2, coords2, ...), optional
+        The new array coordinates for an arbitrary dimension
+    keep_attrs : bool, optional
+        Whether to keep the original attributes.
+    """
+    # Get source info
+    name = name or dataarray.name
+    dims = dims or list(dataarray.dims)
+    if coords is None:
+        coords = dict(dataarray.coords)
+    if attrs is None:
+        attrs = dict(dataarray.attrs) if keep_attrs else {}
+
+    # Rename dimension and optionally apply coordinates
+    for dim_in, dim_out in (dim_rename or {}).items():
+        coords.pop(dim_in, None)
+        dims[dims.index(dim_in)] = dim_out
+    for dim, coord in (dim_coords or {}).items():
+        if coord is not None:
+            coords[dim] = _pint_remove(coord)
+        elif dim in coords:  # e.g. ('lat', None) is instruction do delete dimension
+            del coords[dim]
+
+    # Strip unit if present
+    coords_fixed = {}
+    for key, coord in coords.items():
+        if not isinstance(coord, xr.DataArray):
+            coord = xr.DataArray(coord, dims=key, name=key)
+        if isinstance(coord.data, ureg.Quantity):
+            coord.attrs.setdefault('units', format(coord.data.units, '~'))
+            coord.data = coord.data.magnitude
+        coords_fixed[key] = coord
+
+    # Unquantify if DataArray was quantified
+    if (
+        not isinstance(dataarray.data, pint.Quantity)
+        and isinstance(data.data, pint.Quantity)
+    ):
+        attrs['units'] = data.data.units
+        data.data = data.data.magnitude
+
+    # Return new dataarray
+    return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords_fixed)
+
+
+def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
     """
     Get data from *x* and *y* DataArrays, interpret the `dim` argument, and
     try to determine the `axis` used for computations automatically if
@@ -146,73 +209,11 @@ def _to_arraylike(func, x, *ys, suffix='', infer_axis=True, **kwargs):
     # Apply units and get data
     kwargs['axis' + suffix] = axis_default if axis is None else axis
     if x_dataarray:
-        x = _apply_units(x)
+        x = _dataarray_data(x)
     if y_dataarray:
-        ys = (_apply_units(y) for y in ys)
+        ys = (_dataarray_data(y) for y in ys)
 
     return (x, *ys, kwargs)
-
-
-def _from_dataarray(
-    dataarray, data, name=None, dims=None, attrs=None, coords=None,
-    dim_rename=None, dim_coords=None, keep_attrs=False,
-):
-    """
-    Create a copy of the DataArray with various modifications.
-
-    Parameters
-    ----------
-    dataarray : xarray.DataArray
-        The source.
-    data : array-like
-        The new data.
-    name, dims, attrs, coords : optional
-        Replacement values.
-    dim_rename : (dim1_old, dim1_new, dim2_old, dim2_new, ...), optional
-        Used to rename dimensions.
-    dim_coords : (dim1, coords1, dim2, coords2, ...), optional
-        The new array coordinates for an arbitrary dimension
-    keep_attrs : bool, optional
-        Whether to keep the original attributes.
-    """
-    # Get source info
-    name = name or dataarray.name
-    dims = dims or list(dataarray.dims)
-    if coords is None:
-        coords = dict(dataarray.coords)
-    if attrs is None:
-        attrs = dict(dataarray.attrs) if keep_attrs else {}
-
-    # Rename dimension and optionally apply coordinates
-    for dim_in, dim_out in (dim_rename or {}).items():
-        coords.pop(dim_in, None)
-        dims[dims.index(dim_in)] = dim_out
-    for dim, coord in (dim_coords or {}).items():
-        if coord is not None:
-            coords[dim] = _remove_units(coord)
-        elif dim in coords:  # e.g. ('lat', None) is instruction do delete dimension
-            del coords[dim]
-
-    # Strip unit if present
-    coords_fixed = {}
-    for key, coord in coords.items():
-        if not isinstance(coord, xr.DataArray):
-            coord = xr.DataArray(coord, dims=key, name=key)
-        if isinstance(coord.data, ureg.Quantity):
-            coord.attrs.setdefault('units', format(coord.data.units, '~'))
-            coord.data = coord.data.magnitude
-        coords_fixed[key] = coord
-
-    # Unquantify if DataArray was quantified
-    if (
-        not isinstance(dataarray.data, pint.Quantity)
-        and isinstance(data.data, pint.Quantity)
-    ):
-        attrs['units'] = data.data.units
-        data.data = data.data.magnitude
-
-    # Return new dataarray
-    return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords_fixed)
 
 
 def _xarray_fit_wrapper(func):
@@ -224,7 +225,7 @@ def _xarray_fit_wrapper(func):
     def wrapper(*args, **kwargs):
         # Sanitize input
         x, y = args  # *both* or *one* of these is dataarray
-        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
+        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
 
         # Call main function
         fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
@@ -232,9 +233,9 @@ def _xarray_fit_wrapper(func):
         # Create new output array
         if isinstance(y, xr.DataArray):
             dim_coords = {y.dims[kwargs['axis']]: None}
-            fit_val = _from_dataarray(y, fit_val, dim_coords=dim_coords)
-            fit_err = _from_dataarray(y, fit_err, dim_coords=dim_coords)
-            fit_line = _from_dataarray(y, fit_line)  # same everything
+            fit_val = _dataarray_from(y, fit_val, dim_coords=dim_coords)
+            fit_err = _dataarray_from(y, fit_err, dim_coords=dim_coords)
+            fit_line = _dataarray_from(y, fit_line)  # same everything
 
         return fit_val, fit_err, fit_line
 
@@ -251,7 +252,7 @@ def _xarray_xy_y_wrapper(func):
     def wrapper(*args, **kwargs):
         # Sanitize input
         x, y = args  # *both* or *one* of these is dataarray
-        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
+        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
 
         # Call main function
         y_out = func(x_in, y_in, **kwargs)
@@ -264,7 +265,7 @@ def _xarray_xy_y_wrapper(func):
             dim_coords = None
             if ntrim > 0 and dim in y.coords:
                 dim_coords = {dim: x[ntrim:-ntrim]}
-            y_out = _from_dataarray(y, y_out, dim_coords=dim_coords)
+            y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
 
         return y_out
 
@@ -285,7 +286,7 @@ def _xarray_xy_xy_wrapper(func):
     def wrapper(*args, **kwargs):
         # Sanitize input
         x, y = args  # *both* or *one* of these is dataarray
-        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
+        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
 
         # Call main function
         x_out, y_out = func(x_in, y_in, **kwargs)
@@ -299,9 +300,9 @@ def _xarray_xy_xy_wrapper(func):
             dim = x.dims[0] if isinstance(x, xr.DataArray) else y.dims[axis_]
             dim_coords = {dim: x_out}
         if isinstance(x, xr.DataArray):
-            x_out = _from_dataarray(x, x_out, dim_coords=dim_coords)
+            x_out = _dataarray_from(x, x_out, dim_coords=dim_coords)
         if isinstance(y, xr.DataArray):
-            y_out = _from_dataarray(y, y_out, dim_coords=dim_coords)
+            y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
 
         return x_out, y_out
 
@@ -316,7 +317,7 @@ def _xarray_power_wrapper(func):
     def wrapper(*args, **kwargs):
         # Sanitize input
         x, *ys = args  # *both* or *one* of these is dataarray
-        x_in, *ys_in, kwargs = _to_arraylike(func, x, *ys, **kwargs)
+        x_in, *ys_in, kwargs = _dataarray_strip(func, x, *ys, **kwargs)
 
         # Call main function
         f, *Ps = func(x_in, *ys_in, **kwargs)
@@ -324,13 +325,13 @@ def _xarray_power_wrapper(func):
         # Create new output array
         y = ys[0]
         if isinstance(x, xr.DataArray):
-            f = _from_dataarray(
+            f = _dataarray_from(
                 x, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
             )
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
             Ps = (
-                _from_dataarray(y, P, dim_rename={dim: 'f'}, dim_coords={'f': f})
+                _dataarray_from(y, P, dim_rename={dim: 'f'}, dim_coords={'f': f})
                 for P in Ps
             )
 
@@ -347,8 +348,8 @@ def _xarray_power2d_wrapper(func):
     def wrapper(*args, **kwargs):
         # Sanitize input
         x1, x2, *ys = args  # *both* or *one* of these is dataarray
-        x1_in, *ys_in, kwargs = _to_arraylike(func, x1, *ys, suffix='_lon', **kwargs)
-        x2_in, *_, kwargs = _to_arraylike(func, x2, *ys, suffix='_time', **kwargs)
+        x1_in, *ys_in, kwargs = _dataarray_strip(func, x1, *ys, suffix='_lon', **kwargs)
+        x2_in, *_, kwargs = _dataarray_strip(func, x2, *ys, suffix='_time', **kwargs)
 
         # Call main function
         k, f, *Ps = func(x1_in, x2_in, *ys_in, **kwargs)
@@ -356,18 +357,18 @@ def _xarray_power2d_wrapper(func):
         # Create new output array
         y = ys[0]
         if isinstance(x1, xr.DataArray):
-            k = _from_dataarray(
+            k = _dataarray_from(
                 x1, dims=('k',), coords={}, attrs={'long_name': 'wavenumber'},
             )
         if isinstance(x2, xr.DataArray):
-            f = _from_dataarray(
+            f = _dataarray_from(
                 x2, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
             )
         if isinstance(y, xr.DataArray):
             dim1 = y.dims[kwargs['axis_lon']]
             dim2 = y.dims[kwargs['axis_time']]
             Ps = (
-                _from_dataarray(
+                _dataarray_from(
                     y, P, dim_rename={dim1: 'k', dim2: 'f'}, dim_coords={'k': k, 'f': f}
                 )
                 for P in Ps
@@ -386,7 +387,7 @@ def _xarray_covar_wrapper(func):
     def wrapper(*args, **kwargs):
         # Sanitize input
         x, *ys = args  # *both* or *one* of these is dataarray
-        x_in, *ys_in, kwargs = _to_arraylike(func, x, *ys, **kwargs)
+        x_in, *ys_in, kwargs = _dataarray_strip(func, x, *ys, **kwargs)
 
         # Call main function
         lag, C = func(x_in, *ys_in, **kwargs)
@@ -394,10 +395,10 @@ def _xarray_covar_wrapper(func):
         # Create new output array
         y = ys[0]
         if isinstance(x, xr.DataArray):
-            lag = _from_dataarray(x, lag, name='lag', dims=('lag',), coords={})
+            lag = _dataarray_from(x, lag, name='lag', dims=('lag',), coords={})
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
-            C = _from_dataarray(y, C, dim_rename={dim: 'lag'}, dim_coords={'lag': lag})
+            C = _dataarray_from(y, C, dim_rename={dim: 'lag'}, dim_coords={'lag': lag})
 
         return lag, C
 
@@ -440,10 +441,10 @@ def _xarray_eof_wrapper(func):
             both_flat['eof'] = time_flat['eof'] = space_flat['eof'] = eofs
 
             # Create new DataArrays
-            pcs = _from_dataarray(data, pcs, dims=dims, dim_coords=space_flat)
-            projs = _from_dataarray(data, projs, dims=dims, dim_coords=time_flat)
-            evals = _from_dataarray(data, evals, dims=dims, dim_coords=both_flat)
-            nstars = _from_dataarray(data, nstars, dims=dims, dim_coords=all_flat)
+            pcs = _dataarray_from(data, pcs, dims=dims, dim_coords=space_flat)
+            projs = _dataarray_from(data, projs, dims=dims, dim_coords=time_flat)
+            evals = _dataarray_from(data, evals, dims=dims, dim_coords=both_flat)
+            nstars = _dataarray_from(data, nstars, dims=dims, dim_coords=all_flat)
 
         return pcs, projs, evals, nstars
 
@@ -459,7 +460,7 @@ def _xarray_hist_wrapper(func):
         # Sanitize input
         # NOTE: This time 'x' coordinates are bins so do not infer
         yb, y = args
-        yb_in, y_in, kwargs = _to_arraylike(func, yb, y, infer_axis=False, **kwargs)
+        yb_in, y_in, kwargs = _dataarray_strip(func, yb, y, infer_axis=False, **kwargs)
 
         # Call main function
         y_out = func(yb_in, y_in, **kwargs)
@@ -469,10 +470,10 @@ def _xarray_hist_wrapper(func):
             dim = y.dims[kwargs['axis']]
             name = y.name
             yb_centers = 0.5 * (yb_in[1:] + yb_in[:-1])
-            coords = _from_dataarray(
+            coords = _dataarray_from(
                 y, yb_centers, dims=(name,), coords={}, keep_attrs=True,
             )
-            y_out = _from_dataarray(
+            y_out = _dataarray_from(
                 y, y_out, name='count', attrs={},
                 dim_rename={dim: name}, dim_coords={name: coords},
             )
@@ -490,7 +491,7 @@ def _xarray_zerofind_wrapper(func):
     def wrapper(*args, **kwargs):
         # Sanitize input
         x, y = args
-        x_in, y_in, kwargs = _to_arraylike(func, x, y, **kwargs)
+        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
 
         # Call main function
         x_out, y_out = func(x_in, y_in, **kwargs)
@@ -503,10 +504,10 @@ def _xarray_zerofind_wrapper(func):
             dim = y.dims[kwargs['axis']]
             if dim in y.coords:
                 attrs = y.coords[dim].attrs
-            x_out = _from_dataarray(
+            x_out = _dataarray_from(
                 y, x_out, name=dim, attrs=attrs, dim_rename={dim: 'track'},
             )
-            y_out = _from_dataarray(
+            y_out = _dataarray_from(
                 y, y_out, keep_attrs=True, dim_rename={dim: 'track'},
             )
 
