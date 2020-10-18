@@ -14,6 +14,7 @@ outside of pint processing.
 import functools
 import inspect
 import itertools
+import numbers
 import re
 
 import numpy as np
@@ -27,6 +28,16 @@ from . import warnings
 
 # Regex to find terms surrounded by curly braces that can be filled with str.format()
 REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside brackets
+
+
+def _as_array(*args):
+    """
+    Convert list and tuple input to arrays.
+    """
+    return tuple(
+        np.atleast_1d(_) if isinstance(_, (list, tuple, numbers.Number)) else _
+        for _ in args
+    )
 
 
 def _get_default(func, param):
@@ -162,22 +173,20 @@ def _dataarray_from(
 
 def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
     """
-    Get data from *x* and *y* DataArrays, interpret the `dim` argument, and
-    try to determine the `axis` used for computations automatically if
-    ``infer_axis=True``. The axis suffix can be e.g. ``'_time'``, and then
-    we look for the ``dim_time`` keyword.
+    Get data from *x* and *y* DataArrays, interpret the `dim` argument, and try to
+    determine the `axis` used for computations automatically if ``infer_axis=True``.
+    The axis suffix can be e.g. ``'_time'`` and we look for the ``dim_time`` keyword.
     """
     # Convert builtin python types to arraylike
-    if isinstance(x, (list, tuple)):
-        x = np.array(x)
-    ys = tuple(np.array(y) if isinstance(y, (list, tuple)) else y for y in ys)
+    x, = _as_array(x)
+    ys = _as_array(*ys)
     x_dataarray = isinstance(x, xr.DataArray)
     y_dataarray = all(isinstance(y, xr.DataArray) for y in ys)
-    y_types = tuple(type(y) for y in ys)
+    axis_default = _get_default(func, 'axis' + suffix)
 
     # Ensure all *ys* have identical dimensions, type, and shape
-    axis_default = _get_default(func, 'axis' + suffix)
-    if len(set(y_types)) != 1:
+    y_types = {type(y) for y in ys}
+    if len(y_types) != 1:
         raise ValueError(f'Expected one type for y inputs, got {y_types=}.')
     shapes = tuple(y.shape for y in ys)
     if any(_ != shapes[0] for _ in shapes):
@@ -230,7 +239,7 @@ def _xarray_fit_wrapper(func):
         # Call main function
         fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
 
-        # Create new output array
+        # Create output array
         if isinstance(y, xr.DataArray):
             dim_coords = {y.dims[kwargs['axis']]: None}
             fit_val = _dataarray_from(y, fit_val, dim_coords=dim_coords)
@@ -242,11 +251,40 @@ def _xarray_fit_wrapper(func):
     return wrapper
 
 
-def _xarray_xy_y_wrapper(func):
+def _xarray_yy_wrapper(func):
+    """
+    Generic `xarray.DataArray` wrapper for functions accepting and returning
+    arrays of the same shape. Permits situation where dimension coordinates
+    of returned data are symmetrically trimmed.
+    """
+    @functools.wraps(func)
+    def wrapper(y, *args, **kwargs):
+        # Sanitize input
+        _, y_in, kwargs = _dataarray_strip(func, 0, y, **kwargs)
+
+        # Call main function
+        y_out = func(y_in, *args, **kwargs)
+
+        # Create output array
+        if isinstance(y, xr.DataArray):
+            axis = kwargs['axis']
+            dim = y.dims[axis]
+            ntrim = (y_in.shape[axis] - y_out.shape[axis]) // 2
+            dim_coords = None
+            if ntrim > 0 and dim in y.coords:
+                dim_coords = {dim: y.coords[dim][ntrim:-ntrim]}
+            y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
+
+        return y_out
+
+    return wrapper
+
+
+def _xarray_xyy_wrapper(func):
     """
     Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
     coordinates and returning just *y* coordinates. Permits situation
-    where dimension coordinates on returned data are symmetrically trimmed.
+    where dimension coordinates of returned data are symmetrically trimmed.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -257,11 +295,11 @@ def _xarray_xy_y_wrapper(func):
         # Call main function
         y_out = func(x_in, y_in, **kwargs)
 
-        # Create new output array
+        # Create output array
         if isinstance(y, xr.DataArray):
-            axis_ = kwargs['axis']
-            dim = y.dims[axis_]
-            ntrim = (y_in.shape[axis_] - y_out.shape[axis_]) // 2
+            axis = kwargs['axis']
+            dim = y.dims[axis]
+            ntrim = (y_in.shape[axis] - y_out.shape[axis]) // 2
             dim_coords = None
             if ntrim > 0 and dim in y.coords:
                 dim_coords = {dim: x[ntrim:-ntrim]}
@@ -272,7 +310,7 @@ def _xarray_xy_y_wrapper(func):
     return wrapper
 
 
-def _xarray_xy_xy_wrapper(func):
+def _xarray_xyxy_wrapper(func):
     """
     Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
     coordinates and returning new *x* and *y* coordinates.
@@ -291,13 +329,12 @@ def _xarray_xy_xy_wrapper(func):
         # Call main function
         x_out, y_out = func(x_in, y_in, **kwargs)
 
-        # Create new output array with x coordinates either trimmed
-        # or interpolated onto half-levels
+        # Create output array with x coordinates trimmed or interpolated to half-levels
         # NOTE: This may fail for 2D DataArray x coordinates
-        axis_ = kwargs['axis']
+        axis = kwargs['axis']
         dim_coords = None
         if x.ndim == 1 and any(isinstance(_, xr.DataArray) for _ in (x, y)):
-            dim = x.dims[0] if isinstance(x, xr.DataArray) else y.dims[axis_]
+            dim = x.dims[0] if isinstance(x, xr.DataArray) else y.dims[axis]
             dim_coords = {dim: x_out}
         if isinstance(x, xr.DataArray):
             x_out = _dataarray_from(x, x_out, dim_coords=dim_coords)
@@ -322,7 +359,7 @@ def _xarray_power_wrapper(func):
         # Call main function
         f, *Ps = func(x_in, *ys_in, **kwargs)
 
-        # Create new output array
+        # Create output array
         y = ys[0]
         if isinstance(x, xr.DataArray):
             f = _dataarray_from(
@@ -354,7 +391,7 @@ def _xarray_power2d_wrapper(func):
         # Call main function
         k, f, *Ps = func(x1_in, x2_in, *ys_in, **kwargs)
 
-        # Create new output array
+        # Create output array
         y = ys[0]
         if isinstance(x1, xr.DataArray):
             k = _dataarray_from(
@@ -392,7 +429,7 @@ def _xarray_covar_wrapper(func):
         # Call main function
         lag, C = func(x_in, *ys_in, **kwargs)
 
-        # Create new output array
+        # Create output array
         y = ys[0]
         if isinstance(x, xr.DataArray):
             lag = _dataarray_from(x, lag, name='lag', dims=('lag',), coords={})
@@ -427,7 +464,7 @@ def _xarray_eof_wrapper(func):
             data_in, axis_time=axis_time, axis_space=axis_space, **kwargs,
         )
 
-        # Create new output arrays
+        # Create output arrays
         if isinstance(data, xr.DataArray):
             # Add EOF dimension
             dims = ['eof'] + list(data.dims)  # add 'EOF number' leading dimension
@@ -440,7 +477,7 @@ def _xarray_eof_wrapper(func):
             all_flat = both_flat.copy()  # with singleton EOF dimension
             both_flat['eof'] = time_flat['eof'] = space_flat['eof'] = eofs
 
-            # Create new DataArrays
+            # Create DataArrays
             pcs = _dataarray_from(data, pcs, dims=dims, dim_coords=space_flat)
             projs = _dataarray_from(data, projs, dims=dims, dim_coords=time_flat)
             evals = _dataarray_from(data, evals, dims=dims, dim_coords=both_flat)
@@ -497,8 +534,7 @@ def _xarray_zerofind_wrapper(func):
         x_out, y_out = func(x_in, y_in, **kwargs)
 
         # Add metadata to x_out and y_out
-        # NOTE: x_out inherits *shape* from y_out but should inherit
-        # *attributes* from x_in.
+        # NOTE: x_out inherits *shape* from y_out but should inherit *attrs* from x_in.
         if isinstance(y, xr.DataArray):
             attrs = {}
             dim = y.dims[kwargs['axis']]

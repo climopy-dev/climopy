@@ -154,7 +154,7 @@ non-boxcar windowing depends on the character of the signal.
 
     import numpy as np
     import climopy as climo
-    w = climo.window('hanning', 200)
+    w = climo.window(200, 'hanning')
     y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
     y2 = np.random.rand(200) # complex signal
     for y in (y1, y2):
@@ -195,7 +195,7 @@ def butterworth(dx, order, cutoff, /, btype='low'):
     a : array-like
         Denominator coeffs.
     """
-    # NOTE:
+    # Initial stuff
     # * Need to run *forward and backward* to prevent time-shifting.
     # * The 'analog' means units of cutoffs are rad/s.
     # * Unlike Lanczos filter, the *length* of this should be
@@ -203,7 +203,6 @@ def butterworth(dx, order, cutoff, /, btype='low'):
     #   order filters can get pretty wonky.
     # * Cutoff is point at which gain reduces to 1/sqrt(2) of the
     #   initial frequency. If doing bandpass, can
-    # Initial stuff
     # N = (width/dx)//1 # convert to timestep units
     # N = (N//2)*2 + 1 # odd numbered
     N = order  # or order
@@ -267,7 +266,7 @@ def lanczos(dx, width, cutoff):
     # Coefficients and initial stuff
     # n = (width/dx)//1  # convert window width from 'time units' to 'steps'
     # n = width//2
-    # convert alpha to wavenumber (new units are 'inverse timesteps')
+    # Convert alpha to wavenumber (new units are 'inverse timesteps')
     alpha = 1.0 / (cutoff / dx)
     n = width
     n = (n - 1) // 2 + 1
@@ -283,6 +282,7 @@ def lanczos(dx, width, cutoff):
     return window[1:-1], 1
 
 
+@quack._xarray_yy_wrapper
 @quack._pint_wrapper(('=x', ''), '=x')
 def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     """
@@ -345,10 +345,9 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
 
         # Fancy manipulation
         if center:
-            # Capture component that (for non-recursive filter) doesn't include
-            # datapoints with clipped edges. Forward-backward runs, so filtered
-            # data is in correct position w.r.t. x e.g. if n is 2, we cut off
-            # the (len(b)-1) from each side.
+            # Capture component that (for non-recursive filter) doesn't include points
+            # with clipped edges. Forward-backward runs, so filtered data is in correct
+            # position w.r.t. x e.g. if n is 2, we cut off the b.size - 1 from each side
             n_2sides = (n // 2) * 2 * n_half
 
             # Net forward run, so filtered data is shifted right by n_half
@@ -375,17 +374,18 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     return context.data
 
 
-@quack._pint_wrapper(('=x', ''), '=x')
-def harmonics(x, k, /, axis=-1):
+@quack._xarray_yy_wrapper
+@quack._pint_wrapper(('=y', ''), '=y')
+def harmonics(y, n, /, axis=-1):
     """
     Select the first Fourier harmonics of the time series.
     Useful for example in removing seasonal cycles.
 
     Parameters
     ----------
-    x : array-like
+    y : array-like
         The data.
-    k : int
+    n : int
         The number of harmonics.
     axis : int, optional
         The axis along which harmonics are taken.
@@ -396,29 +396,29 @@ def harmonics(x, k, /, axis=-1):
         The Fourier harmonics.
     """
     # Get fourier transform
-    x = np.moveaxis(x, axis, -1)
-    fft = np.fft.fft(x, axis=-1)
+    y = np.moveaxis(y, axis, -1)
+    fft = np.fft.fft(y, axis=-1)
 
     # Remove frequencies outside range. The FFT will have some error and give
     # non-zero imaginary components, but we can get magnitude or naively cast to real
     fft[..., 0] = 0
-    fft[..., k + 1:-k] = 0
-    x_filtered = np.real(np.fft.ifft(fft, axis=-1))
-    # x_filtered = np.abs(np.fft.ifft(fft, axis=-1))
-    return np.moveaxis(x_filtered, -1, axis)
+    fft[..., n + 1:-n] = 0
+    yf = np.real(np.fft.ifft(fft, axis=-1))
+    # yf = np.abs(np.fft.ifft(fft, axis=-1))
+    return np.moveaxis(yf, -1, axis)
 
 
-@quack._pint_wrapper(('=x', ''), '=x')
-def highpower(x, k, /, axis=-1):
+@quack._xarray_yy_wrapper
+@quack._pint_wrapper(('=y', ''), '=y')
+def highpower(y, n, /, axis=-1):
     """
-    Select only the highest power frequencies. Useful for
-    crudely reducing noise.
+    Select only the highest power frequencies. Useful for crudely reducing noise.
 
     Parameters
     ----------
-    x : `numpy.array-like`
+    y : `numpy.array-like`
         The data.
-    k : int
+    n : int
         The integer number of frequencies to select.
     axis : int, optional
         Axis along which the power is computed.
@@ -428,20 +428,21 @@ def highpower(x, k, /, axis=-1):
     array-like
         The filtered data.
     """
-    # Naively remove certain frequencies
-    # Get indices of n largest values. Use *argpartition* because it's more
+    # Get transform
+    y = np.moveaxis(y, axis, -1)
+    fft = np.fft.fft(y, axis=-1)
+    p = np.abs(fft) ** 2
+
+    # Naively remove certain frequencies. Use *argpartition* because it's more
     # efficient, will just put -nth element into sorted position, everything
     # after that unsorted but larger (don't need exact order!).
-    x = np.moveaxis(x, axis, -1)
-    fft = np.fft.fft(x, axis=-1)
-    p = np.abs(fft) ** 2
-    f = np.argpartition(p, -k, axis=-1)[..., -k:]
+    f = np.argpartition(p, -n, axis=-1)[..., -n:]
     fft_hi = fft[..., f]
-    fft[...] = 0.0
+    fft[:] = 0.0
     fft[..., f] = fft_hi
-    x_filtered = np.real(np.fft.ifft(fft, axis=-1))
-    # x_filtered = np.abs(np.fft.ifft(fft, axis=-1))
-    return np.moveaxis(x_filtered, -1, axis)
+    yf = np.real(np.fft.ifft(fft, axis=-1))
+    # yf = np.abs(np.fft.ifft(fft, axis=-1))
+    return np.moveaxis(yf, -1, axis)
 
 
 def _fft2d(pm, win, x, detrend='constant'):
@@ -486,8 +487,8 @@ def _window_data(data1, data2, nperseg=None, wintype=None):
     nperseg = 2 * (nperseg // 2)  # enforce even window size
     rem = ntime % nperseg
     if rem != 0:
-        data1 = data1[:, -rem:, ...]
-        data2 = data2[:, -rem:, ...]
+        data1 = data1[:, :-rem, ...]
+        data2 = data2[:, :-rem, ...]
         warnings._warn_climopy(
             f'Trimmed {rem} out of {ntime} points to accommodate '
             f'length-{nperseg} window.'
@@ -495,7 +496,7 @@ def _window_data(data1, data2, nperseg=None, wintype=None):
 
     # Get window values and *center* indices for window locations
     pm = nperseg // 2
-    win = window(wintype, nperseg)
+    win = window(nperseg, wintype)
     winloc = np.arange(pm, ntime - pm + pm // 2, pm)  # jump by half window length
     if winloc.size == 0:
         raise ValueError(f'Window length {nperseg} too big for length-{ntime} axis.')
@@ -882,91 +883,66 @@ def response(dx, b, a=1, /, n=1000, simple=False):
     return x, y
 
 
-@quack._pint_wrapper(('=x', ''), '=x')
-def running(x, w, /, axis=-1, pad=True, pad_value=np.nan):
+@quack._xarray_yy_wrapper
+@quack._pint_wrapper(('=y', ''), '=y')
+def running(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     """
     Apply running average to array.
 
     Parameters
     ----------
-    x : array-like
+    y : array-like
         Data, and we roll along axis `axis`.
-    w : int or array-like
-        Boxcar window length, or custom weights.
+    n : int, optional
+        Window length. Passed to `window`.
+    wintype : int or array-like
+        Window type. Passed to `window`.
     axis : int, optional
         Axis to filter.
     pad : bool, optional
-        Whether to pad the edges of axis back to original size.
-    pad_value : float, optional
-        The pad value.
+        The pad value used to fill the array back to its original size.
+        Set to `None` to disable padding.
 
     Returns
     -------
-    x : array-like
+    y : array-like
         Data windowed along axis `axis`.
 
     Note
     ----
     Implementation is similar to `scipy.signal.lfilter`. Read
-    `this post <https://stackoverflow.com/a/4947453/4970632>`__.
-
-    Generates rolling numpy window along final axis. Can then operate with
-    functions like polyfit or mean along the new last axis of output.
-    Note this creates *view* of original array, without duplicating data, so
-    no worries about efficiency.
+    `this post <https://stackoverflow.com/a/4947453/4970632>`__. This creates *view*
+    of original array, without duplicating data, so very efficient approach.
     """
-    # NOTE:
     # * For 1-D data numpy `convolve` would be appropriate, problem is `convolve`
     #   doesn't take multidimensional input!
-    # * If `x` has odd number of obs along axis, result will have last element
+    # * If `y` has odd number of obs along axis, result will have last element
     #   trimmed. Just like `filter`.
     # * Strides are apparently the 'number of bytes' one has to skip in memory
     #   to move to next position *on the given axis*. For example, a 5 by 5
-    #   array of 64bit (8byte) values will have array.strides == (40,8).
+    #   array of 64bit (8byte) values will have array.strides == (40, 8).
     # Roll axis, reshape, and get generate running dimension
-    n_orig = x.shape[axis]
     if axis < 0:
-        axis += x.ndim
-    x = np.moveaxis(x, axis, -1)
-
-    # Determine weights
-    if isinstance(w, str):
-        raise NotImplementedError("Need to allow string 'w' argument, e.g. w='Lanczos'")
-    w = np.atleast_1d(w)
-    if len(w) == 1:
-        # Boxcar window
-        nw = w[0]
-        w = 1 / nw
-    else:
-        # Arbitrary windowing function
-        # TODO: Add windowing functions!
-        nw = len(w)
+        axis += y.ndim
+    y = np.moveaxis(y, axis, -1)
+    w = window(n, wintype)
 
     # Manipulate array
-    shape = x.shape[:-1] + (x.shape[-1] - (nw - 1), nw)
-    strides = (*x.strides, x.strides[-1])  # repeat striding on end
-    x = np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
-
-    # Next 'put back' axis, keep axis as
-    # the 'rolling' dimension which can be averaged by arbitrary weights.
-    x = np.moveaxis(x, -2, axis)  # want to 'put back' axis -2
-
-    # Finally take the weighted average
-    # Note numpy will broadcast from right, so weights can be scalar or not
-    # print(x.min(), x.max(), x.mean())
-    x = (x * w).sum(axis=-1)  # broadcasts to right
+    shape = y.shape[:-1] + (y.shape[-1] - (n - 1), n)
+    strides = (*y.strides, y.strides[-1])  # repeat striding on end
+    yr = np.lib.stride_tricks.as_strided(y, shape=shape, strides=strides)
+    yr = (yr * w).mean(axis=-1)  # broadcasts to right
 
     # Optionally fill the rows taken up
-    if pad:
-        n_new = x.shape[axis]
-        n_left = (n_orig - n_new) // 2
-        n_right = n_orig - n_new - n_left
-        if n_left != n_right:
-            warnings._warn_climopy('Data shifted left by one.')
-        d_left = pad_value * np.ones((*x.shape[:axis], n_left, *x.shape[axis + 1:]))
-        d_right = pad_value * np.ones((*x.shape[:axis], n_right, *x.shape[axis + 1:]))
-        x = np.concatenate((d_left, x, d_right), axis=axis)
-    return x
+    # NOTE: Data might be shifted left by one if had even numbered window
+    if pad is not None:
+        n1 = (y.shape[-1] - yr.shape[-1]) // 2
+        n2 = (y.shape[-1] - yr.shape[-1]) - n1
+        x1 = pad * np.ones((*yr.shape[:-1], n1))
+        x2 = pad * np.ones((*yr.shape[:-1], n2))
+        yr = np.concatenate((x1, yr, x2), axis=axis)
+
+    return np.moveaxis(yr, -1, axis)
 
 
 @quack._pint_wrapper('=x', '=x')
@@ -1017,33 +993,33 @@ def waves(x, /, wavenums=None, wavelengths=None, phase=None):
     return data
 
 
-def window(wintype, n):
+def window(n, /, wintype='boxcar'):
     """
     Retrieve the `~scipy.signal.get_window` weighting function window.
 
     Parameters
     ----------
-    wintype : str or (str, float) tuple
-        The window name or ``(name, param1, ...)`` tuple containing the window
-        name and required parameter(s).
     n : int
         The window length.
+    wintype : str or (str, float, ...) tuple
+        The window name or ``(name, param1, ...)`` tuple containing the
+        name and the required parameter(s).
+    normalize : bool, optional
+        Whether to divide the resulting coefficients by their sum.
 
     Returns
     -------
     win : array-like
         The window coefficients.
-
-    power of your FFT coefficients. If your window requires some parameter,
-    `wintype` must be a ``(name, parameter1, ...)`` tuple.
     """
-    # Default error messages are shit, make them better
     if wintype == 'welch':
-        raise ValueError('Welch window needs 2-tuple of (name,beta).')
-    if wintype == 'kaiser':
-        raise ValueError('Welch window needs 2-tuple of (name,beta).')
-    if wintype == 'gaussian':
-        raise ValueError('Gaussian window needs 2-tuple of (name,stdev).')
-
-    # Get window
-    return signal.get_window(wintype, n)
+        raise ValueError('Welch window needs 2-tuple of (name, beta).')
+    elif wintype == 'kaiser':
+        raise ValueError('Kaiser window needs 2-tuple of (name, beta).')
+    elif wintype == 'gaussian':
+        raise ValueError('Gaussian window needs 2-tuple of (name, stdev).')
+    else:
+        w = signal.get_window(wintype, n)
+    # if normalize:
+    #     w /= np.sum(w)
+    return w

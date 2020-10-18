@@ -303,7 +303,6 @@ def era(
         'gaussian': 'reduced',
         'format': format,
         'step': step,  # NOTE: ignored for non-forecast type
-        # 'grid': res,
         'grid': grid,  # 64 latitudes, i.e. T42 truncation
         'stream': stream,  # product monthly, raw, etc.
         'date': dates,
