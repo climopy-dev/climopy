@@ -938,9 +938,9 @@ def running(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     if pad is not None:
         n1 = (y.shape[-1] - yr.shape[-1]) // 2
         n2 = (y.shape[-1] - yr.shape[-1]) - n1
-        x1 = pad * np.ones((*yr.shape[:-1], n1))
-        x2 = pad * np.ones((*yr.shape[:-1], n2))
-        yr = np.concatenate((x1, yr, x2), axis=axis)
+        y1 = pad * np.ones((*yr.shape[:-1], n1))
+        y2 = pad * np.ones((*yr.shape[:-1], n2))
+        yr = np.concatenate((y1, yr, y2), axis=-1)
 
     return np.moveaxis(yr, -1, axis)
 
