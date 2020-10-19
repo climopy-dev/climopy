@@ -578,25 +578,24 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
         x = np.moveaxis(x, axis, -1)
     y = np.moveaxis(y, axis, -1)
 
-    # Get coefficients for blocks of x-coordinates matching
-    # the length of respective centered finite difference methods.
-    # NOTE: We figure out edge derivatives with the fornberg algorithm using
-    # the same number of points as centered samples, but could also take
-    # approach of even finite difference methods and progressively reduce
-    # numbers of points used on edge.
+    # Get coefficients for blocks of x-coordinates matching the length of respective
+    # centered finite difference methods.
+    # NOTE: We figure out edge derivatives with the fornberg algorithm using the same
+    # number of points as centered samples, but could also take approach of even finite
+    # difference methods and progressively reduce numbers of points used on edge.
     n = y.shape[-1]
     nblock = 1 + accuracy + 2 * ((order - 1) // 2)
     nhalf = (nblock - 1) // 2
-    diff = np.empty(y.shape) * np.nan
     offset = 0 if keepedges else nhalf
+    with np.errstate(invalid='ignore'):
+        diff = np.empty(y.shape) * np.nan
     for i in range(offset, n - offset):
         # Get segment of x to pass to algorithm
-        # NOTE: To prevent overfitting we want to try to try to reduce segment
-        # length such that evenly spaced points yield standard lower-accuracy
-        # finite difference coefficients. If this is not possible, reduce
-        # to the bare minimum of points required for finite differencing, and
-        # the resulting coefficients will be the same independent of x0. This
-        # may pad the edges with identical finite differences.
+        # NOTE: To prevent overfitting we want to try to try to reduce segment length
+        # such that evenly spaced points yield standard lower-accuracy finite diff
+        # coefficients. If this is not possible, reduce to the bare minimum of points
+        # required for finite differencing, and the resulting coefficients will be the
+        # same independent of x0. This may pad the edges with identical finite diffs.
         if i < nhalf:
             # left, right = 0, nblock  # causes overfitting!
             left, right = 0, max(order + 1, i * 2 + 1)

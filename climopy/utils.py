@@ -200,7 +200,8 @@ def linetrack(xs, ys=None, /, sep=None, seed=None, ntrack=None):  # noqa: E225
     ntrack : int, optional
         The maximum number of values to be simultaneously tracked. This can
         be set to a low value to ignore spurious values in combination with `seed`.
-        The default value is the maximum `xs` sublist length.
+        The default value is the maximum `xs` sublist length (i.e. the default
+        behavior is to track all zeros).
 
     Returns
     -------
@@ -285,8 +286,9 @@ def linetrack(xs, ys=None, /, sep=None, seed=None, ntrack=None):  # noqa: E225
 
         # Find the points in the latest unsorted record that are *closest*
         # to the points in existing tracks, and the difference between them.
-        mindiffs = np.empty((nslots,)) * np.nan
-        argmins = np.empty((nslots,)) * np.nan
+        with np.errstate(invalid='ignore'):
+            mindiffs = np.empty((nslots,)) * np.nan
+            argmins = np.empty((nslots,)) * np.nan
         for j, ix_prev in enumerate(xs_sorted[i - 1, :]):
             if np.isnan(ix_prev):
                 continue
