@@ -64,7 +64,7 @@ def _get_step(h):
 
 def _interp_safe(x, xp, yp):
     """
-    Safe interpolation accounting for pint units.
+    Safe interpolation accounting for pint units. The `yp` can be a DataArray.
     """
     if any(isinstance(_, ureg.Quantity) for _ in (x, xp)):
         if not all(isinstance(_, ureg.Quantity) for _ in (x, xp)) or x.units != xp.units:  # noqa: E501
@@ -72,14 +72,19 @@ def _interp_safe(x, xp, yp):
         xp = xp.magnitude
         x = x.magnitude
     units = None
-    if isinstance(yp, ureg.Quantity):
-        units = yp.units
-        yp = yp.magnitude
+    yp_in = yp
+    if isinstance(yp, xr.DataArray):
+        yp_in = yp.data
+    if isinstance(yp_in, ureg.Quantity):
+        units = yp_in.units
+        yp_in = yp_in.magnitude
     if xp[1] - xp[0] < 0:
-        xp, yp = xp[::-1], yp[::-1]
-    y = np.interp(x, xp, yp)
+        xp, yp = xp[::-1], yp_in[::-1]
+    y = np.interp(x, xp, yp_in)
     if units is not None:
         y = y * units
+    if isinstance(yp, xr.DataArray):
+        y = _dataarray_from(yp, y, keep_coords=False, keep_attrs=True)
     return y
 
 
@@ -132,7 +137,7 @@ def _dataarray_data(data):
 
 def _dataarray_from(
     dataarray, data, name=None, dims=None, attrs=None, coords=None,
-    dim_rename=None, dim_coords=None, keep_attrs=False,
+    dim_rename=None, dim_coords=None, keep_coords=True, keep_attrs=False,
 ):
     """
     Create a copy of the DataArray with various modifications.
@@ -146,9 +151,11 @@ def _dataarray_from(
     name, dims, attrs, coords : optional
         Replacement values.
     dim_rename : (dim1_old, dim1_new, dim2_old, dim2_new, ...), optional
-        Used to rename dimensions.
+        Mapping from old to new dimension names.
     dim_coords : (dim1, coords1, dim2, coords2, ...), optional
-        The new array coordinates for an arbitrary dimension
+        Mapping to new array coordinates for arbitrary dimension(s).
+    keep_coords : bool, optional
+        Whether to keep the original coords.
     keep_attrs : bool, optional
         Whether to keep the original attributes.
     """
@@ -173,6 +180,8 @@ def _dataarray_from(
     # Strip unit if present
     coords_fixed = {}
     for key, coord in coords.items():
+        if not keep_coords:
+            continue
         if not isinstance(coord, xr.DataArray):
             coord = xr.DataArray(coord, dims=key, name=key)
         if isinstance(coord.data, ureg.Quantity):
@@ -189,6 +198,7 @@ def _dataarray_from(
         data.data = data.data.magnitude
 
     # Return new dataarray
+    print(name, dims, attrs)
     return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords_fixed)
 
 
@@ -323,7 +333,7 @@ def _xarray_xyy_wrapper(func):
             dim = y.dims[axis]
             dx = (y_in.shape[axis] - y_out.shape[axis]) // 2
             if dx > 0 and dim in y.coords:
-                dim_coords = {dim: y.coords[y.dims[axis]].data[dx:-dx]}
+                dim_coords = {dim: y.coords[y.dims[axis]][dx:-dx]}
             else:
                 dim_coords = None
             y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
@@ -359,14 +369,14 @@ def _xarray_xyxy_wrapper(func):
         if isinstance(y, xr.DataArray):
             dim = y.dims[axis]
             if dim in y.coords:
-                dim_coords = {dim: _interp_safe(x_out, x_in, y.coords[dim].data)}
+                dim_coords = {dim: _interp_safe(x_out, x_in, y.coords[dim])}
             else:
                 dim_coords = None
             y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
         if isinstance(x, xr.DataArray):
             dim = x.dims[0] if x.ndim == 1 else x.dims[axis]
             if dim in x.coords:
-                dim_coords = {dim: _interp_safe(x_out, x_in, x.coords[dim].data)}
+                dim_coords = {dim: _interp_safe(x_out, x_in, x.coords[dim])}
             else:
                 dim_coords = None
             x_out = _dataarray_from(x, x_out, dim_coords=dim_coords)
