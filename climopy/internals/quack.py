@@ -198,7 +198,6 @@ def _dataarray_from(
         data.data = data.data.magnitude
 
     # Return new dataarray
-    print(name, dims, attrs)
     return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords_fixed)
 
 
