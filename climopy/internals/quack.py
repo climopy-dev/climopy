@@ -62,6 +62,25 @@ def _get_step(h):
         return h[1] - h[0]
 
 
+def _interp_safe(x, xp, yp):
+    """
+    Safe interpolation accounting for pint units.
+    """
+    if any(isinstance(_, ureg.Quantity) for _ in (x, xp)):
+        if not all(isinstance(_, ureg.Quantity) for _ in (x, xp)) or x.units != xp.units:  # noqa: E501
+            raise ValueError('Source and destination coordinates must have same units.')
+        xp = xp.magnitude
+        x = x.magnitude
+    units = None
+    if isinstance(yp, ureg.Quantity):
+        units = yp.units
+        yp = yp.magnitude
+    y = np.interp(x, xp, yp)
+    if units is not None:
+        y = y * units
+    return y
+
+
 def _pint_parse(units):
     """
     Parse `DataArray` unit attributes.
@@ -332,24 +351,23 @@ def _xarray_xyxy_wrapper(func):
         x_out, y_out = func(x_in, y_in, **kwargs)
 
         # Create output array with x coordinates trimmed or interpolated to half-levels
-        # NOTE: Numpy interp function works with pint arrays
         # NOTE: Also modify coordinates associated with x array, which may differ
         # from array values themselves (e.g. heights converted from pressure).
         axis = kwargs['axis']
-        if isinstance(x, xr.DataArray):
-            dim = x.dims[0] if x.ndim == 1 else x.dims[axis]
-            if dim in x.coords:
-                dim_coords = {dim: np.interp(x_out, x_in, x.coords[dim].data)}
-            else:
-                dim_coords = None
-            x_out = _dataarray_from(x, x_out, dim_coords=dim_coords)
         if isinstance(y, xr.DataArray):
             dim = y.dims[axis]
             if dim in y.coords:
-                dim_coords = {dim: np.interp(x_out, x_in, y.coords[dim].data)}
+                dim_coords = {dim: _interp_safe(x_out, x_in, y.coords[dim].data)}
             else:
                 dim_coords = None
             y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
+        if isinstance(x, xr.DataArray):
+            dim = x.dims[0] if x.ndim == 1 else x.dims[axis]
+            if dim in x.coords:
+                dim_coords = {dim: _interp_safe(x_out, x_in, x.coords[dim].data)}
+            else:
+                dim_coords = None
+            x_out = _dataarray_from(x, x_out, dim_coords=dim_coords)
 
         return x_out, y_out
 
