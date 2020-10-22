@@ -518,6 +518,20 @@ def deriv_half(x, y, /, order=1, axis=0):
         The new *x* coordinates.
     diff : array-like
         The "derivative".
+
+    See also
+    --------
+    deriv1, deriv_uneven
+
+    Example
+    -------
+
+    >>> import xarray as xr
+    ... import climopy as climo
+    ... x = xr.DataArray([0, 2, 4], name='x', dims='p', coords={'p': [1000, 800, 600]})
+    ... y = xr.DataArray([0, 4, 16], name='y', dims='p')
+    ... x_out, y_out = climo.deriv_half(x, y)
+
     """
     # Standardize
     x, y = _xy_standardize(x, y, axis)

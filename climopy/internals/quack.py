@@ -296,13 +296,15 @@ def _xarray_xyy_wrapper(func):
         y_out = func(x_in, y_in, **kwargs)
 
         # Create output array
+        # NOTE: Account for symmetrically trimmed coords here
         if isinstance(y, xr.DataArray):
             axis = kwargs['axis']
             dim = y.dims[axis]
-            ntrim = (y_in.shape[axis] - y_out.shape[axis]) // 2
-            dim_coords = None
-            if ntrim > 0 and dim in y.coords:
-                dim_coords = {dim: x[ntrim:-ntrim]}
+            dx = (y_in.shape[axis] - y_out.shape[axis]) // 2
+            if dx > 0 and dim in y.coords:
+                dim_coords = {dim: y.coords[y.dims[axis]].data[dx:-dx]}
+            else:
+                dim_coords = None
             y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
 
         return y_out
@@ -330,15 +332,23 @@ def _xarray_xyxy_wrapper(func):
         x_out, y_out = func(x_in, y_in, **kwargs)
 
         # Create output array with x coordinates trimmed or interpolated to half-levels
-        # NOTE: This may fail for 2D DataArray x coordinates
+        # NOTE: Numpy interp function works with pint arrays
+        # NOTE: Also modify coordinates associated with x array, which may differ
+        # from array values themselves (e.g. heights converted from pressure).
         axis = kwargs['axis']
-        dim_coords = None
-        if x.ndim == 1 and any(isinstance(_, xr.DataArray) for _ in (x, y)):
-            dim = x.dims[0] if isinstance(x, xr.DataArray) else y.dims[axis]
-            dim_coords = {dim: x_out}
         if isinstance(x, xr.DataArray):
+            dim = x.dims[0] if x.ndim == 1 else x.dims[axis]
+            if dim in x.coords:
+                dim_coords = {dim: np.interp(x_out, x_in, x.coords[dim].data)}
+            else:
+                dim_coords = None
             x_out = _dataarray_from(x, x_out, dim_coords=dim_coords)
         if isinstance(y, xr.DataArray):
+            dim = y.dims[axis]
+            if dim in y.coords:
+                dim_coords = {dim: np.interp(x_out, x_in, y.coords[dim].data)}
+            else:
+                dim_coords = None
             y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
 
         return x_out, y_out
