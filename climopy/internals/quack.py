@@ -75,6 +75,8 @@ def _interp_safe(x, xp, yp):
     if isinstance(yp, ureg.Quantity):
         units = yp.units
         yp = yp.magnitude
+    if xp[1] - xp[0] < 0:
+        xp, yp = xp[::-1], yp[::-1]
     y = np.interp(x, xp, yp)
     if units is not None:
         y = y * units
