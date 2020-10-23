@@ -81,11 +81,20 @@ order : int, optional
 
 def _fornberg_coeffs(x, x0, order=1):
     """
-    Retrieve the Fornberg (1988) coefficients for estimating derivatives
-    of arbitrary order at arbitrary points as recommended by
-    `this post <https://scicomp.stackexchange.com/a/481/24014>`__.
+    Retrieve the Fornberg (1988) coefficients for estimating derivatives of arbitrary
+    order at arbitrary points as recommended by `this post \
+<https://scicomp.stackexchange.com/a/481/24014>`__.
     Code was adapted from `this example \
 <https://numdifftools.readthedocs.io/en/latest/_modules/numdifftools/fornberg.html>`__.
+
+    Parameters
+    ----------
+    x : array-like, optional
+        Array with rightmost dimension representing sample coordinates.
+    x0 : array-like, optional
+        Array representing coordinate selection. Rank must be one less than `x`.
+    order : int, optional
+        The order of the derivative.
     """
     # NOTE: The order of coordinates does not matter (can be descending or
     # even non-monotonic evidently).
@@ -93,26 +102,27 @@ def _fornberg_coeffs(x, x0, order=1):
     n = x.shape[-1]
     if order >= n:
         raise ValueError(f'Derivative order {order} must be smaller than {n}.')
-    weights = np.zeros((n, order + 1))  # includes zeroth weights
+    weights = np.zeros((*x.shape[:-1], n, order + 1))  # weights for all derivatives
     weights[..., 0, 0] = 1
     hprod_prev = 1
     for i in range(1, n):
         # Set terms up
         idxs = np.arange(0, min(i, order) + 1)
-        hprod = np.prod(x[..., i] - x[..., :i], axis=-1)
-        h0 = x[..., i] - x0
-        h0_prev = x[..., i - 1] - x0
+        hprod = np.prod(x[..., i:i + 1] - x[..., :i], axis=-1, keepdims=True)
+        h0 = x[..., i:i + 1] - x0[..., None]
+        h0_prev = x[..., i - 1:i] - x0[..., None]
         for ii in range(i):
             w = weights[..., ii, idxs]
             w_prev = weights[..., ii, idxs - 1]
             # The 'for m := 0 to min(n, M)' part
-            h = x[..., i] - x[..., ii]
+            h = x[..., i:i + 1] - x[..., ii:ii + 1]
+            # print(w.shape, w_prev.shape, idxs.shape, h0.shape, h.shape)
             weights[..., ii, idxs] = (h0 * w - idxs * w_prev) / h
         # The 'for m := 0 to min(n, M)' part
         # Note we use w and w_prev from last loop iteration here
         weights[..., i, idxs] = (idxs * w_prev - h0_prev * w) * (hprod_prev / hprod)
         hprod_prev = hprod
-    return weights[..., -1]
+    return weights[..., -1]  # weights for order'th derivative (rightmost selection)
 
 
 @quack._xarray_xyy_wrapper
