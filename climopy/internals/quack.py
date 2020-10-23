@@ -84,7 +84,7 @@ def _interp_safe(x, xp, yp):
     if units is not None:
         y = y * units
     if isinstance(yp, xr.DataArray):
-        y = _dataarray_from(yp, y, keep_coords=False, keep_attrs=True)
+        y = _dataarray_from(yp, y, dim_drop=yp.dims, keep_attrs=True)
     return y
 
 
@@ -137,7 +137,7 @@ def _dataarray_data(data):
 
 def _dataarray_from(
     dataarray, data, name=None, dims=None, attrs=None, coords=None,
-    dim_rename=None, dim_coords=None, keep_coords=True, keep_attrs=False,
+    dim_change=None, dim_coords=None, dim_drop=None, keep_attrs=False,
 ):
     """
     Create a copy of the DataArray with various modifications.
@@ -150,12 +150,12 @@ def _dataarray_from(
         The new data.
     name, dims, attrs, coords : optional
         Replacement values.
-    dim_rename : (dim1_old, dim1_new, dim2_old, dim2_new, ...), optional
-        Mapping from old to new dimension names.
+    dim_change : (dim1_old, dim1_new, dim2_old, dim2_new, ...), optional
+        Replace an old dimension with a new dimension and drop the old coordinates.
     dim_coords : (dim1, coords1, dim2, coords2, ...), optional
         Mapping to new array coordinates for arbitrary dimension(s).
-    keep_coords : bool, optional
-        Whether to keep the original coords.
+    dim_drop : (dim1, dim2, ...), optional
+        List of dimension coordinates to drop.
     keep_attrs : bool, optional
         Whether to keep the original attributes.
     """
@@ -168,7 +168,7 @@ def _dataarray_from(
         attrs = dict(dataarray.attrs) if keep_attrs else {}
 
     # Rename dimension and optionally apply coordinates
-    for dim_in, dim_out in (dim_rename or {}).items():
+    for dim_in, dim_out in (dim_change or {}).items():
         coords.pop(dim_in, None)
         dims[dims.index(dim_in)] = dim_out
     for dim, coord in (dim_coords or {}).items():
@@ -179,15 +179,16 @@ def _dataarray_from(
 
     # Strip unit if present
     coords_fixed = {}
-    for key, coord in coords.items():
-        if not keep_coords:
+    dim_drop = dim_drop or ()
+    for dim, coord in coords.items():
+        if dim in dim_drop:
             continue
         if not isinstance(coord, xr.DataArray):
-            coord = xr.DataArray(coord, dims=key, name=key)
+            coord = xr.DataArray(coord, dims=dim, name=dim)
         if isinstance(coord.data, ureg.Quantity):
             coord.attrs.setdefault('units', format(coord.data.units, '~'))
             coord.data = coord.data.magnitude
-        coords_fixed[key] = coord
+        coords_fixed[dim] = coord
 
     # Unquantify if DataArray was quantified
     if (
@@ -365,20 +366,33 @@ def _xarray_xyxy_wrapper(func):
         # NOTE: Also modify coordinates associated with x array, which may differ
         # from array values themselves (e.g. heights converted from pressure).
         axis = kwargs['axis']
-        if isinstance(y, xr.DataArray):
-            dim = y.dims[axis]
-            if dim in y.coords:
-                dim_coords = {dim: _interp_safe(x_out, x_in, y.coords[dim])}
-            else:
-                dim_coords = None
-            y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
+        if x_in.size == 1:
+            x_in_sel = np.arange(x_out.size)
+            x_out_sel = x_out
+        elif x_in.ndim == 1 and x_out.ndim == 1:
+            x_in_sel = x_in
+            x_out_sel = x_out
+        elif x_in.ndim > 1 and x_out.ndim > 1:
+            slice_ = [0] * x_in.ndim
+            slice_[axis] = slice(None)
+            x_in_sel = x_in[tuple(slice_)]
+            x_out_sel = x_out[tuple(slice_)]
+        else:
+            raise ValueError('Unexpected dimensionality of x coordinates.')
         if isinstance(x, xr.DataArray):
             dim = x.dims[0] if x.ndim == 1 else x.dims[axis]
             if dim in x.coords:
-                dim_coords = {dim: _interp_safe(x_out, x_in, x.coords[dim])}
+                dim_coords = {dim: _interp_safe(x_out_sel, x_in_sel, x.coords[dim])}
             else:
                 dim_coords = None
             x_out = _dataarray_from(x, x_out, dim_coords=dim_coords)
+        if isinstance(y, xr.DataArray):
+            dim = y.dims[axis]
+            if dim in y.coords:
+                dim_coords = {dim: _interp_safe(x_out_sel, x_in_sel, y.coords[dim])}
+            else:
+                dim_coords = None
+            y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
 
         return x_out, y_out
 
@@ -407,7 +421,7 @@ def _xarray_power_wrapper(func):
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
             Ps = (
-                _dataarray_from(y, P, dim_rename={dim: 'f'}, dim_coords={'f': f})
+                _dataarray_from(y, P, dim_change={dim: 'f'}, dim_coords={'f': f})
                 for P in Ps
             )
 
@@ -445,7 +459,7 @@ def _xarray_power2d_wrapper(func):
             dim2 = y.dims[kwargs['axis_time']]
             Ps = (
                 _dataarray_from(
-                    y, P, dim_rename={dim1: 'k', dim2: 'f'}, dim_coords={'k': k, 'f': f}
+                    y, P, dim_change={dim1: 'k', dim2: 'f'}, dim_coords={'k': k, 'f': f}
                 )
                 for P in Ps
             )
@@ -474,7 +488,7 @@ def _xarray_covar_wrapper(func):
             lag = _dataarray_from(x, lag, name='lag', dims=('lag',), coords={})
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
-            C = _dataarray_from(y, C, dim_rename={dim: 'lag'}, dim_coords={'lag': lag})
+            C = _dataarray_from(y, C, dim_change={dim: 'lag'}, dim_coords={'lag': lag})
 
         return lag, C
 
@@ -551,7 +565,7 @@ def _xarray_hist_wrapper(func):
             )
             y_out = _dataarray_from(
                 y, y_out, name='count', attrs={},
-                dim_rename={dim: name}, dim_coords={name: coords},
+                dim_change={dim: name}, dim_coords={name: coords},
             )
 
         return y_out
@@ -580,10 +594,10 @@ def _xarray_zerofind_wrapper(func):
             if dim in y.coords:
                 attrs = y.coords[dim].attrs
             x_out = _dataarray_from(
-                y, x_out, name=dim, attrs=attrs, dim_rename={dim: 'track'},
+                y, x_out, name=dim, attrs=attrs, dim_change={dim: 'track'},
             )
             y_out = _dataarray_from(
-                y, y_out, keep_attrs=True, dim_rename={dim: 'track'},
+                y, y_out, keep_attrs=True, dim_change={dim: 'track'},
             )
 
         return x_out, y_out

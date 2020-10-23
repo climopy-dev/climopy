@@ -553,11 +553,11 @@ def deriv_half(x, y, /, order=1, axis=0):
     diff = y
     for i in range(order):
         diff = (diff[..., 1:] - diff[..., :-1]) / (x[..., 1:] - x[..., :-1])
-        x = (x[..., 1:] + x[..., :-1]) / 2.0
+        x = 0.5 * (x[..., 1:] + x[..., :-1])
 
     # Return derivative
     if x.ndim > 1:
-        np.moveaxis(x, -1, axis)
+        x = np.moveaxis(x, -1, axis)
     diff = np.moveaxis(diff, -1, axis)
     return x, diff
 
