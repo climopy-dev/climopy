@@ -344,7 +344,8 @@ def linetrack(xs, ys=None, /, sep=None, seed=None, ntrack=None):  # noqa: E225
 @quack._xarray_zerofind_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y'))
 def zerofind(
-    x, y, axis=-1, axis_track=-2, diff=None, centered=True, which='both', **kwargs,
+    x, y, axis=-1, axis_track=-2, track=True, diff=None, centered=True, which='both',
+    **kwargs,
 ):
     """
     Find the location of the zero value for a given data array.
@@ -359,6 +360,8 @@ def zerofind(
         Axis along which zeros are found and (optionally) derivatives are taken.
     axis_track : int, optional
         Axis along which zeros taken along `axis` are "tracked".
+    track : bool, optional
+        Whether to track zeros. If ``False`` they are added in the order they appeared.
     diff : int, optional
         How many times to differentiate along the axis.
     centered : bool, optional
@@ -493,8 +496,14 @@ def zerofind(
                 zxs_along.append(zxs_across)
                 zys_along.append(zys_across)
 
-            # Return locations and values
-            zxs_along, zys_along = linetrack(zxs_along, zys_along, **kwargs)
+            # Optionally track values along particular axis
+            if track:
+                zxs_along, zys_along = linetrack(zxs_along, zys_along, **kwargs)
+            else:
+                ntrack = max(map(len, zxs_along))
+                pad = lambda x: x + [np.nan] * (ntrack - len(x))  # noqa: E731
+                zxs_along = np.vstack(list(map(pad, zxs_along)))
+                zys_along = np.vstack(list(map(pad, zys_along)))
             if not zxs_along.size:
                 warnings._warn_climopy(f'No zeros found for data {y!r}.')
             zxs.append(zxs_along)
@@ -503,16 +512,9 @@ def zerofind(
         # Concatenate arrays
         # NOTE: Last dimension is the track dimension so pad them first
         ntrack = max(_.shape[1] for _ in zxs)
-        zxs = tuple(
-            np.pad(_, ((0, 0), (0, ntrack - _.shape[1])), constant_values=np.nan)
-            for _ in zxs
-        )
-        zys = tuple(
-            np.pad(_, ((0, 0), (0, ntrack - _.shape[1])), constant_values=np.nan)
-            for _ in zys
-        )
-        zxs = np.vstack([_[None, ...] for _ in zxs])
-        zys = np.vstack([_[None, ...] for _ in zys])
+        pad = lambda x: np.pad(x, ((0, 0), (0, ntrack - x.shape[1])), constant_values=np.nan)  # noqa: E501, E731
+        zxs = np.vstack([_[None, ...] for _ in map(pad, zxs)])
+        zys = np.vstack([_[None, ...] for _ in map(pad, zys)])
 
         # Add back as new data
         context.replace_data(zxs, zys)
