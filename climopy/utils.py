@@ -10,6 +10,7 @@ import pandas as pd
 
 from .diff import deriv_half, deriv_uneven
 from .internals import quack, warnings
+from .internals.array import _ArrayContext
 
 __all__ = [
     'dt2cal',
@@ -342,7 +343,9 @@ def linetrack(xs, ys=None, /, sep=None, seed=None, ntrack=None):  # noqa: E225
 
 @quack._xarray_zerofind_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y'))
-def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
+def zerofind(
+    x, y, axis=-1, axis_track=-2, diff=None, centered=True, which='both', **kwargs,
+):
     """
     Find the location of the zero value for a given data array.
 
@@ -353,8 +356,9 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     y : array-like
         The data for which we find zeros.
     axis : int, optional
-        The axis along which zeros are found and (optionally) derivatives
-        are taken. These will be connected along the other axis with `linetrack`.
+        Axis along which zeros are found and (optionally) derivatives are taken.
+    axis_track : int, optional
+        Axis along which zeros taken along `axis` are "tracked".
     diff : int, optional
         How many times to differentiate along the axis.
     centered : bool, optional
@@ -401,93 +405,122 @@ def zerofind(x, y, axis=0, diff=None, centered=True, which='both', **kwargs):
     # TODO: Support tracking across single axis
     if which not in ('negpos', 'posneg', 'both'):
         raise ValueError(f'Invalid which {which!r}.')
-    if y.ndim > 2:
-        raise ValueError(f'Currently y must be 1D or 2D, got {y.ndim}D.')
     if x.ndim != 1 or y.shape[axis] != x.size:
         raise ValueError(f'Invalid shapes {x.shape=} and {y.shape=}.')
-    is1d = y.ndim == 1
-    y = np.moveaxis(y, axis, -1)
-    if is1d:
-        y = y[None, ...]
     if x[1] - x[0] < 0:  # TODO: check this works?
         which = 'negpos' if which == 'posneg' else 'posneg' if which == 'negpos' else which  # noqa: E501
-    nextra, naxis = y.shape
+    ndim = y.ndim
+    if ndim <= 2:
+        axis, axis_track = -1, -2
+        y = y[None, ...]
+        if ndim == 1:
+            y = y[None, ...]
 
-    # Optionally take derivatives onto half-levels and interpolate to
-    # points on those half-levels.
-    # NOTE: Doesn't matter if units are degrees or meters for latitude.
-    dy = y
-    if diff:  # not zero or None
-        if centered:
-            # Centered differencing onto same levels
-            dy = deriv_uneven(x, y, axis=-1, order=diff, keepedges=True)
-        else:
-            # More accurate differencing onto half levels
-            dx, dy = deriv_half(x, y, axis=-1, order=diff)
-            yi = dy.copy()
-            for i in range(nextra):
-                yi[i, :] = np.interp(dx, x, y[i, :])
-            x, y = dx, yi
-
-    # Find where sign switches from +ve to -ve and vice versa
-    zxs = []
-    zys = []
-    for k in range(nextra):
-        # Get indices where values go positive [to zero] to negative or vice versa.
-        # NOTE: Always have False where NaNs present
-        posneg = negpos = ()
-        with np.errstate(invalid='ignore'):
-            ddy = np.diff(np.sign(dy[k, :]))
-        mask = np.zeros((ddy.size - 1,), dtype=bool)
-        if which in ('negpos', 'both'):
-            mask = mask | (ddy[:-1] == 1) & (ddy[1:] == 1)  # *exact* zeros
-            negpos = ddy == 2
-        if which in ('posneg', 'both'):
-            mask = mask | (ddy[:-1] == -1) & (ddy[1:] == -1)
-            posneg = ddy == -2
-
-        # Record exact zero locations and values
-        idxs, = np.where(mask)
-        idxs += 1
-        izxs = []
-        izys = []
-        for idx in idxs:
-            izxs.append(x[idx])
-            izys.append(y[k, idx])
-
-        # Interpolate to inexact zero locations and values at those locations
-        for j, mask in enumerate((negpos, posneg)):
-            idxs, = np.where(mask)  # NOTE: for empty array, yields nothing
-            for idx in idxs:
-                # Need dy to be *increasing* for numpy.interp to work
-                if j == 0:
-                    slice_ = slice(idx, idx + 2)
+    with _ArrayContext(y, push_right=(axis_track, axis)) as context:
+        # Get flattened data and iterate over extra dimensions
+        ys = context.data
+        zxs = []
+        zys = []
+        nextra, nalong, nacross = y.shape
+        for i in range(nextra):
+            # Optionally take derivatives onto half-levels and interpolate to points
+            # on those half-levels.
+            # NOTE: Doesn't matter if units are degrees or meters for latitude.
+            y = ys[i, :, :]
+            dy = y
+            if diff:  # not zero or None
+                if centered:
+                    # Centered differencing onto same levels
+                    dy = deriv_uneven(x, y, axis=-1, order=diff, keepedges=True)
                 else:
-                    slice_ = slice(idx + 1, idx - 1, -1)
-                ix = x[slice_]
-                iy = y[k, slice_]
-                idy = dy[k, slice_]
-                if ix.size in (0, 1):
-                    continue  # weird error
-                zx = np.interp(0, idy, ix, left=np.nan, right=np.nan)
-                if np.isnan(zx):  # no extrapolation!
-                    continue
-                slice_ = slice(None) if ix[1] > ix[0] else slice(None, None, -1)
-                zy = np.interp(zx, ix[slice_], iy[slice_])
-                izxs.append(zx)
-                izys.append(zy)  # record
+                    # More accurate differencing onto half levels
+                    dx, dy = deriv_half(x, y, axis=-1, order=diff)
+                    yi = dy.copy()
+                    for i in range(nalong):
+                        yi[i, :] = np.interp(dx, x, y[i, :])
+                    x, y = dx, yi
 
-        # Add to list
-        # NOTE: Must use lists because number of zeros varies
-        zxs.append(izxs)
-        zys.append(izys)
+            # Find where sign switches from +ve to -ve and vice versa
+            zxs_along = []
+            zys_along = []
+            for k in range(nalong):
+                # Get indices where vals go positive [to zero] to negative or vice versa
+                # NOTE: Always have False where NaNs present
+                posneg = negpos = ()
+                with np.errstate(invalid='ignore'):
+                    ddy = np.diff(np.sign(dy[k, :]))
+                mask = np.zeros((ddy.size - 1,), dtype=bool)
+                if which in ('negpos', 'both'):
+                    mask = mask | (ddy[:-1] == 1) & (ddy[1:] == 1)  # *exact* zeros
+                    negpos = ddy == 2
+                if which in ('posneg', 'both'):
+                    mask = mask | (ddy[:-1] == -1) & (ddy[1:] == -1)
+                    posneg = ddy == -2
 
-    # Return locations and values
-    zxs, zys = linetrack(zxs, zys, **kwargs)
-    if not zxs.size:
-        warnings._warn_climopy(f'No zeros found for data {y!r}.')
-    if is1d:
-        zxs, zys = zxs[0, :], zys[0, :]
-    zxs = np.moveaxis(zxs, -1, axis)
-    zys = np.moveaxis(zys, -1, axis)
+                # Record exact zero locations and values
+                idxs, = np.where(mask)
+                idxs += 1
+                zxs_across = []
+                zys_across = []
+                for idx in idxs:
+                    zxs_across.append(x[idx])
+                    zys_across.append(y[k, idx])
+
+                # Interpolate to inexact zero locations and values at those locations
+                for j, mask in enumerate((negpos, posneg)):
+                    idxs, = np.where(mask)  # NOTE: for empty array, yields nothing
+                    for idx in idxs:
+                        # Need dy to be *increasing* for numpy.interp to work
+                        if j == 0:
+                            slice_ = slice(idx, idx + 2)
+                        else:
+                            slice_ = slice(idx + 1, idx - 1, -1)
+                        ix = x[slice_]
+                        iy = y[k, slice_]
+                        idy = dy[k, slice_]
+                        if ix.size in (0, 1):
+                            continue  # weird error
+                        zx = np.interp(0, idy, ix, left=np.nan, right=np.nan)
+                        if np.isnan(zx):  # no extrapolation!
+                            continue
+                        slice_ = slice(None) if ix[1] > ix[0] else slice(None, None, -1)
+                        zy = np.interp(zx, ix[slice_], iy[slice_])
+                        zxs_across.append(zx)
+                        zys_across.append(zy)  # record
+
+                # Add to list
+                # NOTE: Must use lists because number of zeros varies
+                zxs_along.append(zxs_across)
+                zys_along.append(zys_across)
+
+            # Return locations and values
+            zxs_along, zys_along = linetrack(zxs_along, zys_along, **kwargs)
+            if not zxs_along.size:
+                warnings._warn_climopy(f'No zeros found for data {y!r}.')
+            zxs.append(zxs_along)
+            zys.append(zys_along)
+
+        # Concatenate arrays
+        # NOTE: Last dimension is the track dimension so pad them first
+        ntrack = max(_.shape[1] for _ in zxs)
+        zxs = tuple(
+            np.pad(_, ((0, 0), (0, ntrack - _.shape[1])), constant_values=np.nan)
+            for _ in zxs
+        )
+        zys = tuple(
+            np.pad(_, ((0, 0), (0, ntrack - _.shape[1])), constant_values=np.nan)
+            for _ in zys
+        )
+        zxs = np.vstack([_[None, ...] for _ in zxs])
+        zys = np.vstack([_[None, ...] for _ in zys])
+
+        # Add back as new data
+        context.replace_data(zxs, zys)
+
+    # Return unfurled data
+    zxs, zys = context.data
+    if ndim == 2:
+        zxs, zys = zxs[0, ...], zys[0, ...]
+    if ndim == 1:
+        zxs, zys = zxs[0, 0, ...], zys[0, 0, ...]
     return zxs, zys
