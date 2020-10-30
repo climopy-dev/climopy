@@ -504,8 +504,6 @@ def zerofind(
                 pad = lambda x: x + [np.nan] * (ntrack - len(x))  # noqa: E731
                 zxs_along = np.vstack(list(map(pad, zxs_along)))
                 zys_along = np.vstack(list(map(pad, zys_along)))
-            if not zxs_along.size:
-                warnings._warn_climopy(f'No zeros found for data {y!r}.')
             zxs.append(zxs_along)
             zys.append(zys_along)
 
