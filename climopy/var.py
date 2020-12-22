@@ -242,14 +242,16 @@ def _covar_driver(
     if ilag == 0 or imaxlag == 0:
         lags = [0]
         covar = np.sum(
-            (z1 - mean1) * (z2 - mean2), axis=-1, keepdims=True
+            (z1 - mean1) * (z2 - mean2),
+            axis=-1, keepdims=True,
         ) / (naxis * std1 * std2)
 
     # Covariance on specific lag
     elif ilag is not None:
         lags = np.array([dt * ilag])
         covar = np.sum(
-            (z1[..., :-ilag] - mean1) * (z2[..., ilag:] - mean2), axis=-1, keepdims=True,  # noqa: E501
+            (z1[..., :-ilag] - mean1) * (z2[..., ilag:] - mean2),
+            axis=-1, keepdims=True,
         ) / ((naxis - ilag) * std1 * std2)
 
     # Covariance up to n timestep-lags after 0-correlation. Make this
@@ -269,7 +271,8 @@ def _covar_driver(
             else:
                 prod = (z1[..., :-ilag] - mean1) * (z2[..., ilag:] - mean2)
             covar[..., i] = (
-                prod.sum(axis=-1, keepdims=True) / ((naxis - ilag) * std1 * std2)
+                prod.sum(axis=-1, keepdims=True)
+                / ((naxis - ilag) * std1 * std2)
             )[..., 0]
 
     # Return lags and covariance
