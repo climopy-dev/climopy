@@ -4,7 +4,7 @@ Integration with `pint`.
 """
 import pint
 
-__all__ = ['ureg']
+__all__ = ['ureg', 'units']  # 'ureg' is pint convention, 'units' is metpy convention
 
 
 #: The `pint.UnitRegistry` used throughout climopy. Adds flexible aliases for
@@ -31,7 +31,7 @@ __all__ = ['ureg']
 #: (:math:`m^2\,s^{-1}`) between temperature and sensible heat (:math:`x \cdot c_p`),
 #: between absolute humidity and latent heat (:math:`x \cdot L`), and between
 #: geopotential height and geopotential (:math:`x \cdot g`).
-ureg = pint.UnitRegistry(
+ureg = units = pint.UnitRegistry(
     preprocessors=[
         lambda s: s.replace('%%', ' permille '),
         lambda s: s.replace('%', ' percent '),
