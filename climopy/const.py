@@ -62,6 +62,21 @@ cp = ureg.Quantity(1.0057e3, 'J kg^-1 K^-1')
 #: at constant volume for dry air at :math:`0^{\circ}\mathrm{C}`
 cv = ureg.Quantity(0.719e3, 'J kg^-1 K^-1')
 
+#: `Latent heat of vaporization\
+#:  <https://glossary.ametsoc.org/wiki/Latent_heat>`__
+#: at :math:`0^{\circ}\mathrm{C}`
+Lv = ureg.Quantity(2.501e6, 'J kg^-1')
+
+#: `Latent heat of fusion\
+#:  <https://glossary.ametsoc.org/wiki/Latent_heat>`__
+#: at :math:`0^{\circ}\mathrm{C}`
+Lf = ureg.Quantity(3.371e5, 'J kg^-1')
+
+#: `Latent heat of sublimation\
+#:  <https://glossary.ametsoc.org/wiki/Latent_heat>`__
+#: at :math:`0^{\circ}\mathrm{C}`
+Ls = ureg.Quantity(2.834e6, 'J kg^-1')
+
 #: `Euler's number\
 #: <https://en.wikipedia.org/wiki/E_(mathematical_constant)>`__
 e = ureg.Quantity(math.e, '')
@@ -115,7 +130,7 @@ sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
 # NOTE: While converters are not multiplicative (do not work for arbitrary additional
 # units appended to source and dest) they are commutative. For example first two
 # transformations permit converting 'temperature' to 'length'! For this reason
-# do not make the context object global, would yield unexpected results.
+# do not make the context object global; would yield unexpected results.
 def _add_transformation(context, source, dest, scale):  # noqa: E302
     """
     Add linear forward and inverse unit transformations.
@@ -128,8 +143,10 @@ def _add_transformation(context, source, dest, scale):  # noqa: E302
     )
 
 
-# Static energy components, their rates of change (1/s), their fluxes (m/s), and
-# their *absolute* fluxes integrated over the latitude band (m^2/s).
+# Static energy components, their rates of change, their fluxes, and all of the
+# above integrated with respect to mass or mass per unit area.
+# TODO: Consider adding latent heat transformations? May result in weird bugs
+# where inadvertantly nondimensional data is given restored dimensions!
 # NOTE: Pint context transformations are recursive (e.g. below permits converting
 # [length] to [temperature]) but not multiplicative (e.g. below does not cover
 # converting [temperature] * [mass] to [energy]).
@@ -138,21 +155,27 @@ def _add_transformation(context, source, dest, scale):  # noqa: E302
 # the geopotential height transformations! Latter units are equivalent to [length]!
 climo = pint.Context('climo')
 for suffix1, suffix2 in itertools.product(
-    ('', ' / [time]', ' * [velocity]', ' * [length] * [velocity]'),
-    ('', ' * [mass] / [area]'),
+    ('', ' / [time]', ' * [velocity]'),
+    ('', ' * [mass]', ' * [mass] / [area]'),
 ):
     suffix = suffix1 + suffix2
     _add_transformation(
         climo,
-        '[length]' + suffix,
+        '[length]' + suffix,  # potential energy (dependent on geopotential height)
         '[energy] / [mass]' + suffix,
         g,
     )
     _add_transformation(
         climo,
-        '[temperature]' + suffix,
+        '[temperature]' + suffix,  # sensible heat (dependent on temperature)
         '[energy] / [mass]' + suffix,
         cp,
+    )
+    _add_transformation(
+        climo,
+        '[]' + suffix,  # latent heat (dependent on mixing ratio)
+        '[energy] / [mass]' + suffix,
+        Lv,
     )
 
 # Register context object
