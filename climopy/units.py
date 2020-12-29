@@ -35,7 +35,8 @@ ureg = units = pint.UnitRegistry(
     preprocessors=[
         lambda s: s.replace('%%', ' permille '),
         lambda s: s.replace('%', ' percent '),
-    ]
+    ],
+    force_ndarray_like=True,  # good practice and make compatible with pint-xarray
 )
 
 # Dimensionless definitions (see https://github.com/hgrecco/pint/issues/185)

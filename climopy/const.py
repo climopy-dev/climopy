@@ -85,7 +85,7 @@ p0 = ureg.Quantity(1e5, 'Pa')
 pi = ureg.Quantity(math.pi, '')
 
 #: :math:`\tau` (6.28318...)
-tau = ureg.Quantity(2.0 * pi, '')
+tau = ureg.Quantity(2.0 * math.pi, '')
 
 #: Dry air gas constant
 Rd = R / Md
