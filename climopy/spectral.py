@@ -31,7 +31,7 @@ __all__ = [
     'power',
     'power2d',
     'response',
-    'running',
+    'runmean',
     'waves',
     'window',
 ]
@@ -885,7 +885,7 @@ def response(dx, b, a=1, /, n=1000, simple=False):
 
 @quack._xarray_yy_wrapper
 @quack._pint_wrapper(('=y', ''), '=y')
-def running(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
+def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     """
     Apply running average to array.
 
