@@ -13,7 +13,7 @@ from .internals import quack, warnings
 from .internals.array import _ArrayContext
 
 __all__ = [
-    'dt2cal',
+    'calendar',
     'intersection',
     'linetrack',
     'match',
@@ -21,21 +21,24 @@ __all__ = [
 ]
 
 
-def dt2cal(dt):
+def calendar(dt, /):
     """
-    Convert array of datetime64 to a calendar array of year, month, day, hour,
-    minute, and seconds with these quantites indexed on the last axis.
+    Convert an array of datetime64 values to a calendar array of years, months, days,
+    hours, minutes, and seconds. Adds a trailing axis of length 6.
 
     Parameters
     ----------
-    dt : datetime64 array
-        numpy.ndarray of datetimes of arbitrary shape
+    dt : datetime array
+        A datetime array with arbitrary shape. May be a `pandas.DatetimeIndex`
+        array, a `numpy.datetime64` array, or an object-type array of native
+        python `datetime.datetime` instances.
 
     Returns
     -------
     cal : uint32 array (..., 6)
-        calendar array with last axis representing year, month, day, hour,
-        minute, second, microsecond
+        A calendar array matching the shape of the input array up to the rightmost axis.
+        The rightmost axis is length 6; its indices contain the years, months, days,
+        hours, minutes, and seconds of the input datetimes.
     """
     # See: https://stackoverflow.com/a/56260054/4970632
     # Allocate output
@@ -69,7 +72,7 @@ def dt2cal(dt):
         out[..., 4] = np.vectorize(partial(getattr, dt, 'minute'))()
         out[..., 5] = np.vectorize(partial(getattr, dt, 'second'))()
     else:
-        raise ValueError(f'Invalid data type for dt2cal: {dt.dtype}')
+        raise ValueError(f'Invalid data type for calendar(): {dt.dtype}')
     return out
 
 
@@ -127,7 +130,7 @@ def match(*args):
     return slices + [vs[0][slices[0]]]
 
 
-def intersection(x, y1, y2, xlog=False):
+def intersection(x, y1, y2, /, xlog=False):
     """
     Find the (first) intersection point for two line segments.
 
@@ -181,34 +184,33 @@ def intersection(x, y1, y2, xlog=False):
 
 
 # TODO: Support pint quantities here
-def linetrack(xs, ys=None, /, sep=None, seed=None, ntrack=None):  # noqa: E225
+def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
     """
     Track individual "lines" across lists of coordinates.
 
     Parameters
     ----------
     xs : list of lists
-        The locations to be grouped into lines.
+        The locations to be grouped into tracks.
     ys : list of lists, optional
         The values corresponding to the locations `xs`.
-    sep : float, optional
-        The maximum separation between points belonging to the same "track".
-        Larger separations will cause the algorithm to begin a new track. The
-        default behavior is to not separate into tracks this way.
-    seed : float or list of float, optional
-        The track or tracks you want the algorithm to pick up if the number of
-        tracks is limited by `ntrack`.
     ntrack : int, optional
-        The maximum number of values to be simultaneously tracked. This can
-        be set to a low value to ignore spurious values in combination with `seed`.
-        The default value is the maximum `xs` sublist length (i.e. the default
-        behavior is to track all zeros).
+        The maximum number of values to be simultaneously tracked. This can be used
+        in combination with `seed` to ignore spurious tracks. The default value is
+        `numpy.inf` (i.e. the number of tracks is unlimited).
+    seed : float or list of float, optional
+        Seed value(s) for the track(s) that should be picked up at the start.
+        If `ntrack` is ``None`` this has no effect.
+    sep : float, optional
+        The maximum separation between points belonging to the same "track". If a
+        separation is larger than `sep` the algorithm will begin a new track. Default
+        is `numpy.inf` (i.e. tracks are never ended due to "large" separations).
 
     Returns
     -------
     xs_sorted : ndarray
-        2D array of *x* coordinates whose columns correspond to individual "lines".
-        New "lines" may stop or start at rows in the middle of the array.
+        2D array of *x* coordinates whose columns correspond to individual "tracks".
+        Tracks may stop or start at rows in the middle of the array.
     ys_sorted : ndarray, optional
         The corresponding *y* coordinates. Returned if `ys` is not ``None``.
 
@@ -344,7 +346,7 @@ def linetrack(xs, ys=None, /, sep=None, seed=None, ntrack=None):  # noqa: E225
 @quack._xarray_zerofind_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y'))
 def zerofind(
-    x, y, axis=-1, axis_track=-2, track=True, diff=None, centered=True, which='both',
+    x, y, /, axis=-1, axis_track=-2, track=True, diff=None, centered=True, which='both',
     **kwargs,
 ):
     """
