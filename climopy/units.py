@@ -50,9 +50,12 @@ ureg.define(
         'percent', '%', (), pint.converters.ScaleConverter(0.01),
     )
 )
-ureg.define(  # cannot add alias for 'dimensionless', this is best way
-    'none = 1'
-)
+
+# Ohter dimensionless definitions
+ureg.define('none = 1')  # cannot add alias for 'dimensionless', this is best way
+ureg.define('level = 1')  # specialized CF units for 'model level'
+ureg.define('layer = 1')  # specialized CF units for 'vertical layer'
+ureg.define('sigma_level = 1')  # specialized CF units for 'sigma coordinate'
 
 # Pressure definitions (replace 'barn' with 'bar' as default 'b' unit)
 ureg.define(  # automatically adds milli, hecta, etc.
