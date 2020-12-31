@@ -8,8 +8,10 @@ import sys
 import warnings
 
 import pint
+import xarray as xr
 
 warnings.simplefilter('error', category=pint.UnitStrippedWarning)
+warnings.simplefilter('ignore', category=xr.core.extensions.AccessorRegistrationWarning)
 ClimoPyWarning = type('ClimoPyWarning', (UserWarning,), {})
 
 
