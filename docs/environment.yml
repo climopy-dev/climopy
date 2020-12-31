@@ -9,14 +9,16 @@ dependencies:
   - matplotlib
   - numpy
   - scipy
+  - pint
   - pandas
   - xarray
+  - cf_xarray
+  - pint_xarray
   - pandoc
   - ipykernel
   - pip
   - pip:
     - ..
-    - pint
     - pyqt5
     - proplot
     - nbsphinx

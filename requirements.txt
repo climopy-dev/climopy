@@ -1,7 +1,9 @@
 # Requirements
-# No version specific requirements for now
+# No version-specific requirements for now
 numpy
 scipy
 pint
 pandas
 xarray
+cf_xarray
+pint_xarray
