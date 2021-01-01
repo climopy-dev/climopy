@@ -18,12 +18,11 @@ import numbers
 import re
 
 import numpy as np
-
 import pint
 import pint.util as putil
 import xarray as xr
 
-from ..units import ureg
+from ..unit import ureg
 from . import warnings
 
 # Regex to find terms surrounded by curly braces that can be filled with str.format()

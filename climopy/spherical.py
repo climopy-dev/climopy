@@ -7,8 +7,7 @@ import numpy as np
 from . import const, diff
 
 __all__ = [
-    'geopad', 'geomean', 'geogradient', 'geolaplacian',
-    'haversine',
+    'geopad', 'geomean', 'geogradient', 'geolaplacian', 'haversine',
 ]
 
 

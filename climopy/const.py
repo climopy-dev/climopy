@@ -9,7 +9,7 @@ import math
 
 import pint
 
-from .units import ureg
+from .unit import ureg
 
 __all__ = [
     'G', 'H', 'Md', 'Mw', 'Na', 'Omega', 'R',
