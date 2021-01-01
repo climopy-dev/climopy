@@ -12,10 +12,9 @@ import pint
 from .unit import ureg
 
 __all__ = [
-    'G', 'H', 'Md', 'Mw', 'Na', 'Omega', 'R',
-    'a', 'c', 'cp', 'cv', 'e', 'g', 'h', 'p0', 'psfc', 'pi', 'tau',
-    'Rd', 'Rm',
-    'kappa', 'kb', 'sigma',
+    'a', 'c', 'cp', 'cv', 'e', 'G', 'g', 'H', 'h',
+    'kappa', 'kb', 'Lf', 'Ls', 'Lv', 'Md', 'Mw', 'Na', 'Omega',
+    'p0', 'pi', 'psfc', 'R', 'Rd', 'Rm', 'sigma', 'tau',
 ]
 
 #: `Gravitational constant\
@@ -153,30 +152,30 @@ def _add_transformation(context, source, dest, scale):  # noqa: E302
 # NOTE: Common to want to convert [energy] / [mass] to [energy] / [area] / [pressure]
 # for displaying static or Lorenz energy terms. But this is already covered by
 # the geopotential height transformations! Latter units are equivalent to [length]!
-climo = pint.Context('climo')
+_context = pint.Context('climo')
 for suffix1, suffix2 in itertools.product(
     ('', ' / [time]', ' * [velocity]'),
     ('', ' * [mass]', ' * [mass] / [area]'),
 ):
     suffix = suffix1 + suffix2
     _add_transformation(
-        climo,
+        _context,
         '[length]' + suffix,  # potential energy (dependent on geopotential height)
         '[energy] / [mass]' + suffix,
         g,
     )
     _add_transformation(
-        climo,
+        _context,
         '[temperature]' + suffix,  # sensible heat (dependent on temperature)
         '[energy] / [mass]' + suffix,
         cp,
     )
     _add_transformation(
-        climo,
+        _context,
         '[]' + suffix,  # latent heat (dependent on mixing ratio)
         '[energy] / [mass]' + suffix,
         Lv,
     )
 
 # Register context object
-ureg.add_context(climo)
+ureg.add_context(_context)
