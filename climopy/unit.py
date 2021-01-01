@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """
-Integration with `pint`.
+A `pint` unit registry for climate scientists and tools for parsing and
+formatting CF-compliant unit strings.
 """
+import re
+
+import numpy as np
 import pint
 
-__all__ = ['ureg', 'units']  # 'ureg' is pint convention, 'units' is metpy convention
+__all__ = [
+    'ureg',  # pint convention
+    'units',  # metpy convention
+    'parse_units',
+    'format_units',
+]
 
 
 #: The `pint.UnitRegistry` used throughout climopy. Adds flexible aliases for
@@ -137,3 +146,72 @@ ureg.define(
 
 # Set up for use with matplotlib
 ureg.setup_matplotlib()
+
+
+def parse_units(units, /):
+    """
+    Translate unit string into `pint` units. Includes the following features:
+
+    * Interpret everything to the right of the first slash as part of the denominator.
+      This permits e.g. ``W / m2 Pa`` instead of ``W / (m^2 Pa)``.
+    * Interpret CF standard time units, e.g. convert ``days since 0001-01-01`` to
+    ``days``.
+    * Interpret CF standard where exponents are expressed as numbers adjacent to
+      letters without any exponentiation marker, e.g. ``m2`` for ``m^2``.
+    * Interpret units with constants defined by climopy (e.g. _100km) without the
+      leading dummy underscore.
+    """
+    if isinstance(units, pint.Unit):
+        return units
+    units = re.sub(r'([a-zA-Z]+)([-+]?[0-9]+)', r'\1^\2', units or '')  # exponents
+    units = re.sub(r'\b([-+]?[0-9]+[a-zA-Z]+)', r'_\1', units)  # constants
+    if ' since ' in units:  # hours since, days since, etc.
+        units = units.split()[0]
+    num, *denom = units.split('/')
+    return (
+        ureg.parse_units(num)
+        / np.prod((ureg.dimensionless, *map(ureg.parse_units, denom)))
+    )
+
+
+def format_units(units, /, *, long_form=None):
+    r"""
+    Fussily format unit string or `pint.Unit` object into TeX-compatible form
+    suitable for (e.g.) matplotlib figure text. Includes the following features:
+
+    * Use short form for all but a list of units. By default this is ``days``.
+    * Use negative exponents instead of fractions.
+    * Separate all component unit substrings with the 3-mu ``\,`` seperator.
+    * Parse units on either side of the first slash independently. For example,
+      this formats the sensitivity parameter ``K / (W m^-2)`` as ``K / W m^-2``.
+    """
+    # Format the accessor "active units" by default. Use the string descriptor
+    # representation of the standard units are active, to apply fussy formatting.
+    long_form = long_form or ('day',)
+    if isinstance(units, str):
+        units_parts = list(map(parse_units, units.split('/')))
+    elif not isinstance(units, pint.Unit):
+        raise ValueError(f'Invalid units {units!r}.')
+    elif units == 'dimensionless':
+        units_parts = []
+    else:
+        units_parts = [units]
+
+    # Apply units sorting and name standardization. Put 'constant units' like 100hPa
+    # and 1000km at the end of the unit string.
+    # WARNING: 'sort' options requires development version of pint.
+    string = r' \, / \, '.join(
+        units.format_babel(
+            'L' if units in long_form else '~L',
+            sort=False,
+            as_ratio=False,
+            product_fmt=r' \, '
+        )
+        for units in units_parts
+    )
+    string = string.replace(r'\mathrm', '')  # need curly braces for exponent grouping
+    if '\N{DEGREE SIGN}' in string:
+        string = ''
+    elif string:
+        string = '$' + string + '$'
+    return string
