@@ -21,14 +21,15 @@ are incomplete, and undiscovered bugs may exist.
    why
    usage
 
-.. toctree::
-   :maxdepth: 1
-   :caption: User Guide
+..
+  .. toctree::
+    :maxdepth: 1
+    :caption: User Guide
 
-   downloads
-   eofs
-   timeseries
-   spectral
+    downloads
+    eofs
+    timeseries
+    spectral
 
 .. toctree::
    :maxdepth: 2
