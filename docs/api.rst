@@ -4,15 +4,25 @@ API Reference
 Unit registry
 -------------
 
-.. automodsumm:: climopy.units
+.. automodule:: climopy.unit
+
+.. automodsumm:: climopy.unit
    :toctree: api
 
-Dataset downloads
------------------
+Descriptor registry
+-------------------
 
-.. automodule:: climopy.downloads
+.. automodule:: climopy.descriptor
 
-.. automodsumm:: climopy.downloads
+.. automodsumm:: climopy.descriptor
+   :toctree: api
+
+Physical constants
+------------------
+
+.. automodule:: climopy.const
+
+.. automodsumm:: climopy.const
    :toctree: api
 
 Finite differences
@@ -23,20 +33,20 @@ Finite differences
 .. automodsumm:: climopy.diff
    :toctree: api
 
-Spectral analysis
------------------
-
-.. automodule:: climopy.spectral
-
-.. automodsumm:: climopy.spectral
-   :toctree: api
-
 Variability analysis
 --------------------
 
 .. automodule:: climopy.var
 
 .. automodsumm:: climopy.var
+   :toctree: api
+
+Spectral analysis
+-----------------
+
+.. automodule:: climopy.spectral
+
+.. automodsumm:: climopy.spectral
    :toctree: api
 
 Spherical coordinates
@@ -55,18 +65,18 @@ Wave diagnostics
 .. automodsumm:: climopy.waves
    :toctree: api
 
+Dataset downloads
+-----------------
+
+.. automodule:: climopy.downloads
+
+.. automodsumm:: climopy.downloads
+   :toctree: api
+
 Miscellaneous utilities
 -----------------------
 
 .. automodule:: climopy.utils
 
 .. automodsumm:: climopy.utils
-   :toctree: api
-
-Physical constants
-------------------
-
-.. automodule:: climopy.const
-
-.. automodsumm:: climopy.const
    :toctree: api
