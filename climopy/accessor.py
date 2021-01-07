@@ -1444,19 +1444,20 @@ class ClimoAccessor(object):
     def sel_pair(self, key, drop=True):
         """
         Return selection from pseudo "pair" or "parameter" axis. This searches for
-        "parameter" axes as any axis whose associated coordinate `CFVariable` has a
-        "reference" attribute.
+        "parameter" axes as any axis whose associated coordinate
+        `~cfvariable.CFVariable` has a "reference" attribute.
 
         Parameters
         ----------
         key : str, optional
             The pair key. If the parameter dimension is length 2, the key ``1`` returns
             the first position and the key ``2`` the second position. Otherwise, the
-            key ``1`` returns the 'base' position and the key ``2`` is a no-op that
-            returns the original data. To return the difference between keys
-            ``2`` and ``1``, pass ``'anom'``. The associated `CFVariable` names are
-            modified by adding `prefix` and `suffix` attributes to the data that get
-            passed to the `CFVariable.update` method.
+            key ``1`` returns the `~.cfvariable.CFVariable.reference` position and the
+            key ``2`` is a no-op that returns the original data. To return the
+            difference between keys ``2`` and ``1``, pass ``'anom'``. The associated
+            `~.cfvariable.CFVariable` names are modified by adding `prefix` and `suffix`
+            attributes to the data that get passed to the
+            `~.cfvariable.CFVariable.update` method.
         drop : bool, optional
             Whether to drop the coordinates when making selections or keep them
             as scalar values. Default is ``True``.
@@ -1532,7 +1533,7 @@ class ClimoAccessor(object):
         """
         Standardize coordinates to satisfy CF conventions using
         `cf_xarray.guess_coord_axis` and `cf_xarray.rename_like`. May also support
-        variable standardization in the future using `~cfvariable.CFVariableRegistry`.
+        variable standardization in the future using `~.cfvariable.CFVariableRegistry`.
         For now, this function does the following:
 
         * Adds ``longitude`` and ``latitude`` standard names and ``degrees_east``
@@ -1734,7 +1735,7 @@ class ClimoAccessor(object):
         coordinates variables or variables _transformed_ from the native coordinates
         using `ClimoDataArrayAccessor.to_variable` (e.g. `meridional_coordinate` from
         `latitude`). Variables can be reference with their actual name, axis attribute,
-        CF coordinate name, or `~cfvariable.CFVariableRegistry` identifiers.
+        CF coordinate name, or `~.cfvariable.CFVariableRegistry` identifiers.
         The coordinate top boundaries, bottom boundaries, or thicknesses can be
         returned by appending the name with ``_top``, ``_bot``, or ``_del`` (or
         ``_delta``), respectively. Always returns copies of the coordinate variables
@@ -1783,7 +1784,7 @@ class ClimoAccessor(object):
     @property
     def registry(self):
         """
-        The active `~cfvariable.CFVariableRegistry` used to look up variables
+        The active `~.cfvariable.CFVariableRegistry` used to look up variables
         with `~ClimoDataArrayAccessor.cfvariable`.
         """
         return self._registry
@@ -1816,7 +1817,7 @@ class ClimoAccessor(object):
 class ClimoDataArrayAccessor(ClimoAccessor):
     """
     Accessor for `xarray.DataArray`\\ s. Includes methods for working with `pint`
-    quantities and `~cfvariable.CFVariable` variables, several stub functions for
+    quantities and `~.cfvariable.CFVariable` variables, several stub functions for
     integration with free-standing climopy functions (similar to numpy design), and an
     interface for transforming one physical variable to another. Registered under the
     name ``climo`` (i.e, usage is ``data_array.climo``).
@@ -2478,7 +2479,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             The keyword arguments form of `indexers`.
             One of `indexers` or `indexers_kwargs` must be provided.
         **kwargs
-            Passed to `~diff.deriv_uneven`. The `order` keyword arg is ignored.
+            Passed to `~.diff.deriv_uneven`. The `order` keyword arg is ignored.
         """
         data = self.data
         indexers, _ = self._parse_indexers(indexers, allow_kwargs=False, **kwargs)
@@ -2509,7 +2510,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             The keyword arguments form of `indexers`.
             One of `indexers` or `indexers_kwargs` must be provided.
         **kwargs
-            Passed to `~diff.deriv_uneven`. The `order` keyword arg is ignored.
+            Passed to `~.diff.deriv_uneven`. The `order` keyword arg is ignored.
         """
         data = self.data
         indexers, kwargs = self._parse_indexers(
@@ -2538,7 +2539,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             Whether to use more accurate (but less convenient) half-level
             differentiation rather than centered differentiation.
         **kwargs
-            Passed to `~diff.deriv_uneven` or `~diff.deriv_half`.
+            Passed to `~.diff.deriv_uneven` or `~.diff.deriv_half`.
         """
         result = self.divergence(*args, **kwargs)
         with xr.set_options(keep_attrs=True):
@@ -2557,7 +2558,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             Whether to use more accurate (but less convenient) half-level
             differentiation rather than centered differentiation.
         **kwargs
-            Passed to `~diff.deriv_uneven` or `~diff.deriv_half`.
+            Passed to `~.diff.deriv_uneven` or `~.diff.deriv_half`.
         """
         # Compute divergence in spherical coordinates
         # div = diff.deriv1(y[:2], data * cos, **kwargs) / cos
@@ -2597,7 +2598,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str
             The dimension.
         **kwargs
-            Passed to `~var.autocorr`.
+            Passed to `~.var.autocorr`.
         """
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
@@ -2616,7 +2617,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str
             The dimension.
         **kwargs
-            Passed to `~var.autocorr`.
+            Passed to `~.var.autocorr`.
         """
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
@@ -2768,7 +2769,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which minima are tracked.
         **kwargs
-            Passed to `~utils.zerofind`.
+            Passed to `~.utils.zerofind`.
         """
         kwargs.update(which='min', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
@@ -2784,7 +2785,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which maxima are tracked.
         **kwargs
-            Passed to `~utils.zerofind`.
+            Passed to `~.utils.zerofind`.
         """
         kwargs.update(which='max', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
@@ -2798,7 +2799,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `~utils.zerofind`.
+            Passed to `~.utils.zerofind`.
         """
         kwargs.update(which='min', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
@@ -2812,7 +2813,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `~utils.zerofind`.
+            Passed to `~.utils.zerofind`.
         """
         kwargs.update(which='max', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
@@ -2828,7 +2829,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which minima are tracked.
         **kwargs
-            Passed to `~utils.zerofind`.
+            Passed to `~.utils.zerofind`.
         """
         kwargs.update(which='min', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -2844,7 +2845,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which maxima are tracked.
         **kwargs
-            Passed to `~utils.zerofind`.
+            Passed to `~.utils.zerofind`.
         """
         kwargs.update(which='max', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -2858,7 +2859,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `~utils.zerofind`.
+            Passed to `~.utils.zerofind`.
         """
         kwargs.update(which='min', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -2872,7 +2873,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `~utils.zerofind`.
+            Passed to `~.utils.zerofind`.
         """
         kwargs.update(which='max', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -2888,7 +2889,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which zeros are tracked.
         **kwargs
-            Passed to `~utils.zerofind`.
+            Passed to `~.utils.zerofind`.
         """
         kwargs.update(which='zero', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -3060,7 +3061,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Return a copy with the underyling data converted to the
         `~ClimoDataArrayAccessor.cfvariable` `standard_units` value. This will only
-        work if the variable name matches a valid `CFVariable` identifier.
+        work if the variable name matches a valid `~.cfvariable.CFVariable` identifier.
         """
         # NOTE: assign_coords has issues with multiple DataArray values. See:
         # https://github.com/pydata/xarray/issues/3483
@@ -3121,7 +3122,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `~var.rednoisefit`.
+            Passed to `~.var.rednoisefit`.
         """
         data = self.data
         lag = data.coords[dim]
@@ -3168,7 +3169,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @property
     def cfvariable(self):
         """
-        Return a `~cfvariable.CFVariable` based on the DataArray name, the scalar
+        Return a `~.cfvariable.CFVariable` based on the DataArray name, the scalar
         coordinates, and the coordinate reductions referenced in `cell_methods`. As
         a shorthand, you can access ``data_array.climo.cfvariable`` properties
         directly using ``data_array.climo.property``.
@@ -3242,7 +3243,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 class ClimoDatasetAccessor(ClimoAccessor):
     """
     Accessor for `xarray.Dataset`\\ s. Includes methods for working with `pint`
-    quantities and `~cfvariable.CFVariable` variables and an interface for deriving one
+    quantities and `~.cfvariable.CFVariable` variables and an interface for deriving one
     physical variable from other variables in the dataset. Registered under the name
     ``climo`` (i.e, usage is ``data_array.climo``).
     """
@@ -3307,7 +3308,8 @@ class ClimoDatasetAccessor(ClimoAccessor):
         """
         Return a coordinate, variable, or transformed or derived variable registered
         with `register_transformation` or `register_derivation`. Translates CF axis,
-        coordinate, and standard names and `CFVariableRegistry` identifiers.
+        coordinate, and standard names and `~.cfvariable.CFVariableRegistry`
+        identifiers.
         """
         return self._get_item(key)  # with weights attached
 
@@ -3557,7 +3559,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         """
         Analogue to `ClimoAccessor.coords` for retreiving quantified data variables
         based on their actual names, standard name attributes, or
-        `~cfvariable.CFVariableRegistry` identifiers.
+        `~.cfvariable.CFVariableRegistry` identifiers.
         """
         return _VarsQuantified(self.data, self.registry)
 
