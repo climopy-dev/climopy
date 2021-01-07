@@ -248,8 +248,8 @@ def lanczos(dx, width, cutoff):
     a : array-like
         Denominator coeffs.
 
-    Note
-    ----
+    Notes
+    -----
     * The smoothing should only be *approximate* (see Hartmann notes), response
       function never exactly perfect like with Butterworth filter.
     * The `cutoff` parameter must be provided in *time step units*. Change
@@ -258,10 +258,6 @@ def lanczos(dx, width, cutoff):
       converts linear frequency (i.e. wavenumber) to angular frequency in
       sine call below. The '2' doesn't appear in any other factor just as a
       consequence of the math.
-
-    Example
-    -------
-    n=9 returns 4+4+1=9 points in the 'concatenate' below.
     """
     # Coefficients and initial stuff
     # n = (width/dx)//1  # convert window width from 'time units' to 'steps'
@@ -276,6 +272,7 @@ def lanczos(dx, width, cutoff):
     Cktilde = Ck * np.sin(np.pi * tau / n) / (np.pi * tau / n)
 
     # Return filter
+    # Example: n = 9 returns 4 + 4 + 1 points
     order = n * 2 - 1
     print(f'Order-{order} Lanczos window')
     window = np.concatenate((np.flipud(Cktilde), np.array([C0]), Cktilde))
@@ -706,9 +703,8 @@ def power(dx, y1, /, axis=0, **kwargs):
 
     %(power.notes)s
 
-    Example
-    -------
-
+    Examples
+    --------
     >>> import climopy as climo
     ... import xarray as xr
     ... ureg = climo.ureg
@@ -719,7 +715,6 @@ def power(dx, y1, /, axis=0, **kwargs):
     ...     np.random.rand(1000, 50) * ureg.K, dims=('time', 'space'), name='variable'
     ... )
     ... f, P = climo.power(x, y, axis=0)
-
     """
     return _power_driver(dx, y1, y1, axis=axis, **kwargs)
 
@@ -745,9 +740,8 @@ def copower(dx, y1, y2, axis=0, **kwargs):
 
     %(power.notes)s
 
-    Example
-    -------
-
+    Examples
+    --------
     >>> import climopy as climo
     ... import xarray as xr
     ... ureg = climo.ureg
@@ -762,7 +756,6 @@ def copower(dx, y1, y2, axis=0, **kwargs):
     ...     dims=('time', 'space'), name='variable',
     ... )
     ... f, C, Q, P1, P2, Coh, Phi = climo.copower(x, y1, y2, axis=0)
-
     """
     return _power_driver(dx, y1, y2, axis=axis, **kwargs)
 
@@ -833,8 +826,8 @@ def response(dx, b, a=1, /, n=1000, simple=False):
     a : array-like
         The window `a` coefficients.
 
-    Note
-    ----
+    Notes
+    -----
     The response function formula can be depicted as follows:
 
     .. code-block::
@@ -908,8 +901,8 @@ def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     y : array-like
         Data windowed along axis `axis`.
 
-    Note
-    ----
+    Notes
+    -----
     Implementation is similar to `scipy.signal.lfilter`. Read
     `this post <https://stackoverflow.com/a/4947453/4970632>`__. This creates *view*
     of original array, without duplicating data, so very efficient approach.
@@ -967,8 +960,8 @@ def waves(x, /, wavenums=None, wavelengths=None, phase=None):
     data : array-like
         Data composed of sine waves.
 
-    Note
-    ----
+    Notes
+    -----
     `x` will always be normalized so that wavelength is with reference to
     the first step. This make sense because when working with filters, for
     which we almost always need to use units corresponding to the axis.

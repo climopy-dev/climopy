@@ -143,15 +143,13 @@ def intersection(x, y1, y2, /, xlog=False):
     xlog : bool, optional
         Whether to find the *x* coordinate intersection in logarithmic space.
 
-    Example
-    -------
-
+    Examples
+    --------
     >>> import climopy as climo
     ... x = 10 + np.arange(4)
     ... y1 = np.array([4, 2, 0, -2])
     ... y2 = np.array([0, 1, 2, 3])
     ... climo.intersection(x, y1, y2)
-
     """
     # Initial stuff
     x = np.asanyarray(x)
@@ -214,9 +212,8 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
     ys_sorted : ndarray, optional
         The corresponding *y* coordinates. Returned if `ys` is not ``None``.
 
-    Example
-    -------
-
+    Examples
+    --------
     >>> import climopy as climo
     ... climo.linetrack(
     ...    [
@@ -231,7 +228,6 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
     ...    ],
     ...    ntrack=3,
     ... )
-
     """
     # Parse input
     if ys is None:
@@ -385,9 +381,8 @@ def zerofind(
         up to floating point precision. Otherwise these are the minima and
         maxima corresponding to the zero derivative locations.
 
-    Example
-    -------
-
+    Examples
+    --------
     >>> import xarray as xr
     ... import climopy as climo
     ... ureg = climo.ureg
@@ -404,7 +399,6 @@ def zerofind(
     ...         dims=('x', 'y'), coords={'x': xarr}
     ...     )
     ... zx, zy = climo.zerofind(xarr, yarr, ntrack=2)
-
     """
     # Tests
     # TODO: Support tracking across single axis

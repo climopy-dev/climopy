@@ -140,7 +140,9 @@ def geolaplacian(lon, lat, data, accuracy=4):
 
     .. math::
 
-        \nabla^2 = \frac{\cos^2(\phi)}{a^2}\frac{\partial^2}{\partial^2\theta} + \frac{\cos(\phi)}{a^2}\frac{\partial}{\partial\phi}\frac{\cos\phi\partial}{\partial\phi}
+        \nabla^2
+        = \frac{\cos^2(\phi)}{a^2} \frac{\partial^2}{\partial^2\theta}
+        + \frac{\cos(\phi)}{a^2} \frac{\partial}{\partial\phi} \frac{\cos\phi\partial}{\partial\phi}
     """  # noqa
     # Setup
     npad = accuracy // 2  # need +/-1 for O(h^2) approx, +/-2 for O(h^4), etc.

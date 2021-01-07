@@ -88,8 +88,8 @@ lags : array-like
 result : array-like
     The {name} as a function of lag.
 
-Note
-----
+Notes
+-----
 This function uses the following formula to estimate {name} at lag :math:`k`:
 {math}
 """
@@ -372,9 +372,8 @@ def eof(
         :math:`\lambda \sqrt{2 / N^*}`. The `axis_time` and `axis_space` dimensions
         are reduced to length 1.
 
-    Example
-    -------
-
+    Examples
+    --------
     >>> from climopy.internals.array import logger, logging
     ... import xarray as xr
     ... import climopy as climo
@@ -537,9 +536,8 @@ def hist(bins, y, /, axis=0):
         The data.
     %(hist.axis)s
 
-    Example
-    -------
-
+    Examples
+    --------
     >>> import climopy as climo
     ... import numpy as np
     ... import xarray as xr
@@ -552,7 +550,6 @@ def hist(bins, y, /, axis=0):
     ... )
     ... bins = np.linspace(0, 1, 11) * ureg.m
     ... hist = climo.hist(bins, data, axis=1)
-
     """
     if bins.ndim != 1:
         raise ValueError('Bins must be 1-dimensional.')
@@ -599,12 +596,12 @@ def linefit(x, y, /, axis=0):
     fit : array-like
         The reconstructed best-fit line. The shape is the same as `y`.
 
-    Example
-    -------
+    Examples
+    --------
     >>> import climopy as climo
-        x = np.arange(500)
-        y = np.random.rand(500, 10)
-        slope, stderr, fit = climo.linefit(x, y, axis=0)
+    ... x = np.arange(500)
+    ... y = np.random.rand(500, 10)
+    ... slope, stderr, fit = climo.linefit(x, y, axis=0)
     """
     if x.ndim != 1 or x.size != y.shape[axis]:
         raise ValueError(
@@ -698,12 +695,12 @@ def rednoisefit(
         The best fit autocorrelation spectrum. The shape is the same as `data`
         but with `axis` of length `nlag`.
 
-    Example
-    -------
+    Examples
+    --------
     >>> import climopy as climo
-        data = np.random.rand(500, 10).cumsum(axis=0)
-        auto = climo.autocorr(1, data, axis=0, maxlag=50)
-        taus, sigmas, fit = climo.rednoisefit(auto, axis=0)
+    ... data = np.random.rand(500, 10).cumsum(axis=0)
+    ... auto = climo.autocorr(1, data, axis=0, maxlag=50)
+    ... taus, sigmas, fit = climo.rednoisefit(auto, axis=0)
 
     See Also
     --------
