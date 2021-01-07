@@ -1323,8 +1323,8 @@ class ClimoAccessor(object):
     def replace_coords(self, indexers=None, **kwargs):
         """
         Return a copy with replaced coordinate values and preserved attributes. If
-        input coordinates are already `DataArray`s, its existing attributes are not
-        overwritten. Inspired by `xarray.DataArray.assign_coords`.
+        input coordinates are already `~xarray.DataArray`\\ s, its existing attributes
+        are not overwritten. Inspired by `xarray.DataArray.assign_coords`.
 
         Parameters
         ----------
@@ -1378,20 +1378,23 @@ class ClimoAccessor(object):
 
     def sel_hemisphere(self, which, invert=None):
         """
-        Select a hemisphere or average the hemispheres. A single negative latitude
-        is included across the equator and data points are added at the poles so that
-        contours, lines, and whatnot encompass the entire 0-90 degree range.
+        Select a hemisphere or average of hemispheres. A single negative latitude
+        is always included so that contours, lines, and whatnot extend to the equator
+        exactly.
 
         Parameters
         ----------
         which : {'globe', 'inverse', 'ave', 'nh', 'sh'}
-            The "hemisphere". May be the globe, the globe with hemispheres flipped, the
-            average of both hemispheres, or either of the northern and southern.
+            The hemisphere. May be the globe, the globe with hemispheres flipped, the
+            average of both hemispheres, or either of the northern and southern
+            hemispheres.
         invert : bool or list of str, optional
-            If this is a `DataArray` accessor, should be boolean indicating whether
-            data should be inverted when averaging northern and southern hemispheres.
-            If this is a `Dataset` accessor, should be list of variables that
-            should be inverted.
+            If this is a `~xarray.DataArray` accessor, `invert` should be a boolean
+            indicating whether data should be inverted when taking the average
+            hemisphere ``'ave'``. If this is a `~xarray.Dataset` accessor, `invert`
+            should be a list of variable names that should be inverted (e.g. if the
+            dataset contains the meridional wind ``'v'`` and potential vorticity
+            ``'pv'``, then one might use ``invert=('v', 'pv')``).
         """
         # Bail out if already is single hemisphere
         data = self.data
@@ -1499,15 +1502,18 @@ class ClimoAccessor(object):
 
     def sel_time(self, date=None, **kwargs):
         """
-        Select indices matching date or "virtual" datetime component.
-        See: http://xarray.pydata.org/en/stable/time-series.html
+        Return an `~xarray.DataArray` or `~xarray.Dataset` with the time coordinate
+        filtered to times matching some datetime component. For details, see the
+        `xarray documentation on virtual datetime coordinates \
+        <http://xarray.pydata.org/en/stable/time-series.html>`__.
 
         Parameters
         ----------
         date : date-like, optional
-            Particular date selection(s).
+            Itemized selection of dates. Data type should match the time coordinate
+            data type (e.g. `numpy.datetime64`).
         year, month, day, hour, minute, second, dayofyear, week, dayofweek, weekday
-            "Virtual" datetime selection(s).
+            The datetime component, e.g. ``year=2000`` or ``season='JJA'``.
         """
         data = self.data
         try:
