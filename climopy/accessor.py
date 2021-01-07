@@ -16,10 +16,10 @@ import numpy as np
 import pint
 import xarray as xr
 from cf_xarray import accessor as _cf_accessor
-from icecream import ic  # noqa: F401
 
 from . import const, diff, ureg, utils, var
 from .cfvariable import CFVariableRegistry, vreg
+from .internals import ic  # noqa: F401
 from .internals import _first_unique, _is_numeric, _is_scalar, warnings
 from .unit import encode_units, latex_units, parse_units
 

@@ -73,7 +73,7 @@ extlinks = {
     'pr': ('https://github.com/lukelbd/climopy/pull/%s', 'GH#'),
 }
 
-# Files location
+# Bibtex file locations
 import glob
 bibtex_bibfiles = glob.glob('bibs/*')
 

@@ -10,8 +10,8 @@ import re
 
 import numpy as np
 import pint
-from icecream import ic  # noqa: F401
 
+from .internals import ic  # noqa: F401
 from .internals import warnings
 from .unit import latex_units, parse_units
 
