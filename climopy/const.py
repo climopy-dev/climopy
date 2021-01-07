@@ -143,19 +143,25 @@ def _add_transformation(context, source, dest, scale):  # noqa: E302
 
 
 # Static energy components, their rates of change, their fluxes, and all of the
-# above integrated with respect to mass or mass per unit area.
-# TODO: Consider adding latent heat transformations? May result in weird bugs
+# above integrated with respect to mass, area, or mass per unit area.
+# TODO: Consider removing latent heat transformations? May result in weird bugs
 # where inadvertantly nondimensional data is given restored dimensions!
 # NOTE: Pint context transformations are recursive (e.g. below permits converting
-# [length] to [temperature]) but not multiplicative (e.g. below does not cover
-# converting [temperature] * [mass] to [energy]).
+# [length] to [temperature]) but do not work with arbitrary additional unit multipliers
+# (e.g. below does not cover [length] * [length] to [energy] * [length] / [mass]).
 # NOTE: Common to want to convert [energy] / [mass] to [energy] / [area] / [pressure]
 # for displaying static or Lorenz energy terms. But this is already covered by
 # the geopotential height transformations! Latter units are equivalent to [length]!
+# NOTE: The [area] multiplier supports longitudinal integration of meridional
+# fluxes per unit pressure (e.g. PW 100hPa-1). Could be thought of as the static energy
+# density (in [energy] / [area] / [pressure]), i.e. [length] scaled by the area of the
+# zonal band traversed by meridional fluxes in one second. Vertically integrated
+# meridional fluxes work without this multiplier because [area] / [time] * [mass] /
+# [area] = [mass] / [time] which is already covered. Unsure of other uses.
 _context = pint.Context('climo')
 for suffix1, suffix2 in itertools.product(
     ('', ' / [time]', ' * [velocity]'),
-    ('', ' * [mass]', ' * [mass] / [area]'),
+    ('', ' * [area]', ' * [mass]', ' * [mass] / [area]'),
 ):
     suffix = suffix1 + suffix2
     _add_transformation(
