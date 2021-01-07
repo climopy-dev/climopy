@@ -9,12 +9,12 @@ Unit registry
 .. automodsumm:: climopy.unit
    :toctree: api
 
-Descriptor registry
--------------------
+Variable registry
+-----------------
 
-.. automodule:: climopy.descriptor
+.. automodule:: climopy.cfvariable
 
-.. automodsumm:: climopy.descriptor
+.. automodsumm:: climopy.cfvariable
    :toctree: api
 
 Physical constants
