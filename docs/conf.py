@@ -63,6 +63,7 @@ extensions = [
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',  # for NumPy style docstrings, instead of reStructred Text
     'sphinx.ext.intersphinx',  # external links
+    'sphinx_copybutton',
     'sphinxcontrib.bibtex',  # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html
     'sphinx_automodapi.automodapi',  # see: https://github.com/lukelbd/sphinx-automodapi/tree/proplot-mods # noqa
 ]
@@ -72,6 +73,13 @@ extlinks = {
     'commit': ('https://github.com/lukelbd/climopy/commit/%s', '@'),
     'pr': ('https://github.com/lukelbd/climopy/pull/%s', 'GH#'),
 }
+
+# Cupybutton configuration
+# See: https://sphinx-copybutton.readthedocs.io/en/latest/
+copybutton_prompt_text = r'>>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: '
+copybutton_prompt_is_regexp = True
+copybutton_only_copy_prompt_lines = True
+copybutton_remove_prompts = True
 
 # Bibtex file locations
 import glob
