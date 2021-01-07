@@ -180,6 +180,8 @@ def _dataarray_from(
     coords_fixed = {}
     dim_drop = dim_drop or ()
     for dim, coord in coords.items():
+        if dim not in dims:  # missing coords
+            continue
         if dim in dim_drop:
             continue
         if not isinstance(coord, xr.DataArray):
