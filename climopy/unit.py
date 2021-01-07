@@ -12,7 +12,8 @@ __all__ = [
     'ureg',  # pint convention
     'units',  # metpy convention
     'parse_units',
-    'format_units',
+    'encode_units',
+    'latex_units',
 ]
 
 
@@ -45,7 +46,13 @@ ureg = units = pint.UnitRegistry(
         lambda s: s.replace('%%', ' permille '),
         lambda s: s.replace('%', ' percent '),
     ],
-    force_ndarray_like=True,  # good practice and make compatible with pint-xarray
+    # NOTE: Pint-xarray mysteriously declares that force_ndarary_like=True is
+    # required for things to "work properly" but can't find other information.
+    # Everything seems to work just fine without it so far...
+    # https://pint-xarray.readthedocs.io/en/stable/creation.html#attaching-units
+    # WARNING: Encountered this issue after enabling this option:
+    # https://github.com/hgrecco/pint/issues/1203
+    # force_ndarray_like=True,
 )
 
 # Dimensionless definitions (see https://github.com/hgrecco/pint/issues/185)
@@ -148,14 +155,27 @@ ureg.define(
 ureg.setup_matplotlib()
 
 
+def encode_units(units):
+    """
+    Convert `pint.Unit` units to an unambiguous unit string. This is used with
+    `ClimoAccessor.dequantify` to encode units in the `DataArray` attributes.
+    """
+    if isinstance(units, str):
+        units = parse_units(units)
+    return ' '.join(
+        pint.formatting.formatter([(unit, exp)], as_ratio=False)
+        for unit, exp in units._units.items()
+    )
+
+
 def parse_units(units, /):
     """
     Translate unit string into `pint` units. Includes the following features:
 
     * Interpret everything to the right of the first slash as part of the denominator.
       This permits e.g. ``W / m2 Pa`` instead of ``W / (m^2 Pa)``.
-    * Interpret CF standard time units, e.g. convert ``days since 0001-01-01`` to
-    ``days``.
+    * Interpret CF standard time units, e.g. convert ``days since 0001-01-01``
+      to ``days``.
     * Interpret CF standard where exponents are expressed as numbers adjacent to
       letters without any exponentiation marker, e.g. ``m2`` for ``m^2``.
     * Interpret units with constants defined by climopy (e.g. _100km) without the
@@ -174,7 +194,7 @@ def parse_units(units, /):
     )
 
 
-def format_units(units, /, *, long_form=None):
+def latex_units(units, /, *, long_form=None):
     r"""
     Fussily format unit string or `pint.Unit` object into TeX-compatible form
     suitable for (e.g.) matplotlib figure text. Includes the following features:
