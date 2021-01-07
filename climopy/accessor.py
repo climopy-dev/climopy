@@ -73,6 +73,7 @@ def _expand_variable_args(func):
     Expand single positional argument into multiple positional arguments with optional
     keyword dicts. Permits e.g. get(('t', {'lat': 'mean'})) tuple pairs.
     """
+    @functools.wraps(func)
     def _wrapper(self, arg, **kwargs):
         args = []
         kwargs = kwargs.copy()
@@ -88,6 +89,7 @@ def _expand_variable_args(func):
                     raise ValueError(f'Invalid variable spec {arg!r}.')
         _iter_args(arg)
         return func(self, *args, **kwargs)
+
     return _wrapper
 
 
@@ -205,6 +207,7 @@ def _while_quantified(func):
     """
     Wrapper that temporarily quantifies the data.
     """
+    @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
         isquantity = self._is_quantity
         if not isquantity:
@@ -224,6 +227,7 @@ def _while_dequantified(func):
     Wrapper that temporarily dequantifies the data. Works with `LocIndexer` and
     `ClimoDataArrayAccessor`.
     """
+    @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
         isquantity = self._is_quantity
         if isquantity:
@@ -238,17 +242,7 @@ def _while_dequantified(func):
 
 class _GroupByQuantified(object):
     """
-    A unit-friendly `.groupby` indexer. Dequantify the "group" `DataArray` before use
-    and preserve attributes on the resulting coordinates.
-
-    Examples
-    --------
-    >>> ds = xr.tutorial.open_dataset('rasm').load()
-    ... ds = ds.coarsen(x=25, y=25, boundary='trim').mean()
-    ... ds.Tair.attrs['units'] = 'degC'
-    ... group = ureg.kg * (ds.Tair > 0)  # arbitrary group with units
-    ... group.name = 'group'
-    ... ds.climo.quantify().climo.groupby(group).mean()
+    A unit-friendly ``.groupby`` indexers.ClimoAccessor.groupby` indexer.
     """
     def __init__(self, obj, group, *args, **kwargs):
         # Infer non-data group
@@ -270,7 +264,6 @@ class _GroupByQuantified(object):
         group = group.climo.dequantify()
         self._group_name = group.name  # NOTE: could be nameless
         self._group_attrs = group.attrs.copy()
-
         super().__init__(obj, group, *args, **kwargs)
 
     def _combine(self, applied, *args, **kwargs):
@@ -298,7 +291,7 @@ class _DatasetGroupByQuantified(
 
 class _DataArrayLocIndexerQuantified(object):
     """
-    A unit-wrapped ``.loc`` indexer for `xarray.DataArray`\\ s.
+    A unit-friendly ``.loc`` indexer for `xarray.DataArray`\\ s.
     """
     def __init__(self, data_array):
         self._data = data_array
@@ -360,8 +353,7 @@ class _DatasetLocIndexerQuantified(object):
 
 class _CoordsQuantified(object):
     """
-    A unit-friendly `.coords` container. Returns quantified and derived
-    coordinate vectors as `xarray.DataArray` objects.
+    A unit-friendly `.coords` container.
     """
     def __init__(self, data, registry):
         """
@@ -698,9 +690,11 @@ class ClimoAccessor(object):
 
     Notes
     -----
-    This adds unit support for the operations `.loc`, `.sel`, `.interp`, and `.groupby`.
-    Otherwise, `.weighted` and `.coarsen` already work, but `.resample` and `.rolling`
-    are broken and may be quite tricky to fix.
+    This adds `pint.Quantity` support for the operations `~xarray.DataArray.loc`,
+    `~xarray.DataArray.sel`, `~xarray.DataArray.interp`, and
+    `~xarray.DataArray.groupby`. Otherwise, `~xarray.DataArray.weighted` and
+    `~xarray.DataArray.coarsen` already work, but `~xarray.DataArray.resample`
+    and `~xarray.DataArray.rolling` are broken and may be quite tricky to fix.
     """
     def _build_cf_attr(self, old, new):
         """
@@ -887,7 +881,8 @@ class ClimoAccessor(object):
     def _parse_truncate_args(self, **kwargs):
         """
         Parse arguments used to truncate data. Returns tuple of dictionaries used
-        to limit data range. Used by both `.truncate` and `.reduce`.
+        to limit data range. Used by both `~ClimoAccessor.truncate` and
+        `~ClimoDataArrayAccessor.reduce`.
         """
         # Limit range of dimension reduction
         # NOTE: This permits *multiple* bounds that get reduced to 'track' dimension,
@@ -1285,26 +1280,36 @@ class ClimoAccessor(object):
 
     def groupby(self, group, *args, **kwargs):
         """
-        Wrap `xarray.DataArray.groupby` to support pint quantity groups.
+        A unit-friendly `~xarray.DataArray.groupby` indexer. Dequantifies the "group"
+        `DataArray` before use and preserve attributes on the resulting coordinates.
 
         Parameters
         ----------
         *args, **kwargs
-            Passed to `.groupby`.
+            Passed to `~xarray.DataArray.groupby`.
+
+        Examples
+        --------
+        >>> ds = xr.tutorial.open_dataset('rasm').load()
+        ... ds = ds.coarsen(x=25, y=25, boundary='trim').mean()
+        ... ds.Tair.attrs['units'] = 'degC'
+        ... group = ureg.kg * (ds.Tair > 0)  # arbitrary group with units
+        ... group.name = 'group'
+        ... ds.climo.quantify().climo.groupby(group).mean()
         """
         return self._cls_groupby(self.data, group, *args, **kwargs)
 
     @_while_dequantified
     def interp(self, indexers=None, method='linear', assume_sorted=False, **kwargs):
         """
-        Wrap `.interp` to handle units, preserve coordinate attributes, units, and
-        perform extrapolation for out-of-range coordinates by default. Also permit
-        interpolating to different points as a function of other coordinates.
+        Wrap `~xarray.DataArray.interp` to handle units, preserve coordinate attributes,
+        units, and perform extrapolation for out-of-range coordinates by default. Also
+        permit interpolating to different points as a function of other coordinates.
 
         Parameters
         ----------
         *args, **kwargs
-            Passed to `.interp`.
+            Passed to `~xarray.DataArray.interp`.
         """
         indexers = indexers or {}
         indexers.update(kwargs)
@@ -1355,13 +1360,13 @@ class ClimoAccessor(object):
 
     def sel(self, indexers=None, method=None, tolerance=None, drop=False, **kwargs):
         """
-        Wrap `.sel` to handle units. Also permit selecting different points as
-        a function of other coordinates.
+        Wrap `~xarray.DataArray.sel` to handle units. Also permit selecting different
+        points as a function of other coordinates.
 
         Parameters
         ----------
         *args, **kwargs
-            Passed to `.sel`.
+            Passed to `~xarray.DataArray.sel`.
         """
         indexers = indexers or {}
         indexers.update(kwargs)
@@ -1519,9 +1524,10 @@ class ClimoAccessor(object):
 
     def standardize_coords(self, verbose=False):
         """
-        Standardize coordinates to satisfy CF conventions using `guess_coord_axis`
-        and `rename_like`. May also support variable standardization in the future
-        using `CFVariableRegistry`. For now, this function does the following:
+        Standardize coordinates to satisfy CF conventions using
+        `cf_xarray.guess_coord_axis` and `cf_xarray.rename_like`. May also support
+        variable standardization in the future using `~cfvariable.CFVariableRegistry`.
+        For now, this function does the following:
 
         * Adds ``longitude`` and ``latitude`` standard names and ``degrees_east``
           and ``degrees_north`` units to detected ``X`` and ``Y`` axes.
@@ -1658,8 +1664,9 @@ class ClimoAccessor(object):
 
     def truncate(self, bounds=None, *, ignore_extra=False, **kwargs):
         """
-        Restrict the data into exact bounds using `.interp`. The bounds are specified
-        with e.g. ``latmin=x``, ``latmax=y``, ``latlim=(x, y)``, or ``lat=(x, y)``.
+        Restrict the data into exact bounds using `~ClimoDataArrayAccessor.interp`.
+        The bounds are specified with e.g. ``latmin=x``, ``latmax=y``,
+        ``latlim=(x, y)``, or ``lat=(x, y)``.
 
         Parameters
         ----------
@@ -1717,7 +1724,7 @@ class ClimoAccessor(object):
     @property
     def coords(self):
         """
-        Wrapper of `.coords` attribute that returns quantified
+        Wrapper of `~xarray.DataArray.coords` attribute that returns quantified
         coordinates variables or variables _transformed_ from the native coordinates
         using `ClimoDataArrayAccessor.to_variable` (e.g. `meridional_coordinate` from
         `latitude`). Variables can be reference with their actual name, axis attribute,
@@ -1740,14 +1747,15 @@ class ClimoAccessor(object):
     @property
     def dims(self):
         """
-        Redirect to `.dims`.
+        Redirect to `~xarray.DataArray.dims`.
         """
         return self.data.dims
 
     @property
     def loc(self):
         """
-        Wrapper `.loc` with an indexer that handles units and coordinate aliases.
+        Wrapper of `~xarray.DataArray.loc` with support for `pint.Quantity` indexers
+        and assignments and coordinate name aliases.
         """
         return self._cls_loc(self.data)
 
@@ -1755,7 +1763,8 @@ class ClimoAccessor(object):
     def param(self):
         """
         The parameter corresponding to the major parameter sweep axis. Sweep axes
-        are detected as any coordinate whose `cfvariable` has a ``base`` attribute.
+        are detected as any coordinate whose `~ClimoDataArrayAccessor.cfvariable` has
+        a non-empty ``reference`` attribute.
         """
         dims = tuple(
             dim for dim, coord in self.data.coords.items()
@@ -1821,7 +1830,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data_array : xarray.DataArray
             The data.
         registry : CFVariableRegistry
-            The active registry used to look up variables with `.cfvariable`.
+            The active registry used to look up variables with
+            `~ClimoDataArrayAccessor.cfvariable`.
         """
         self._data = data_array
         self._registry = registry
@@ -1932,8 +1942,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             of isentropic data, and may also be needed for 2D reduction
             of horizontal data with 2D latitude/longitude coords in the future.
         centroid : bool, optional
-            Get the value-weighted average wavenumber using `.centroid`. Units
-            are distance.
+            Get the value-weighted average wavenumber using
+            `~ClimoDataArrayAccessor.centroid`. Units are distance.
         weight : str or `xarray.DataArray`, optional
             Additional weighting parameter name or `xarray.DataArray`, used for
             averages and integrations. Mass weighting is applied automatically.
@@ -2296,7 +2306,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         weight : xr.DataArray, optional
             Optional additional weighting.
         **kwargs
-            Passed to `.truncate`. Used to limit bounds of integration.
+            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
 
         Notes
         -----
@@ -2324,7 +2334,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         weight : xr.DataArray, optional
             Optional additional weighting.
         **kwargs
-            Passed to `.truncate`. Used to limit bounds of average.
+            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of average.
 
         Notes
         -----
@@ -2362,7 +2372,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         reverse : bool, optional
             Whether to change the direction of the accumulation to right-to-left.
         **kwargs
-            Passed to `.truncate`. Used to limit bounds of integration.
+            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
         """
         kwargs.update(integral=True, cumulative=True)
         return self._integrate_or_average(dim, **kwargs)
@@ -2382,7 +2392,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         reverse : bool, optional
             Whether to change the direction of the accumulation to right-to-left.
         **kwargs
-            Passed to `.truncate`. Used to limit bounds of integration.
+            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
         """
         kwargs.update(integral=False, cumulative=True)
         return self._integrate_or_average(dim, **kwargs)
@@ -2427,7 +2437,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         weight : xr.DataArray, optional
             Optional weighting.
         **kwargs
-            Passed to `xarray.DataArray.mean`. Used to limit bounds of mean.
+            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of mean.
         """
         return self._mean_or_sum('mean', dim, **kwargs)
 
@@ -2444,7 +2454,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         weight : xr.DataArray, optional
             Optional weighting.
         **kwargs
-            Passed to `.truncate`. Used to limit bounds of summation.
+            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of summation.
         """
         return self._mean_or_sum('sum', dim, **kwargs)
 
@@ -2619,7 +2629,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dataset : `xarray.Dataset`, optional
             The dataset.
         **kwargs
-            Passed to `.truncate`. Used to restrict the bounds of the calculation.
+            Passed to `~ClimoAccessor.truncate`. Used to limit the bounds of the
+            calculation.
         """
         # Multi-dimensional reduction: power-weighted centroid (wavenumber)
         # Mask region for taking power-weighted average
@@ -3261,7 +3272,8 @@ class ClimoDatasetAccessor(ClimoAccessor):
         dataset : xarray.Dataset
             The data.
         registry : cvariable.CFVariableRegistry
-            The active registry used to look up variables with `.cfvariable`.
+            The active registry used to look up variables with
+            `~ClimoDataArrayAccessor.cfvariable`.
         """
         self._data = dataset
         self._registry = registry
@@ -3363,16 +3375,17 @@ class ClimoDatasetAccessor(ClimoAccessor):
         self,
         *keys,
         add_cell_measures=True,
-        normalize=False,
         quantify=None,
-        units=None,
-        running=None,
         standardize=False,
+        units=None,
+        normalize=False,
+        running=None,
         **kwargs
     ):
         """
-        Call `.__getitem__`, with optional post-processing steps and special behavior
-        when variables are prefixed or suffixed with certain values.
+        Call `~ClimoDatasetAccessor.__getitem__`, with optional post-processing steps
+        and special behavior when variables are prefixed or suffixed with certain
+        values.
 
         Parameters
         ----------
@@ -3384,25 +3397,27 @@ class ClimoDatasetAccessor(ClimoAccessor):
             * Append ``_lat`` or ``_strength`` to return vertically and zonally
               integrated or maximum energy and momentum budget terms.
             * Append ``_1``, ``_2``, or ``_diff`` to make a selection or take an
-              anomaly pair difference using `.sel_pair`.
+              anomaly pair difference using `~ClimoDatasetAccessor.sel_pair`.
 
             You can also pass a 2-tuple to return the difference between two variables.
             And all names can be replaced with 2-tuples of the form ('name', kwargs)
             to pass keyword arguments positionally.
         add_cell_measures : bool, optional
             Whether to add default cell measures to the coordinates.
+        quantify : bool, optional
+            Whether to quantify the data with `~ClimoDataArrayAccessor.quantify()`.
+        standardize : bool, optional
+            Whether to standardize the resulting units with
+            `~ClimoDataArrayAccessor.to_standard_units`.
+        units : unit-like, optional
+            Convert the result to the input units using
+            `~ClimoDataArrayAccessor.to_units()`.
         normalize : bool, optional
             Whether to normalize the resulting data by the time-mean.
-        quantify : bool, optional
-            Whether to quantify the data with `.quantify()`.
-        units : unit-like, optional
-            Convert the result to these units using `.to_units()`.
         running : bool, optional
-            Apply a running mean with `.runmean`.
-        standardize : bool, optional
-            Whether to standardize the resulting units with `.to_standard_units`.
+            Apply a running mean with `~ClimoDataArrayAccessor.runmean`.
         **kwargs
-            Passed to `reduce`. Used to reduce the dimensions.
+            Passed to `~ClimoDataArrayAccessor.reduce`. Used to reduce the dimensions.
 
         Returns
         -------
