@@ -1717,13 +1717,16 @@ class ClimoAccessor(object):
     @property
     def coords(self):
         """
-        Wrap `.coords` with a mapping that returns quantified coordinates, or
-        variables transformed from the native coordinates using `to_variable`
-        (e.g. `meridional_coordinate` from `latitude`). The coordinate top boundaries,
-        bottom boundaries, or thicknesses can also be returned by appending the
-        name with ``_top``, ``_bot``, or ``_del`` (or ``_delta``), respectively. Always
-        returns copies of the coordinate variables since xarray coordinates
-        `cannot be quantified in-place <https://github.com/pydata/xarray/issues/525>`__.
+        Wrapper of `.coords` attribute that returns quantified
+        coordinates variables or variables _transformed_ from the native coordinates
+        using `ClimoDataArrayAccessor.to_variable` (e.g. `meridional_coordinate` from
+        `latitude`). Variables can be reference with their actual name, axis attribute,
+        CF coordinate name, or `~cfvariable.CFVariableRegistry` identifiers.
+        The coordinate top boundaries, bottom boundaries, or thicknesses can be
+        returned by appending the name with ``_top``, ``_bot``, or ``_del`` (or
+        ``_delta``), respectively. Always returns copies of the coordinate variables
+        since xarray coordinates `cannot be quantified in-place \
+        <https://github.com/pydata/xarray/issues/525>`__.
         """
         return self._cls_coords(self.data, self.registry)
 
@@ -1744,15 +1747,15 @@ class ClimoAccessor(object):
     @property
     def loc(self):
         """
-        Wrap `.loc` with an indexer that handles units and coordinate types.
+        Wrapper `.loc` with an indexer that handles units and coordinate aliases.
         """
         return self._cls_loc(self.data)
 
     @property
     def param(self):
         """
-        are detected as any coordinate whose cfvariable has a ``base`` attribute.
         The parameter corresponding to the major parameter sweep axis. Sweep axes
+        are detected as any coordinate whose `cfvariable` has a ``base`` attribute.
         """
         dims = tuple(
             dim for dim, coord in self.data.coords.items()
@@ -1765,7 +1768,8 @@ class ClimoAccessor(object):
     @property
     def registry(self):
         """
-        The active `CFVariableRegistry` used to look up variables with `.cfvariable`.
+        The active `~cfvariable.CFVariableRegistry` used to look up variables
+        with `~ClimoDataArrayAccessor.cfvariable`.
         """
         return self._registry
 
@@ -1778,8 +1782,9 @@ class ClimoAccessor(object):
     @property
     def vertical_type(self):
         """
-        Return type of `z` axis, i.e. one of ``'temperature'``, ``'pressure'``,
-        ``'height'``, or ``'unknown'``. Model levels not yet supported.
+        The type of the CF-recognized ``'vertical'`` axis, i.e. one of
+        ``'temperature'``, ``'pressure'``, ``'height'``, or ``'unknown'``.
+        Model levels and hybrid sigme coordinates are not yet supported.
         """
         units = self.cf['vertical'].climo.units
         if units.is_compatible_with('K'):
@@ -2457,7 +2462,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             The keyword arguments form of `indexers`.
             One of `indexers` or `indexers_kwargs` must be provided.
         **kwargs
-            Passed to `climopy.deriv_uneven`. The `order` keyword arg is ignored.
+            Passed to `~diff.deriv_uneven`. The `order` keyword arg is ignored.
         """
         data = self.data
         indexers, _ = self._parse_indexers(indexers, allow_kwargs=False, **kwargs)
@@ -2488,7 +2493,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             The keyword arguments form of `indexers`.
             One of `indexers` or `indexers_kwargs` must be provided.
         **kwargs
-            Passed to `climopy.deriv_uneven`. The `order` keyword arg is ignored.
+            Passed to `~diff.deriv_uneven`. The `order` keyword arg is ignored.
         """
         data = self.data
         indexers, kwargs = self._parse_indexers(
@@ -2517,7 +2522,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             Whether to use more accurate (but less convenient) half-level
             differentiation rather than centered differentiation.
         **kwargs
-            Passed to `climopy.deriv_uneven` or `climopy.deriv_half`.
+            Passed to `~diff.deriv_uneven` or `~diff.deriv_half`.
         """
         result = self.divergence(*args, **kwargs)
         with xr.set_options(keep_attrs=True):
@@ -2536,7 +2541,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             Whether to use more accurate (but less convenient) half-level
             differentiation rather than centered differentiation.
         **kwargs
-            Passed to `climopy.deriv_uneven` or `climopy.deriv_half`.
+            Passed to `~diff.deriv_uneven` or `~diff.deriv_half`.
         """
         # Compute divergence in spherical coordinates
         # div = diff.deriv1(y[:2], data * cos, **kwargs) / cos
@@ -2576,7 +2581,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str
             The dimension.
         **kwargs
-            Passed to `climopy.autocorr`.
+            Passed to `~var.autocorr`.
         """
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
@@ -2595,7 +2600,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str
             The dimension.
         **kwargs
-            Passed to `climopy.autocorr`.
+            Passed to `~var.autocorr`.
         """
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
@@ -2949,8 +2954,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     def quantify(self):
         """
-        Convert data and coordinates to `pint.Quantity` using the units attribute.
-        If the units attribute is missing, a warning is issued.
+        Return a copy of the `xarray.DataArray` with underlying data converted to
+        `pint.Quantity` using the ``'units'`` attribute. If the data is already
+        quantified, nothing is done. If the ``'units'`` attribute is missing, a warning
+        is raised. Units are parsed with `~unit.parse_units`.
         """
         # WARNING: In-place conversion resulted in endless bugs related to
         # ipython %autoreload, was departure from metpy convention, was possibly
@@ -2968,7 +2975,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     def dequantify(self):
         """
-        Convert data and coordinates to magnitude with units as an attribute.
+        Return a copy of the `xarray.DataArray` with underlying data stripped of
+        its units and units written to the ``'units'`` attribute. If the data is already
+        dequantified, nothing is done. Units are written with `~unit.encode_units`.
         """
         # WARNING: Try to preserve *order* of units for fussy formatting later on.
         # Avoid default alphabetical sorting by pint.__format__.
@@ -2981,8 +2990,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_while_quantified
     def to_units(self, units):
         """
-        Return a copy converted to the desired units. Supports CF compliant constructs
-        like `'m2'` for "meters squared" and `'100km'` for "100 kilometers."
+        Return a copy converted to the desired units. Unit strings are parsed
+        with `~unit.parse_units`.
         """
         if not self._is_quantity:
             raise ValueError('Data should be quantified.')
@@ -3001,7 +3010,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_while_quantified
     def to_base_units(self, coords=False):
         """
-        Return a copy converted to base units.
+        Return a copy with the underlying data converted to base units.
         """
         # NOTE: assign_coords has issues with multiple DataArray values. See:
         # https://github.com/pydata/xarray/issues/3483
@@ -3017,7 +3026,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_while_quantified
     def to_compact_units(self, coords=False):
         """
-        Return a copy converted to compact units.
+        Return a copy with the underlying data converted to "compact" units.
         """
         # NOTE: assign_coords has issues with multiple DataArray values. See:
         # https://github.com/pydata/xarray/issues/3483
@@ -3032,8 +3041,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     def to_standard_units(self, coords=False):
         """
-        Return a copy converted to standardized units. This will only work if
-        the variable name matches a valid cfvariable.
+        Return a copy with the underyling data converted to the
+        `~ClimoDataArrayAccessor.cfvariable` `standard_units` value. This will only
+        work if the variable name matches a valid `CFVariable` identifier.
         """
         # NOTE: assign_coords has issues with multiple DataArray values. See:
         # https://github.com/pydata/xarray/issues/3483
@@ -3060,7 +3070,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Transform this variable to another variable using two-way transformations
         registered with `register_transformation`. Transformations work recursively,
-        i.e. definitions for A-->B and B-->C permit transforming A-->C.
+        i.e. definitions for A --> B and B --> C permit transforming A --> C.
 
         Parameters
         ----------
@@ -3094,7 +3104,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `climopy.rednoisefit`.
+            Passed to `~var.rednoisefit`.
         """
         data = self.data
         lag = data.coords[dim]
@@ -3193,7 +3203,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     def units(self):
         """
         The units of this DataArray as a `pint.Unit`, taken from the underlying
-        `pint.Quantity` or the ``units`` attribute. See `parse_units` for details.
+        `pint.Quantity` or the ``'units'`` attribute. Unit strings are parsed
+        with `~unit.parse_units`.
         """
         if isinstance(self.data.data, pint.Quantity):
             return self.data.data.units
@@ -3503,7 +3514,9 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
     def quantify(self):
         """
-        Convert all xarray.DataArray data into pint Quantities, excluding bounds.
+        Return a copy of the `xarray.Dataset` with underlying `xarray.DataArray` data
+        converted to `pint.Quantity` using the ``'units'`` attributes. Coordinate bounds
+        variables are excluded. Already-quantified data is left alone.
         """
         return self.data.map(
             lambda da: da if self._is_bounds(da.name) else da.climo.quantify(),
@@ -3512,14 +3525,18 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
     def dequantify(self):
         """
-        Convert all xarray.DataArray data into normal arrays.
+        Return a copy of the `xarray.Dataset` with underlying `xarray.DataArray` data
+        stripped of its units and the units written to the ``'units'`` attributes.
+        Already-dequantified data is left alone.
         """
         return self.data.map(lambda da: da.climo.dequantify(), keep_attrs=True)
 
     @property
     def vars(self):
         """
-        Variable analogue to `.coords`. Indexing this always returns quantified arrays.
+        Analogue to `ClimoAccessor.coords` for retreiving quantified data variables
+        based on their actual names, standard name attributes, or
+        `~cfvariable.CFVariableRegistry` identifiers.
         """
         return _VarsQuantified(self.data, self.registry)
 

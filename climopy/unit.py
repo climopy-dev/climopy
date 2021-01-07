@@ -155,10 +155,10 @@ ureg.define(
 ureg.setup_matplotlib()
 
 
-def encode_units(units):
+def encode_units(units, /):
     """
     Convert `pint.Unit` units to an unambiguous unit string. This is used with
-    `ClimoAccessor.dequantify` to encode units in the `DataArray` attributes.
+    `ClimoAccessor.dequantify` to encode units in the `xarray.DataArray` attributes.
     """
     if isinstance(units, str):
         units = parse_units(units)
@@ -170,16 +170,17 @@ def encode_units(units):
 
 def parse_units(units, /):
     """
-    Translate unit string into `pint` units. Includes the following features:
+    Translate unit string into `pint` units, with support for CF compliant constructs.
+    Includes the following features:
 
-    * Interpret everything to the right of the first slash as part of the denominator.
-      This permits e.g. ``W / m2 Pa`` instead of ``W / (m^2 Pa)``.
-    * Interpret CF standard time units, e.g. convert ``days since 0001-01-01``
-      to ``days``.
     * Interpret CF standard where exponents are expressed as numbers adjacent to
       letters without any exponentiation marker, e.g. ``m2`` for ``m^2``.
+    * Interpret CF standard time units, e.g. convert ``days since 0001-01-01``
+      to ``days``.
     * Interpret units with constants defined by climopy (e.g. _100km) without the
       leading dummy underscore.
+    * Interpret everything to the right of the first slash as part of the denominator.
+      This permits e.g. ``W / m2 Pa`` instead of ``W / (m^2 Pa)``.
     """
     if isinstance(units, pint.Unit):
         return units
