@@ -1724,7 +1724,7 @@ class ClimoAccessor(object):
     @property
     def cf(self):
         """
-        Redirection to the `cf_xarray.CFAccessor`.
+        Redirect to the `cf_xarray.CFAccessor`.
         """
         return self._cls_cf(self.data)
 
@@ -1754,7 +1754,7 @@ class ClimoAccessor(object):
     @property
     def dims(self):
         """
-        Redirect to `~xarray.DataArray.dims`.
+        Redirect to the `~xarray.DataArray.dims` dimension list.
         """
         return self.data.dims
 
@@ -3293,8 +3293,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
     def __getattr__(self, attr):
         """
-        Return a possibly derived parameter with `coords` or `param`. Use the
-        `cf_xarray` accessor to search for parameters by CF names.
+        Try to return a variable with `~ClimoDatasetAccessor.__getitem__`.
         """
         if attr[:1] == '_':
             return super().__getattribute__(attr)  # trigger builtin AttributeError
