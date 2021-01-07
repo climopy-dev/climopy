@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-A set of `xarray accessors \
+A pair of `xarray accessors \
 <http://xarray.pydata.org/en/stable/internals.html#extending-xarray>`__
-for working with pint units and CF variables, calculating derived quantities,
-and reducing dimensions in myrid ways.
+for working with pint units and CF variables, calculating transformed and derived
+quantities, and reducing dimensions in myrid ways.
 """
 import functools
 import itertools
@@ -1749,8 +1749,8 @@ class ClimoAccessor(object):
     @property
     def param(self):
         """
-        The parameter corresponding to the major parameter sweep axis. Sweep axes
         are detected as any coordinate whose cfvariable has a ``base`` attribute.
+        The parameter corresponding to the major parameter sweep axis. Sweep axes
         """
         dims = tuple(
             dim for dim, coord in self.data.coords.items()
@@ -3134,8 +3134,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @property
     def cfvariable(self):
         """
-        Return a `CFVariable` based on the DataArray name, the scalar coordinates,
-        and the coordinate reductions referenced in `cell_methods`.
+        Return a `~cfvariable.CFVariable` based on the DataArray name, the scalar
+        coordinates, and the coordinate reductions referenced in `cell_methods`. As
+        a shorthand, you can access ``data_array.climo.cfvariable`` properties
+        directly using ``data_array.climo.property``.
         """
         data = self.data
         if data.name is None:
@@ -3520,6 +3522,72 @@ class ClimoDatasetAccessor(ClimoAccessor):
         return any(key == da.attrs.get('bounds', sentinel) for da in coords.values())
 
 
+def _matching_function(key, func, name):
+    """
+    Return the function if the input string matches a string, tuple, or regex key. In
+    the latter two cases a `name` keyword arguments is added with `functools.partial`.
+    """
+    if isinstance(key, str) and name == key:
+        return func
+    if isinstance(key, tuple) and name in key:
+        return functools.partial(func, name=name)
+    if isinstance(key, re.Pattern) and key.match(name):
+        return functools.partial(func, name=name)
+
+
+def _find_derivation(dest):
+    """
+    Find derivation that generates the variable name. Return `None` if not found.
+    """
+    for idest, derivation in DERIVATIONS.items():
+        if func := _matching_function(idest, derivation, dest):
+            return func
+
+
+def _find_any_transformation(data_arrays, dest):
+    """
+    Find transformation that generates the variable name. Return `None` if not found.
+    Otherwise return the generating function and a source variable.
+    """
+    for data_array in data_arrays:
+        if func := _find_this_transformation(data_array, dest):
+            return func, data_array
+
+
+def _find_this_transformation(src, dest, error=False, registry=None):
+    """
+    Find possibly nested series of transformations that get from variable A --> C.
+    Account for CF and CFVariableRegistry names.
+    """
+    # TODO: Also support inverse transformations?
+    # First get list of *source* identifiers
+    if isinstance(src, str):
+        identifiers = [src]
+        if registry and (var := registry.get(src)):
+            identifiers.extend(var.identifiers)
+    else:
+        # Internally, we only pass registry keyword arg on recursion; retrieve
+        # it from the accessor on first pass.
+        registry = registry or src.climo.registry
+        identifiers = [src.name]
+        if 'standard_name' in src.attrs:
+            identifiers.append(src.attrs['standard_name'])
+        if src.climo._has_cf_attr('identifiers'):
+            identifiers.extend(src.climo._get_cf_attr('identifiers') or ())
+    # Next find the transformation
+    if dest in identifiers:
+        return lambda da: da.copy()
+    for (isrc, idest), transformation in TRANSFORMATIONS.items():
+        if isrc not in identifiers:
+            continue
+        if func := _matching_function(idest, transformation, dest):  # allow regexes
+            return func
+        # Perform nested invocation of transformations. Inner func goes from
+        # A --> ?, then outer func from ? --> B (returned above)
+        if outer := _find_this_transformation(idest, dest, error=True, registry=registry):  # noqa: E501
+            return lambda da, **kwargs: outer(transformation(da, **kwargs))
+
+
 def register_derivation(spec, /, overwrite=True):
     """
     Register a function that derives one variable from one or more others, for use
@@ -3619,151 +3687,3 @@ def register_transformation(src, dest, /, *, overwrite=True):
         TRANSFORMATIONS[(src, dest)] = _wrapper
 
     return _decorator
-
-
-def _matching_function(key, func, name):
-    """
-    Return the function if the input string matches a string, tuple, or regex key. In
-    the latter two cases a `name` keyword arguments is added with `functools.partial`.
-    """
-    if isinstance(key, str) and name == key:
-        return func
-    if isinstance(key, tuple) and name in key:
-        return functools.partial(func, name=name)
-    if isinstance(key, re.Pattern) and key.match(name):
-        return functools.partial(func, name=name)
-
-
-def _find_derivation(dest):
-    """
-    Find derivation that generates the variable name. Return `None` if not found.
-    """
-    for idest, derivation in DERIVATIONS.items():
-        if func := _matching_function(idest, derivation, dest):
-            return func
-
-
-def _find_any_transformation(data_arrays, dest):
-    """
-    Find transformation that generates the variable name. Return `None` if not found.
-    Otherwise return the generating function and a source variable.
-    """
-    for data_array in data_arrays:
-        if func := _find_this_transformation(data_array, dest):
-            return func, data_array
-
-
-def _find_this_transformation(src, dest, error=False, registry=None):
-    """
-    Find possibly nested series of transformations that get from variable A --> C.
-    Account for CF and CFVariableRegistry names.
-    """
-    # TODO: Also support inverse transformations?
-    # First get list of *source* identifiers
-    if isinstance(src, str):
-        identifiers = [src]
-        if registry and (var := registry.get(src)):
-            identifiers.extend(var.identifiers)
-    else:
-        # Internally, we only pass registry keyword arg on recursion; retrieve
-        # it from the accessor on first pass.
-        registry = registry or src.climo.registry
-        identifiers = [src.name]
-        if 'standard_name' in src.attrs:
-            identifiers.append(src.attrs['standard_name'])
-        if src.climo._has_cf_attr('identifiers'):
-            identifiers.extend(src.climo._get_cf_attr('identifiers') or ())
-    # Next find the transformation
-    if dest in identifiers:
-        return lambda da: da.copy()
-    for (isrc, idest), transformation in TRANSFORMATIONS.items():
-        if isrc not in identifiers:
-            continue
-        if func := _matching_function(idest, transformation, dest):  # allow regexes
-            return func
-        # Perform nested invocation of transformations. Inner func goes from
-        # A --> ?, then outer func from ? --> B (returned above)
-        if outer := _find_this_transformation(idest, dest, error=True, registry=registry):  # noqa: E501
-            return lambda da, **kwargs: outer(transformation(da, **kwargs))
-
-
-# Register coordinate-related transformations and derivations
-register_transformation('latitude', 'meridional_coordinate')(
-    lambda da: (da * const.a).climo.to_units('km')
-)
-register_transformation('latitude', 'cosine_latitude')(
-    lambda da: np.cos(da)
-)
-register_transformation('latitude', 'coriolis_parameter')(
-    lambda da: 2 * const.Omega * np.sin(da)
-)
-register_transformation('latitude', 'beta_parameter')(
-    lambda da: np.abs(2 * const.Omega * np.cos(da)) / const.a
-)
-register_transformation('vertical', 'mass')(
-    lambda da: (da / const.g).climo.to_units('kg m^-2')
-)
-register_transformation('vertical', 'reference_height')(
-    lambda da: (const.H * np.log(const.p0 / da)).climo.to_units('km')
-)
-register_transformation('vertical', 'reference_density')(
-    lambda da: (da / (const.Rd * ureg('300K'))).climo.to_units('kg m^-3')
-)
-register_transformation('vertical', 'reference_potential_temperature')(
-    lambda da: ureg('300K') * (const.p0 / da).climo.to_units('') ** const.kappa
-)
-
-
-@register_derivation('cell_width')
-def _cell_width(self):
-    coord = const.a * self.coords['cosine_latitude'] * self.coords['longitude_del']
-    return coord.climo.to_units('km')
-
-
-@register_derivation('cell_depth')
-def _cell_depth(self):
-    coord = const.a * self.coords['latitude_del']
-    return coord.climo.to_units('km')
-
-
-@register_derivation('cell_duration')
-def _cell_duration(self):
-    coord = self.coords['time_del']
-    return coord.climo.to_units('days')
-
-
-@register_derivation('cell_height')
-def _cell_height(self):
-    # WARNING: Must use _get_item with add_cell_measures=False to avoid recursion
-    vertical = self.vertical_type
-    if vertical == 'temperature':
-        data = self.vars['pseudo_density'] * self.coords['vertical_del']
-    elif vertical == 'pressure':
-        ps = None
-        data = self.coords['vertical_del']
-        for candidate in ('surface_air_pressure', 'air_pressure_at_mean_sea_level'):
-            if candidate not in self.vars:
-                continue
-            ps = self.vars[candidate]
-            loc = {'vertical': np.max(self.coords['vertical'].data)}
-            bott = ps - self.coords['vertical_bot'].climo.sel(loc)
-            data = data + 0 * ps  # conform shape
-            data.climo.loc[loc] = bott
-        if ps is None:
-            warnings._warn_climopy(
-                'Could not find surface pressure for accurate mass weighting.'
-            )
-        data = data / const.g
-    elif vertical == 'hybrid':
-        raise NotImplementedError(
-            'Cell height for hybrid coordinates not yet implemented.'
-        )
-    else:
-        raise NotImplementedError(
-            f'Unknown cell height for vertical type {vertical!r}.'
-        )
-    data = data.climo.to_units('kg m^-2')
-    zero = 0 * ureg.kg / ureg.m ** 2
-    data.data[data.data < zero] = zero
-    data = data.fillna(0)
-    return data

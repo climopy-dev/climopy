@@ -749,14 +749,15 @@ class CFVariableRegistry(object):
         Parameters
         ----------
         name : str
-            The registered variable name. CFVariable properties can be retrieved for
-            DataArrays whose `name` match this name using `da.climo.cfvariable.<key>`
-            or the shorthand `da.climo.<key>`.
+            The registered variable name. The CFVariable property ``property`` can be
+            retrieved for data arrays whose `name` match this name using
+            ``data_array.climo.cfvariable.property`` or the shorthand form
+            ``data_array.climo.property``.
         aliases : str or list of str, optional
             Aliases for the `CFVariable`. This can be useful for identifying dataset
             variables from a wide variety of sources that have empty `standard_name`
-            attributes. As an example you might define a canonical temperature
-            variable ``t`` with ``aliases=('T', 'temp', 'air_temp')``.
+            attributes. As an example you might register an air temperature variable
+            ``t`` with ``aliases=('ta', 'temp', 'air_temp')``.
         parents : str or list of str, optional
             The parent variable name(s). Unspecified variable properties are
             inherited from the first one, and variable grouping (and associated
@@ -828,32 +829,8 @@ class CFVariableRegistry(object):
         self._overwrite = b
 
 
-#: The `CFVariableRegistry` paired with `ClimoDataArrayAccessor` xarray accessor
+#: The default `CFVariableRegistry` paired with `ClimoDataArrayAccessor` xarray accessor
 #: instances. CFVariable properties can be retrieved from an `xarray.DataArray`
 #: whose name matches a variable name using ``data_array.climo.cfvariable.property``
 #: or the shorthand form ``data_array.climo.property``.
 vreg = variables = CFVariableRegistry()
-
-# Basic state terms
-# TODO: Add to this, using CF names where possible!
-
-# Coordinates
-vreg.define('latitude', 'latitude', 'degrees_north', axis_scale='sine', axis_formatter='deg')  # noqa: E501
-vreg.define('longitude', 'longitude', 'degrees_east', axis_formatter='deg')
-vreg.define('meridional_coordinate', 'meridional coordinate', 'km')
-
-# Derived coordinates
-vreg.define('cosine_latitude', 'cosine latitude', '')
-vreg.define('coriolis_parameter', 'Coriolis parameter', 's^-1')
-vreg.define('beta_parameter', 'beta parameter', 'm^-1 s^-1')
-vreg.define('reference_height', 'reference height', 'km')
-vreg.define('reference_density', 'reference density', 'kg m^-3')
-vreg.define('reference_potential_temperature', 'reference potential temperature', 'K')
-
-# Budget terms
-vreg.define('energy', 'energy', 'MJ m^-2 100hPa^-1')  # static/kinetic
-vreg.define('energy_flux', 'vertical energy flux', 'W m^-2 100hPa^-1')
-vreg.define('meridional_energy_flux', 'meridional energy flux', 'MJ m^-2 100hPa^-1 m s^-1')  # noqa: E501
-vreg.define('momentum', 'momentum', 'm s^-1')
-vreg.define('meridional_momentum_flux', 'meridional momentum flux', 'm^2 s^-2')
-vreg.define('acceleration', 'acceleration', 'm s^-1 day^-1')

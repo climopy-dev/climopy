@@ -62,17 +62,17 @@ cp = ureg.Quantity(1.0057e3, 'J kg^-1 K^-1')
 cv = ureg.Quantity(0.719e3, 'J kg^-1 K^-1')
 
 #: `Latent heat of vaporization\
-#:  <https://glossary.ametsoc.org/wiki/Latent_heat>`__
+#: <https://glossary.ametsoc.org/wiki/Latent_heat>`__
 #: at :math:`0^{\circ}\mathrm{C}`
 Lv = ureg.Quantity(2.501e6, 'J kg^-1')
 
 #: `Latent heat of fusion\
-#:  <https://glossary.ametsoc.org/wiki/Latent_heat>`__
+#: <https://glossary.ametsoc.org/wiki/Latent_heat>`__
 #: at :math:`0^{\circ}\mathrm{C}`
 Lf = ureg.Quantity(3.371e5, 'J kg^-1')
 
 #: `Latent heat of sublimation\
-#:  <https://glossary.ametsoc.org/wiki/Latent_heat>`__
+#: <https://glossary.ametsoc.org/wiki/Latent_heat>`__
 #: at :math:`0^{\circ}\mathrm{C}`
 Ls = ureg.Quantity(2.834e6, 'J kg^-1')
 

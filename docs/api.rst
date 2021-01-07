@@ -25,6 +25,15 @@ Physical constants
 .. automodsumm:: climopy.const
    :toctree: api
 
+Xarray accessor
+---------------
+
+.. automodule:: climopy.accessor
+
+.. automodsumm:: climopy.accessor
+   :toctree: api
+
+
 Finite differences
 ------------------
 
