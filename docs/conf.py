@@ -61,9 +61,9 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.autosummary',
-    'sphinx.ext.napoleon', # for NumPy style docstrings, instead of reStructred Text
+    'sphinx.ext.napoleon',  # for NumPy style docstrings, instead of reStructred Text
     'sphinx.ext.intersphinx',  # external links
-    'sphinxcontrib.bibtex', # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html
+    'sphinxcontrib.bibtex',  # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html
     'sphinx_automodapi.automodapi',  # see: https://github.com/lukelbd/sphinx-automodapi/tree/proplot-mods # noqa
 ]
 
@@ -106,6 +106,7 @@ autoclass_content = 'both'
 intersphinx_mapping = {
     'matplotlib': ('https://matplotlib.org', None),
     'pint': ('https://pint.readthedocs.io/en/stable/', None),
+    'cf_xarray': ('https://cf-xarray.readthedocs.io/en/stable/', None),
     'sphinx': ('http://www.sphinx-doc.org/en/stable/', None),
     'python': ('https://docs.python.org/3', None),
     'numpy': ('https://docs.scipy.org/doc/numpy', None),

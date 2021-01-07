@@ -436,7 +436,7 @@ class _CoordsQuantified(object):
 
     def _make_coords(self, coord, transformation, flag):
         """
-        Return the coordinates, accounting for CF and CFVariableRegistry names.
+        Return the coordinates, accounting for `CF` and `CFVariableRegistry` names.
         """
         # Select bounds
         # WARNING: Get bounds before doing transformation because halfway points in
@@ -692,10 +692,12 @@ class _CFDataArrayAccessor(_cf_accessor.CFDataArrayAccessor):
 
 class ClimoAccessor(object):
     """
-    Accessor with properties and methods shared by `DataArray`s and `Dataset`s
+    Accessor with properties and methods shared by `xarray.DataArray`\\ s and
+    `xarray.Dataset`\\ s. Registered under the name ``climo`` (i.e, usage is
+    ``data_array.climo`` and ``dataset.climo``).
 
-    Warning
-    -------
+    Notes
+    -----
     This adds unit support for the operations `.loc`, `.sel`, `.interp`, and `.groupby`.
     Otherwise, `.weighted` and `.coarsen` already work, but `.resample` and `.rolling`
     are broken and may be quite tricky to fix.
@@ -1708,7 +1710,7 @@ class ClimoAccessor(object):
     @property
     def cf(self):
         """
-        Redirection to the `CFAccessor`.
+        Redirection to the `cf_xarray.CFAccessor`.
         """
         return self._cls_cf(self.data)
 
@@ -1793,8 +1795,11 @@ class ClimoAccessor(object):
 @xr.register_dataarray_accessor('climo')
 class ClimoDataArrayAccessor(ClimoAccessor):
     """
-    Accessor for `xarray.DataArray`\\ s. Includes several stub functions for
-    integration with free-standing climopy functions (similar to numpy design).
+    Accessor for `xarray.DataArray`\\ s. Includes methods for working with `pint`
+    quantities and `~cfvariable.CFVariable` variables, several stub functions for
+    integration with free-standing climopy functions (similar to numpy design), and an
+    interface for transforming one physical variable to another. Registered under the
+    name ``climo`` (i.e, usage is ``data_array.climo``).
     """
     _cls_groupby = _DataArrayGroupByQuantified
     _cls_coords = _DataArrayCoordsQuantified
@@ -2279,11 +2284,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Parameters
         ----------
         dim : dim-spec or {'area', 'volume'}, optional
-            The integration dimensions. Weights are applied automatically using CF
-            `cell_measures` stored in the coordinates. If not specified, the data
-            is integrated over the entire domain.
-        skipna : bool, optional
-            Whether to skip NaN values.
+            The integration dimensions. Weights are applied automatically using cell
+            measure variables stored in the coodinates and referenced by the
+            `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`). If not
+            specified, the data is integrated over the entire domain.
         weight : xr.DataArray, optional
             Optional additional weighting.
         **kwargs
@@ -2306,9 +2310,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Parameters
         ----------
         dim : dim-spec or {'area', 'volume'}, optional
-            The averaging dimensions. Weights are applied automatically using CF
-            `cell_measures` stored in the coordinates. If not specified, the data
-            is averaged over the entire domain.
+            The averaging dimensions. Weights are applied automatically using cell
+            measure variables stored in the coodinates and referenced by the
+            `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`). If not
+            specified, the data is averaged over the entire domain.
         skipna : bool, optional
             Whether to skip NaN values.
         weight : xr.DataArray, optional
@@ -2318,8 +2323,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         Notes
         -----
-        ClimoPy makes artifical distinction in `cell_method` between `mean` (the naive
-        mean along axes) and `average` (the mass-weighted mean).
+        ClimoPy makes an artifical distinction between the `mean` (the naive, unweighted
+        average) and `average` (the mass-weighted mean).
         """
         kwargs.update(integral=False, cumulative=False)
         return self._integrate_or_average(dim, **kwargs)
@@ -2344,8 +2349,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Parameters
         ----------
         dim : dim-spec
-            The integration dimension. Weights are applied automatically using
-            `cell_measures` stored in the coordinates.
+            The integration dimension. Weights are applied automatically using cell
+            measure variables stored in the coodinates and referenced by the
+            `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`).
         skipna : bool, optional
             Whether to skip NaN values.
         reverse : bool, optional
@@ -2363,8 +2369,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Parameters
         ----------
         dim : dim-spec
-            The averaging dimension. Weights are applied automatically using
-            `cell_measures` stored in the coordinates.
+            The averaging dimension. Weights are applied automatically using cell
+            measure variables stored in the coodinates and referenced by the
+            `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`).
         skipna : bool, optional
             Whether to skip NaN values.
         reverse : bool, optional
@@ -2739,7 +2746,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which minima are tracked.
         **kwargs
-            Passed to `climopy.zerofind`.
+            Passed to `~utils.zerofind`.
         """
         kwargs.update(which='min', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
@@ -2755,7 +2762,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which maxima are tracked.
         **kwargs
-            Passed to `climopy.zerofind`.
+            Passed to `~utils.zerofind`.
         """
         kwargs.update(which='max', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
@@ -2769,7 +2776,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `climopy.zerofind`.
+            Passed to `~utils.zerofind`.
         """
         kwargs.update(which='min', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
@@ -2783,7 +2790,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `climopy.zerofind`.
+            Passed to `~utils.zerofind`.
         """
         kwargs.update(which='max', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
@@ -2799,7 +2806,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which minima are tracked.
         **kwargs
-            Passed to `climopy.zerofind`.
+            Passed to `~utils.zerofind`.
         """
         kwargs.update(which='min', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -2815,7 +2822,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which maxima are tracked.
         **kwargs
-            Passed to `climopy.zerofind`.
+            Passed to `~utils.zerofind`.
         """
         kwargs.update(which='max', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -2829,7 +2836,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `climopy.zerofind`.
+            Passed to `~utils.zerofind`.
         """
         kwargs.update(which='min', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -2843,7 +2850,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `climopy.zerofind`.
+            Passed to `~utils.zerofind`.
         """
         kwargs.update(which='max', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -2859,7 +2866,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim_track : str, optional
             The dimension along which zeros are tracked.
         **kwargs
-            Passed to `climopy.zerofind`.
+            Passed to `~utils.zerofind`.
         """
         kwargs.update(which='zero', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
@@ -3206,7 +3213,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 @xr.register_dataset_accessor('climo')
 class ClimoDatasetAccessor(ClimoAccessor):
     """
-    Accessor for xarray datasets.
+    Accessor for `xarray.Dataset`\\ s. Includes methods for working with `pint`
+    quantities and `~cfvariable.CFVariable` variables and an interface for deriving one
+    physical variable from other variables in the dataset. Registered under the name
+    ``climo`` (i.e, usage is ``data_array.climo``).
     """
     _cls_groupby = _DatasetGroupByQuantified
     _cls_coords = _DatasetCoordsQuantified
@@ -3239,7 +3249,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         ----------
         dataset : xarray.Dataset
             The data.
-        registry : CFVariableRegistry
+        registry : cvariable.CFVariableRegistry
             The active registry used to look up variables with `.cfvariable`.
         """
         self._data = dataset
@@ -3268,7 +3278,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         """
         Return a coordinate, variable, or transformed or derived variable registered
         with `register_transformation` or `register_derivation`. Translates CF axis,
-        coordinate, and standard names and CFVariableRegistry identifiers.
+        coordinate, and standard names and `CFVariableRegistry` identifiers.
         """
         return self._get_item(key)  # with weights attached
 
@@ -3557,7 +3567,7 @@ def _find_any_transformation(data_arrays, dest):
 def _find_this_transformation(src, dest, error=False, registry=None):
     """
     Find possibly nested series of transformations that get from variable A --> C.
-    Account for CF and CFVariableRegistry names.
+    Account for `CF` and `CFVariableRegistry` names.
     """
     # TODO: Also support inverse transformations?
     # First get list of *source* identifiers
