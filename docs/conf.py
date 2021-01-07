@@ -73,6 +73,10 @@ extlinks = {
     'pr': ('https://github.com/lukelbd/climopy/pull/%s', 'GH#'),
 }
 
+# Files location
+import glob
+bibtex_bibfiles = glob.glob('bibs/*')
+
 # Do not run doctest tests, these are just to show syntax and expected
 # output may be graphical
 doctest_test_doctest_blocks = ''
@@ -86,7 +90,6 @@ autosummary_generate = True
 # Normally have to *enumerate* function names manually. This will document
 # them automatically. Just be careful, if you use from x import *, to exclude
 # them in the automodapi:: directive
-# Also modify so 
 automodapi_toctreedirnm = 'api' # create much better URL for the page
 automodsumm_inherited_members = False
 
