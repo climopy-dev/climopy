@@ -640,7 +640,7 @@ class CFVariableRegistry(object):
         if args:
             var.update(
                 short_name='latitude',
-                standard_units='',
+                standard_units='deg_north',
                 symbol=fr'\phi_{{{var.symbol}}}',
                 axis_formatter='deg',
                 suffix=f'{args.pop()[3:]} latitude',  # use the first one

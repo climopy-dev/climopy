@@ -2028,7 +2028,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             # Single dimension reductions
             # WARNING: Need to include *coords* so we can 'reduce' singleton lon
             for dim, method in indexers.items():
-                ic(dim, method, idata.name)
                 # Verify dimensions
                 if dim not in idata.climo.coords:
                     warnings._warn_climopy(
@@ -2070,7 +2069,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                             idata = idata.climo.interp({dim: loc})
                         except (KeyError, ValueError, AttributeError):
                             raise ValueError(f'Invalid {method=}.')
-                ic(idata.name)
 
             # Add to list of reductions along different subselections
             datas[idx] = idata
@@ -2393,6 +2391,18 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_manage_reduced_coords
     @_keep_tracked_attrs
+    def _mean_or_sum(self, method, dim=None, skipna=None, weight=None, **kwargs):
+        """
+        Simple average or summation.
+        """
+        data = self.truncate(**kwargs)
+        dims = data.dims if dim is None else self._parse_dims(dim, ignore_scalar=True)
+        if weight is not None:
+            data = data.weighted(weight.climo.truncate(**kwargs))
+        data = getattr(data, method)(dims, skipna=skipna, keep_attrs=True)
+        data.climo.add_cell_methods({dims: method})
+        return data
+
     def mean(self, dim=None, skipna=None, weight=None, **kwargs):
         """
         Take simple mean along dimension(s), preserving attributes and coordinates.
@@ -2408,16 +2418,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         **kwargs
             Passed to `xarray.DataArray.mean`. Used to limit bounds of mean.
         """
-        data = self.truncate(**kwargs)
-        dims = data.dims if dim is None else self._parse_dims(dim, ignore_scalar=True)
-        if weight is not None:
-            data = data.weighted(weight.climo.truncate(**kwargs))
-        data = data.mean(dims, skipna=skipna, keep_attrs=True)
-        data.climo.add_cell_methods({dims: 'mean'})
-        return data
+        return self._mean_or_sum('mean', dim, **kwargs)
 
-    @_manage_reduced_coords
-    @_keep_tracked_attrs
     def sum(self, dim=None, skipna=None, weight=None, **kwargs):
         """
         Take simple summation along dimension(s), preserving attributes and coordinates.
@@ -2433,15 +2435,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         **kwargs
             Passed to `.truncate`. Used to limit bounds of summation.
         """
-        # NOTE: Need ignore_scalar=True for summing weights in _manage_reduced_coords.
-        # Conceptually makes sense that sum or average along singleton dim is no-op
-        data = self.truncate(**kwargs)
-        dims = data.dims if dim is None else self._parse_dims(dim, ignore_scalar=True)
-        if weight is not None:
-            data = data.weighted(weight.climo.truncate(**kwargs))
-        data = data.sum(dims, skipna=skipna, keep_attrs=True)
-        data.climo.add_cell_methods({dims: 'sum'})
-        return data
+        return self._mean_or_sum('sum', dim, **kwargs)
 
     @_keep_tracked_attrs
     def runmean(self, indexers=None, **kwargs):
@@ -2647,6 +2641,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.add_cell_methods({('lat', 'k'): 'centroid'})
         return data
 
+    @_manage_reduced_coords
     @_keep_tracked_attrs
     def _find_extrema(
         self, dim, abs=False, arg=False, which='max', dim_track=None, **kwargs
@@ -3148,20 +3143,17 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             raise AttributeError('DataArray name required to get cfvariable.')
         kwargs = {key: val for key, val in data.attrs.items() if key in CFVARIABLE_ARGS}
         methods = self._decode_cf_attr(data.attrs.get('cell_methods', ''))
-        for dim, coord in data.coords.items():
-            # coord = data.climo.coords[dim]  # WARNING: don't do this! very slow!
-            if coord.size > 1:
+        for dim, da in data.coords.items():
+            if da.size > 1:
                 continue
-            if 'standard_name' not in coord.attrs:
+            coord = self._to_cf_coord_name(da.name)
+            if not coord:
                 continue
-            standard = coord.standard_name
-            if standard not in ('longitude', 'latitude', 'vertical', 'time'):
-                continue
-            if not coord.isnull():  # selection of single coordinate
-                units = parse_units(coord.units) if 'units' in coord.attrs else 1
-                kwargs[standard] = units * coord.item()
-            elif any(coord.name in d for d, m in methods):
-                kwargs[standard] = tuple(m for d, m in methods if coord.name in d)
+            if not da.isnull():  # selection of single coordinate
+                units = parse_units(da.units) if 'units' in da.attrs else 1
+                kwargs[coord] = units * da.item()
+            elif any(da.name in d for d, m in methods):
+                kwargs[coord] = tuple(m for d, m in methods if da.name in d)
             # else:
             #     warnings._warn_climopy(f'Unknown cell method for {coord.name!r}.')
         try:
@@ -3438,7 +3430,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
         # Reduce dimensionality using keyword args
         # NOTE: For timescale variables take inverse before and after possible average
-        ic(data.name)
         for dim in tuple(kwargs):
             if dim in self.dims and dim not in data.dims:
                 warnings._warn_climopy(f'Dim {dim!r} was already reduced for {key!r}.')
@@ -3458,7 +3449,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
                     data = 1.0 / data
 
         # Normalize the data
-        ic(data.name)
         if normalize:
             data = data.climo.normalize()
 
