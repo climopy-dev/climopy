@@ -6,4 +6,3 @@ pint
 pandas
 xarray
 cf_xarray
-pint_xarray

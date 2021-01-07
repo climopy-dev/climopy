@@ -14,7 +14,6 @@ import re
 import cf_xarray as xcf  # noqa: F401
 import numpy as np
 import pint
-import pint_xarray as xpint  # noqa: F401
 import xarray as xr
 from cf_xarray import accessor as _cf_accessor
 from icecream import ic  # noqa: F401

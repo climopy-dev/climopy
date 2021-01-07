@@ -13,7 +13,6 @@ dependencies:
   - pandas
   - xarray
   - cf_xarray
-  - pint_xarray
   - pandoc
   - ipykernel
   - pip
