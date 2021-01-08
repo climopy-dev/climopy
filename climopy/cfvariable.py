@@ -59,8 +59,8 @@ class CFVariable(object):
         registry : `CFVariableRegistry`
             The associated registry.
         *args, **kwargs
-            Passed to `update`. The `long_name`, `standard_units`, and `short_name`
-            can be passed positionally (in that order).
+            Passed to `CFVariable.update`. The `long_name`, `standard_units`, and
+            `short_name` can be passed positionally (in that order).
         """
         # NOTE: Accessor can only be added by querying the registry to make an
         # ad hoc copy. The 'reference' variables in general should be conceptually
@@ -197,15 +197,17 @@ class CFVariable(object):
     ):
         """
         Update the variable. This is called during initialization. Unspecified variables
-        are kept at their current state. Internally, `child` variables are constructed
-        by calling `update` on `CFVariable` objects copied with `copy.copy`.
+        are kept at their current state. Internally, `CFVariable.child` variables are
+        constructed by calling `CFVariable.update` on existing `CFVariable` objects
+        copied with `copy.copy`.
 
         Parameters
         ----------
         long_name : str, optional
             The plot-friendly variable name.
         standard_units : str, optional
-            The plot-friendly CF-compatible units string. Parsed with `parse_units`.
+            The plot-friendly CF-compatible units string. Parsed with
+            `~.unit.parse_units`.
         short_name : str, optional
             The shorter plot-friendly variable name. This is useful for describing
             the "category" of a variable and its descendents, e.g. "energy flux" for
@@ -216,13 +218,13 @@ class CFVariable(object):
             The unambiguous CF-defined variable name. If one does not exist, you may
             construct a reasonable one based on the `CF guidelines \
             <http://cfconventions.org/Data/cf-standard-names/docs/guidelines.html>`_.
-            If not provided, an :it:`ad hoc` `standard_name` is constructed by replacing
+            If not provided, an _ad hoc_ `standard_name` is constructed by replacing
             the non-alphanumeric characters in `long_name` with underscores. Since
-            the `standard_name` is supposed to be a :it:`unique` variable identifier,
+            the `standard_name` is supposed to be a _unique_ variable identifier,
             it is never inherited from parent variables.
         prefix, suffix : str, optional
             Prefix and suffix to be added to the long name. So far this is just used
-            with `ClimoAccessor.sel_pair`.
+            with `~.accessor.ClimoAccessor.sel_pair`.
         prefix_both, suffix_both : str, optional
             Prefix and suffix to be added to both the long name and the short name.
             So far this is not used internally.
@@ -231,22 +233,22 @@ class CFVariable(object):
             Rossby number or ``\\lambda`` for the climate sensitivity parameter.
         sigfig : int, optional
             The number of significant figures when printing this variable with
-            `.scalar_label`.
+            `~CFVariable.scalar_label`.
         reference : float, optional
             The notional "reference" value for the variable (in units `standard_units`).
             Useful for parameter sweeps with respect to some value.
         colormap : colormap-spec, optional
             The appropriate colormap when plotting this quantity. Generally this should
-            be parsed by `plot.constructor.Colormap`.
+            be parsed by `~proplot.constructor.Colormap`.
         axis_scale : scale-spec, optional
             The axis scale name when using this quantity as an axis variable. Generally
-            this should be parsed by `proplot.constructor.Scale`.
+            this should be parsed by `~proplot.constructor.Scale`.
         axis_reverse : bool, optional
             Whether to reverse the axis by default when using this quantity as
             an axis variable.
         axis_formatter : formatter-spec, optional
             The axis formatter when using this quantity as an axis variable. Generally
-            this should be parsed by `proplot.constructor.Formatter`. Set to ``False``
+            this should be parsed by `~proplot.constructor.Formatter`. Set to ``False``
             or ``None`` to revert to the default formatter.
         """
         # Parse input names and apply prefixes and suffixes
@@ -483,8 +485,8 @@ class CFVariable(object):
 
 class CFVariableRegistry(object):
     """
-    Container of `CFVariable` instances supporting aliases and :it:`ad hoc` generation
-    of `CFVariable` copies with modified metadata.
+    Container of `CFVariable` instances supporting aliases and _ad hoc_ generation
+    of `CFVariable` copies with properties modified by the coordinate cell methods.
     """
     def __init__(self):
         self._database = {}
@@ -533,19 +535,20 @@ class CFVariableRegistry(object):
         """
         Return a copy of a variable with optional name and unit modifications based
         on the coordinate reduction methods and optional pairing to an existing
-        `ClimoPyDataArrayAccessor`. Inspired by `pint.UnitRegistry.__call__`.
+        `~.accessor.ClimoDataArrayAccessor`. Inspired by `pint.UnitRegistry.__call__`.
 
         Parameters
         ----------
         name : str
             The variable name
-        accessor : `ClimoDataArrayAccessor`
-            The accessor (required for certain label types). Automatically passed
-            when requesting `ClimoDataArrayAccessor.cfvariable`.
+        accessor : `~.accessor.ClimoDataArrayAccessor`
+            The accessor (required for certain labels). Automatically passed
+            when requesting the accessor property
+            `~.accessor.ClimoDataArrayAccessor.cfvariable`
         longitude, latitude, vertical, time : optional
             Reduction method(s) for standard CF coordinate axes. Taken from
             corresponding dimensions in the `cell_methods` attribute when requesting
-            `ClimoDataArrayAccessor.cfvariable`.
+            the accessor property `~.accessor.ClimoDataArrayAccessor.cfvariable`.
         **kwargs
             Passed to `CFVariable.update`.
 
@@ -558,7 +561,7 @@ class CFVariableRegistry(object):
         Todo
         ----
         Add non-standard `wavenumber`, `frequency`, and `ensemble` dimension options.
-        We're already using non-standard reduction methods.
+        We're already using non-standard reduction methods, so this isn't a stretch.
         """
         # Helper functions
         def _pop_integral(*args):
@@ -760,11 +763,14 @@ class CFVariableRegistry(object):
             ``t`` with ``aliases=('ta', 'temp', 'air_temp')``.
         parents : str or list of str, optional
             The parent variable name(s). Unspecified variable properties are
-            inherited from the first one, and variable grouping (and associated
-            `.__contains__` and `.__iter__` behavior) is based on all of them.
+            inherited from the first one, and variable grouping is based on all
+            of them. For example, defining the variable ``eddy_potential_energy`` with
+            ``parents=('lorenz_energy_budget_term', 'energy_flux')`` will yield both
+            ``'eddy_potential_energy' in vreg['lorenz_energy_budget_term']``
+            and ``'eddy_potential_energy' in vreg['energy_flux']``.
         overwrite : bool, optional
             Whether to overwrite existing variables. Default is ``False``, but can
-            be changed globally using the `CfVariableRegistry.overwrite` property.
+            be changed globally using the `CFVariableRegistry.overwrite` property.
             Child variables are also removed when a parent is overwritten, as are
             variables whose aliases or standard names match `name`.
         *args, **kwargs
@@ -829,8 +835,9 @@ class CFVariableRegistry(object):
         self._overwrite = b
 
 
-#: The default `CFVariableRegistry` paired with `ClimoDataArrayAccessor` xarray accessor
-#: instances. CFVariable properties can be retrieved from an `xarray.DataArray`
-#: whose name matches a variable name using ``data_array.climo.cfvariable.property``
-#: or the shorthand form ``data_array.climo.property``.
+#: The default `CFVariableRegistry` paired with `~.accessor.ClimoDataArrayAccessor`
+#: xarray accessor instances. `CFVariable` properties can be retrieved from an
+#: `xarray.DataArray` whose name matches a variable name using
+#: ``data_array.climo.cfvariable.property`` or the shorthand form
+#: ``data_array.climo.property``.
 vreg = variables = CFVariableRegistry()

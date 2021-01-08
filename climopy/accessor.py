@@ -176,6 +176,7 @@ def _keep_tracked_attrs(func):
     @functools.wraps(func)
     def _wrapper(self, *args, no_keep_attrs=False, **kwargs):
         # Initial stuff
+        # TODO: Also track units attributes? Or always just use with quantified?
         # WARNING: For datasets, we use data array with longest cell_methods, to try to
         # accomodate variable derivations from source variables with identical methods
         # and ignore variables like 'bounds' with only partial cell_methods. But this
@@ -2479,7 +2480,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             The keyword arguments form of `indexers`.
             One of `indexers` or `indexers_kwargs` must be provided.
         **kwargs
-            Passed to `~.diff.deriv_uneven`. The `order` keyword arg is ignored.
+            Passed to `~.spectral.runmean`.
         """
         data = self.data
         indexers, _ = self._parse_indexers(indexers, allow_kwargs=False, **kwargs)
@@ -2588,6 +2589,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         div.climo.add_cell_methods({'area': 'divergence'})
         return div
 
+    @_while_quantified
     @_keep_tracked_attrs
     def autocorr(self, dim, **kwargs):
         """
@@ -2607,6 +2609,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.add_cell_methods({dim: 'correlation'})
         return data
 
+    @_while_quantified
     @_keep_tracked_attrs
     def autocovar(self, dim, **kwargs):
         """
@@ -2617,7 +2620,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str
             The dimension.
         **kwargs
-            Passed to `~.var.autocorr`.
+            Passed to `~.var.autocovar`.
         """
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
@@ -2629,7 +2632,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_keep_tracked_attrs
     def centroid(self, dataset=None, **kwargs):
         """
-        Calculate the value-weighted average wavenumber.
+        Return the value-weighted average wavenumber.
 
         Parameters
         ----------
@@ -2922,11 +2925,15 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     def mask(self, mask, dataset=None):
         """
-        Mask out data according to a preset pattern.
+        Return a copy of the data with a mask applied according to some preset pattern.
+
+        Warning
+        -------
+        This method is incomplete.
         """
         # TODO: Expand this function
         # NOTE: DataArray math operations ignore NaNs by default
-        data = self.data
+        data = self.data.copy(deep=True)
         if mask is not None:
             if dataset is None:
                 raise ValueError('Dataset required for applying preset masks.')
@@ -2951,19 +2958,30 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_keep_tracked_attrs
+    @_while_dequantified
     def normalize(self):
         """
-        Normalize with respect to time.
+        Return a copy of the data normalized with respect to time.
         """
+        time = self._to_native_name('time')
         data = self.data
-        data = data / data.cf.mean('time')
-        data.climo.add_cell_methods({'time': 'normalized'})
+        data = data / data.mean(time)
+        data.attrs['units'] = 'dimensionless'
+        data.climo.add_cell_methods({time: 'normalized'})
         return data
 
+    @_while_quantified
     @_keep_tracked_attrs
     def slope(self, dim):
         """
-        Return a best-fit estimate of the slope.
+        Return the best-fit slope with respect to some dimension.
+
+        Parameters
+        ----------
+        dim : str, optional
+            The dimension.
+        **kwargs
+            Passed to `~.var.linefit`.
         """
         data = self.data
         data, _, _ = var.linefit(data.coords[dim], data)
@@ -3112,6 +3130,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             param = param.climo.to_standard_units()
         return param
 
+    @_while_quantified
     @_keep_tracked_attrs
     def timescale(self, dim, maxlag=None, imaxlag=None, **kwargs):
         """

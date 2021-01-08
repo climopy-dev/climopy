@@ -119,7 +119,8 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'numpy': ('https://docs.scipy.org/doc/numpy', None),
     'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
-    'xarray': ('http://xarray.pydata.org/en/stable', None)
+    'xarray': ('http://xarray.pydata.org/en/stable', None),
+    'proplot': ('http://proplot.readthedocs.io/en/latest', None),
 }
 
 # If true, the current module name will be prepended to all description
