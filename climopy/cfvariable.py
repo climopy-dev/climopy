@@ -218,9 +218,9 @@ class CFVariable(object):
             The unambiguous CF-defined variable name. If one does not exist, you may
             construct a reasonable one based on the `CF guidelines \
             <http://cfconventions.org/Data/cf-standard-names/docs/guidelines.html>`_.
-            If not provided, an _ad hoc_ `standard_name` is constructed by replacing
+            If not provided, an *ad hoc* `standard_name` is constructed by replacing
             the non-alphanumeric characters in `long_name` with underscores. Since
-            the `standard_name` is supposed to be a _unique_ variable identifier,
+            the `standard_name` is supposed to be a *unique* variable identifier,
             it is never inherited from parent variables.
         prefix, suffix : str, optional
             Prefix and suffix to be added to the long name. So far this is just used
@@ -485,7 +485,7 @@ class CFVariable(object):
 
 class CFVariableRegistry(object):
     """
-    Container of `CFVariable` instances supporting aliases and _ad hoc_ generation
+    Container of `CFVariable` instances supporting aliases and *ad hoc* generation
     of `CFVariable` copies with properties modified by the coordinate cell methods.
     """
     def __init__(self):

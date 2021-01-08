@@ -71,7 +71,7 @@ DERIVATIONS = {}
 def _expand_variable_args(func):
     """
     Expand single positional argument into multiple positional arguments with optional
-    keyword dicts. Permits e.g. get(('t', {'lat': 'mean'})) tuple pairs.
+    keyword dicts. Permits e.g. `get(('t', {'lat': 'mean'}))` tuple pairs.
     """
     @functools.wraps(func)
     def _wrapper(self, arg, **kwargs):
@@ -1732,14 +1732,15 @@ class ClimoAccessor(object):
     @property
     def coords(self):
         """
-        Wrapper of `~xarray.DataArray.coords` attribute that returns quantified
-        coordinates variables or variables _transformed_ from the native coordinates
-        using `ClimoDataArrayAccessor.to_variable` (e.g. `meridional_coordinate` from
-        `latitude`). Variables can be reference with their actual name, axis attribute,
-        CF coordinate name, or `~.cfvariable.CFVariableRegistry` identifiers.
-        The coordinate top boundaries, bottom boundaries, or thicknesses can be
-        returned by appending the name with ``_top``, ``_bot``, or ``_del`` (or
-        ``_delta``), respectively. Always returns copies of the coordinate variables
+        Wrapper of `~xarray.DataArray.coords` that returns quantified coordinate
+        variables or variables *transformed* from the native coordinates using
+        `ClimoDataArrayAccessor.to_variable` (e.g. ``'latitude'`` to
+        ``'meridional_coordinate'``). Coordinates can be requested by their name (e.g.
+        ``'lon'``), axis attribute (e.g. ``'X'``), CF coordinate name (e.g.
+        ``'longitude'``), or `~.cfvariable.CFVariableRegistry` identifier. The
+        coordinate top boundaries, bottom boundaries, or thicknesses can be returned by
+        appending the key with ``_top``, ``_bot``, or ``_del`` (or ``_delta``),
+        respectively. This mapping always returns *copies* of the coordinate variables
         since xarray coordinates `cannot be quantified in-place \
         <https://github.com/pydata/xarray/issues/525>`__.
         """
@@ -1821,7 +1822,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     quantities and `~.cfvariable.CFVariable` variables, several stub functions for
     integration with free-standing climopy functions (similar to numpy design), and an
     interface for transforming one physical variable to another. Registered under the
-    name ``climo`` (i.e, usage is ``data_array.climo``).
+    name ``climo`` (i.e, usage is ``data_array.climo``). The string representation of
+    this accessor displays its `~ClimoDataArrayAccessor.cfvariable` information (if the
+    data array name is found in the variable registry `~ClimoAccessor.registry`).
     """
     _cls_groupby = _DataArrayGroupByQuantified
     _cls_coords = _DataArrayCoordsQuantified
@@ -2531,7 +2534,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     def convergence(self, *args, **kwargs):
         """
-        Take the spherical meridional convergence. To calculating divergence at the
+        Return the spherical meridional convergence. To calculate the convergence at the
         poles, the numerator is assumed to vanish and l'Hopital's rule is invoked.
 
         Parameters
@@ -2550,7 +2553,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_keep_tracked_attrs
     def divergence(self, half=False, **kwargs):
         """
-        Take the spherical meridional divergence. To calculating divergence at the
+        Return the spherical meridional divergence. To calculate the divergence at the
         poles, the numerator is assumed to vanish and l'Hopital's rule is invoked.
 
         Parameters
@@ -3264,7 +3267,9 @@ class ClimoDatasetAccessor(ClimoAccessor):
     Accessor for `xarray.Dataset`\\ s. Includes methods for working with `pint`
     quantities and `~.cfvariable.CFVariable` variables and an interface for deriving one
     physical variable from other variables in the dataset. Registered under the name
-    ``climo`` (i.e, usage is ``data_array.climo``).
+    ``climo`` (i.e, usage is ``data_array.climo``). The string representation of this
+    accessor displays `~ClimoDataArrayAccessor.cfvariable` information for every
+    variable whose name is found in the variable registry `~ClimoAccessor.registry`.
     """
     _cls_groupby = _DatasetGroupByQuantified
     _cls_coords = _DatasetCoordsQuantified
@@ -3334,7 +3339,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
     def _get_item(self, key, add_cell_measures=True):
         """
         Return a quantified DataArray with weights optionally added. This is separated
-        from _get_item_or_func to facillitate fast __contains__.
+        from `_get_item_or_func` to facillitate fast `__contains__`.
         """
         # Retrieve quantity
         da = self._get_item_or_func(key)
