@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
 Mathematical operations on the surface of the sphere.
+
+Warning
+-------
+This submodule out of date and poorly tested. It will eventually be cleaned up.
+In the meantime, feel free to copy and modify it.
 """
 import numpy as np
 
@@ -11,7 +16,7 @@ __all__ = [
 ]
 
 
-def geopad(lon, lat, data, nlon=1, nlat=0):
+def geopad(lon, lat, data, /, nlon=1, nlat=0):
     """
     Return array padded circularly along longitude and over the poles
     for finite difference methods.
@@ -46,9 +51,7 @@ def geopad(lon, lat, data, nlon=1, nlat=0):
     return lon, lat, data
 
 
-def geomean(
-    lon, lat, data, box=None, weights=1, keepdims=False
-):
+def geomean(lon, lat, data, /, box=None, weights=1, keepdims=False):
     """
     Take area mean of data time series.
 
@@ -116,14 +119,14 @@ def geomean(
         return ave
 
 
-def geogradient(lon, lat, data):  # noqa: U100
+def geogradient(lon, lat, data, /):  # noqa: U100
     """
     Calculate gradient in spherical coordinates.
     """
     return NotImplementedError
 
 
-def geolaplacian(lon, lat, data, accuracy=4):
+def geolaplacian(lon, lat, data, /, accuracy=4):
     r"""
     Calculate Laplacian in spherical coordinates.
 
@@ -172,7 +175,7 @@ def geolaplacian(lon, lat, data, accuracy=4):
     return laplacian
 
 
-def haversine(lon1, lat1, lon2, lat2):
+def haversine(lon1, lat1, lon2, lat2, /):
     """
     Calculate the great circle distance between two points
     on Earth, specified in degrees.

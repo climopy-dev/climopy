@@ -150,19 +150,17 @@ after the decomposition has been carried out.
 The below example shows that the extent of power reduction resulting from
 non-boxcar windowing depends on the character of the signal.
 
-.. code-block:: python
-
-    import numpy as np
-    import climopy as climo
-    w = climo.window(200, 'hanning')
-    y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
-    y2 = np.random.rand(200) # complex signal
-    for y in (y1, y2):
-        yvar = y.var()
-        Y = (np.abs(np.fft.fft(y)[1:] / y.size) ** 2).sum()
-        Yw = (np.abs(np.fft.fft(y * w)[1:] / y.size) ** 2).sum()
-        print('Boxcar', Y / yvar)
-        print('Hanning', Yw / yvar)
+>>> import numpy as np
+... import climopy as climo
+... w = climo.window(200, 'hanning')
+... y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
+... y2 = np.random.rand(200) # complex signal
+... for y in (y1, y2):
+...     yvar = y.var()
+...     Y = (np.abs(np.fft.fft(y)[1:] / y.size) ** 2).sum()
+...     Yw = (np.abs(np.fft.fft(y * w)[1:] / y.size) ** 2).sum()
+...     print('Boxcar', Y / yvar)
+...     print('Hanning', Yw / yvar)
 
 References
 ----------
@@ -225,7 +223,7 @@ def butterworth(dx, order, cutoff, /, btype='low'):
 
 
 @quack._pint_wrapper(('=x', '', '=x'), '')
-def lanczos(dx, width, cutoff):
+def lanczos(dx, width, cutoff, /):
     """
     Returns *coefficients* for Lanczos high-pass filter with
     desired wavelength specified. See `this link \
@@ -442,7 +440,7 @@ def highpower(y, n, /, axis=-1):
     return np.moveaxis(yf, -1, axis)
 
 
-def _fft2d(pm, win, x, detrend='constant'):
+def _fft2d(pm, win, x, /, detrend='constant'):
     """
     Get 2D Fourier decomp and reorder negative frequencies on non-cyclic
     axis so frequencies there are monotonically ascending.
@@ -473,7 +471,7 @@ def _fft2d(pm, win, x, detrend='constant'):
     return np.concatenate((X[pm:, :], X[1:pm + 1, :]), axis=0)
 
 
-def _window_data(data1, data2, nperseg=None, wintype=None):
+def _window_data(data1, data2, /, nperseg=None, wintype=None):
     """
     Return window properties.
     """
@@ -725,7 +723,7 @@ def power(dx, y1, /, axis=0, **kwargs):
     ('=1 / x', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
 @docstring.add_snippets
-def copower(dx, y1, y2, axis=0, **kwargs):
+def copower(dx, y1, y2, /, axis=0, **kwargs):
     """
     Return the co-spectral decomposition and related quantities for two
     real-valued arrays along an arbitrary axis.
@@ -763,7 +761,7 @@ def copower(dx, y1, y2, axis=0, **kwargs):
 @quack._xarray_power2d_wrapper
 @quack._pint_wrapper(('=x1', '=x2', '=y'), ('=1 / x1', '=1 / x2', '=y ** 2'))
 @docstring.add_snippets
-def power2d(dx, dy, y1, axis_lon=-1, axis_time=0, **kwargs):
+def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
     """
     Return the spectral decomposition of a real-valued array along an
     arbitrary axis.
@@ -779,7 +777,7 @@ def power2d(dx, dy, y1, axis_lon=-1, axis_time=0, **kwargs):
     %(power.notes)s
     """
     return _power2d_driver(
-        dx, dy, y1, y1, axis_lon=axis_lon, axis_time=axis_time, **kwargs
+        dx_lon, dx_time, y, axis_lon=axis_lon, axis_time=axis_time, **kwargs
     )
 
 
@@ -789,7 +787,7 @@ def power2d(dx, dy, y1, axis_lon=-1, axis_time=0, **kwargs):
     ('=1 / x1', '=1 / x2', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
 @docstring.add_snippets
-def copower2d(dx_time, dy_lon, y1, y2, axis_lon=0, axis_time=-1, **kwargs):
+def copower2d(dx_lon, dx_time, y1, y2, /, axis_lon=0, axis_time=-1, **kwargs):
     """
     Return the 2D spectral decomposition of two real-valued arrays with
     along an arbitrary *time* dimension and *cyclic* dimension.
@@ -806,7 +804,7 @@ def copower2d(dx_time, dy_lon, y1, y2, axis_lon=0, axis_time=-1, **kwargs):
     %(power.notes)s
     """
     return _power2d_driver(
-        dx_time, dy_lon, y1, y2, axis_lon=axis_lon, axis_time=axis_time, **kwargs
+        dx_lon, dx_time, y1, y2, axis_lon=axis_lon, axis_time=axis_time, **kwargs
     )
 
 

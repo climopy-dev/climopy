@@ -6,7 +6,7 @@ and detecting blocking patterns. Incorporates code developed by `Clare Huang \
 
 Warning
 -------
-This codebase out of date and poorly tested. It will eventually be cleaned up.
+This submodule out of date and poorly tested. It will eventually be cleaned up.
 In the meantime, feel free to copy and modify it.
 """
 # Imports
