@@ -1747,9 +1747,11 @@ class ClimoAccessor(object):
 
     def truncate(self, bounds=None, *, ignore_extra=False, **kwargs):
         """
-        Restrict the data into exact bounds using `ClimoAccessor.interp`. Active
-        cell measures are appropriately reduced on the edges of the new bounds to
-        improve the accuracy of subsequent averages and integrations.
+        Restrict the coordinate range using `ClimoAccessor.interp`. The corresponding
+        cell measures found in `~xarray.DataArray.coords` (e.g. ``'area'`` and
+        ``'volume'``) are appropriately reduced near the new coordinate ends, in order
+        to improve the accuracy of subsequent cell measure-weighted averages and
+        integrations.
 
         Parameters
         ----------
@@ -1838,6 +1840,11 @@ class ClimoAccessor(object):
                     weight = data.coords[varname]
                     weight[{dim: idx}] *= factor
                     weight[{dim: idx_adj}] *= factor_adj
+
+            # Delete any old bounds (don't bother recalculating)
+            bounds = coord_new.attrs.get('bounds')
+            if bounds and isinstance(data, xr.Dataset) and bounds in data:
+                data = data.drop_vars(bounds)
 
         return data
 
