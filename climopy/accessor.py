@@ -1415,7 +1415,6 @@ class ClimoAccessor(object):
                 with warnings.catch_warnings():
                     warnings.simplefilter(action)  # possibly ignore warnings
                     try:
-                        print('get!', cell)
                         weight = dataset.climo._get_item(cell, add_cell_measures=False)
                     except (KeyError, RuntimeError):
                         continue
