@@ -21,7 +21,7 @@ from . import const, diff, ureg, utils, var
 from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
-from .internals import _first_unique, _is_numeric, _is_scalar, warnings
+from .internals import _first_unique, _is_numeric, _is_scalar, docstring, warnings
 from .unit import encode_units, latex_units, parse_units
 
 __all__ = [
@@ -72,6 +72,144 @@ else:
 CFVARIABLE_ARGS = ('long_name', 'short_name', 'standard_name', 'prefix', 'suffix')
 TRANSFORMATIONS = {}
 DERIVATIONS = {}
+
+# Mean and average snippets
+docstring.templates['meansum'] = """
+Return the {operator} along dimension(s), preserving attributes and coordinates.
+
+Parameters
+----------
+dim : str or list of str, optional
+    The dimensions.
+skipna : bool, optional
+    Whether to skip NaN values.
+weight : xr.DataArray, optional
+    Optional weighting.
+**kwargs
+    Passed to `~ClimoAccessor.truncate`. Used to limit bounds of {operator}.
+"""
+docstring.templates['avgint'] = """
+Return the mass-weighted {operator}.
+
+Parameters
+----------
+dim : dim-spec or {{'area', 'volume'}}, optional
+    The {action} dimension(s). Weights are applied automatically using cell
+    measure variables stored in the coodinates and referenced by the
+    `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`). If not
+    specified, the entire 3-dimensional domain is used.
+weight : xr.DataArray, optional
+    Optional additional weighting.
+skipna : bool, optional
+    Whether to skip NaN values.
+**kwargs
+    Passed to `~ClimoAccessor.truncate`. Used to limit the bounds of the
+    {action}.
+"""
+docstring.templates['cumavgint'] = """
+Return the cumulative mass-weighted {operator}.
+
+Parameters
+----------
+dim : dim-spec
+    The {action} dimension. Weights are applied automatically using cell
+    measure variables stored in the coodinates and referenced by the
+    `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`).
+skipna : bool, optional
+    Whether to skip NaN values.
+reverse : bool, optional
+    Whether to change the direction of the accumulation to right-to-left.
+**kwargs
+    Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
+"""
+docstring.snippets['avgmean'] = """
+ClimoPy makes an artifical distinction between a `mean` as a naive, unweighted
+average and an `average` as a cell measures-aware, mass-weighted average.
+"""
+docstring.snippets['weighted'] = """
+ClimoPy's mass-weighted operators work with dedicated functions rather than
+`~xarray.core.weighted.Weighted` objects because the selection of mass weights
+depends on the dimension(s) specified by the user.
+"""
+
+# Extrema snippets
+docstring.templates['minmax'] = """
+Return the {prefix}local {extrema} along the dimension. Multiple {extrema} are
+concatenated along a 'track' dimension.
+
+Parameters
+----------
+dim : str, optional
+    The dimension. This is replaced with a ``'track'`` dimension on the output
+    `~xarray.DataArray`.
+dim_track : str, optional
+    The dimension along which {extrema} are grouped into lines and tracked with
+    `~.utils.linetrack`.
+**kwargs
+    Passed to `~.utils.zerofind`.
+"""
+docstring.templates['absminmax'] = """
+Return the {prefix}global {extrema} along the dimension.
+
+Parameters
+----------
+dim : str, optional
+    The dimension.
+**kwargs
+    Passed to `~.utils.zerofind`.
+"""
+docstring.templates['argloc'] = """
+Return the coordinate(s) of a given value along the dimension.
+
+Parameters
+----------
+dim : str, optional
+    The dimension.
+value : int, optional
+    The value we are searching for. Default it ``0``.
+dim_track : str, optional
+    The dimension along which coordinates are grouped into lines and tracked with
+    `~.utils.linetrack`.
+**kwargs
+    Passed to `~.utils.zerofind`.
+"""
+
+# Differentiation
+docstring.templates['divcon'] = """
+Return the spherical meridional {operator}. To calculate the {operator} at the
+poles, the numerator is assumed to vanish and l'Hopital's rule is invoked.
+
+Parameters
+----------
+half : bool, optional
+    Whether to use more accurate (but less convenient) half-level
+    differentiation rather than centered differentiation.
+**kwargs
+    Passed to `~.diff.deriv_uneven` or `~.diff.deriv_half`.
+"""
+
+# Auto-variance
+docstring.templates['auto'] = """
+Return the auto{operator} along the input dimension.
+
+Parameters
+----------
+dim : str
+    The dimension. This is replaced with a ``'lag'`` dimension on the
+    output `~xarray.DataArray`.
+**kwargs
+    Passed to `~.var.auto{func}`.
+"""
+
+# Variable derivations
+docstring.snippets['dest'] = """
+    The destination variable name, a tuple of valid destination names, or an
+    `re.compile`'d pattern matching a set of valid destination names. In the latter
+    two cases, the function must accept a `name` keyword argument. This is useful
+    if you want to register a single function capable of deriving multiple
+    related variables (e.g., registering the regex ``r'\\Ad.*dy\\Z'``
+    to return the meridional gradient of an arbitrary variable).
+"""
 
 
 def _expand_variable_args(func):
@@ -2203,6 +2341,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     kw = {}
                     if method in find_names:
                         keys = method_keys['find']
+                        if method == 'argzero':
+                            method = 'argloc'  # with default loc=0
                     elif method in average_names:
                         method, kw = average_names[method]
                         keys = method_keys['average']
@@ -2427,55 +2567,18 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return res
 
     @_manage_reduced_coords  # need access to cell_measures, so place before keep_attrs
+    @docstring.add_template(
+        'avgint', operator='integral', action='integration', notes='weighted'
+    )
     def integrate(self, dim=None, **kwargs):
-        """
-        Mass-weighted integration.
-
-        Parameters
-        ----------
-        dim : dim-spec or {'area', 'volume'}, optional
-            The integration dimensions. Weights are applied automatically using cell
-            measure variables stored in the coodinates and referenced by the
-            `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`). If not
-            specified, the data is integrated over the entire domain.
-        weight : xr.DataArray, optional
-            Optional additional weighting.
-        **kwargs
-            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
-
-        Notes
-        -----
-        ClimoPy's mass weighted operations work with dedicated functions rather than
-        `xarray.Weighted` objects because the selection of mass weights depends on the
-        dimensions being integrated.
-        """
         kwargs.update(integral=True, cumulative=False)
         return self._integrate_or_average(dim, **kwargs)
 
     @_manage_reduced_coords  # need access to cell_measures, so place before keep_attrs
+    @docstring.add_template(
+        'avgint', operator='average', action='averaging', notes=('avgmean', 'weighted')
+    )
     def average(self, dim=None, **kwargs):
-        """
-        Mass-weighted average.
-
-        Parameters
-        ----------
-        dim : dim-spec or {'area', 'volume'}, optional
-            The averaging dimensions. Weights are applied automatically using cell
-            measure variables stored in the coodinates and referenced by the
-            `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`). If not
-            specified, the data is averaged over the entire domain.
-        skipna : bool, optional
-            Whether to skip NaN values.
-        weight : xr.DataArray, optional
-            Optional additional weighting.
-        **kwargs
-            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of average.
-
-        Notes
-        -----
-        ClimoPy makes an artifical distinction between the `mean` (the naive, unweighted
-        average) and `average` (the mass-weighted mean).
-        """
         kwargs.update(integral=False, cumulative=False)
         return self._integrate_or_average(dim, **kwargs)
 
@@ -2486,49 +2589,23 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Parameters
         ----------
         *args, **kwargs
-            Passed to `ClimoDataArrayAccessor.average`.
+            Passed to `~ClimoDataArrayAccessor.average`.
         """
         # TODO: Indicate anomalous data with cell method
         with xr.set_options(keep_attrs=True):
             return self.data - self.average(*args, **kwargs)
 
+    @docstring.add_template(
+        'cumavgint', operator='integral', action='integration', notes='weighted'
+    )
     def cumintegrate(self, dim, skipna=None, **kwargs):
-        """
-        Cumulative integral.
-
-        Parameters
-        ----------
-        dim : dim-spec
-            The integration dimension. Weights are applied automatically using cell
-            measure variables stored in the coodinates and referenced by the
-            `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`).
-        skipna : bool, optional
-            Whether to skip NaN values.
-        reverse : bool, optional
-            Whether to change the direction of the accumulation to right-to-left.
-        **kwargs
-            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
-        """
         kwargs.update(integral=True, cumulative=True)
         return self._integrate_or_average(dim, **kwargs)
 
+    @docstring.add_template(
+        'cumavgint', operator='average', action='averaging', notes=('avgmean', 'weighted')  # noqa: E501
+    )
     def cumaverage(self, dim, reverse=False, weight=None, skipna=None, **kwargs):
-        """
-        Cumulative average.
-
-        Parameters
-        ----------
-        dim : dim-spec
-            The averaging dimension. Weights are applied automatically using cell
-            measure variables stored in the coodinates and referenced by the
-            `cell_measures` attribute (see `~ClimoAccessor.add_cell_measures`).
-        skipna : bool, optional
-            Whether to skip NaN values.
-        reverse : bool, optional
-            Whether to change the direction of the accumulation to right-to-left.
-        **kwargs
-            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
-        """
         kwargs.update(integral=False, cumulative=True)
         return self._integrate_or_average(dim, **kwargs)
 
@@ -2559,38 +2636,12 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.add_cell_methods({dims: method})
         return data
 
+    @docstring.add_template('meansum', operator='mean', notes='avgmean')
     def mean(self, dim=None, skipna=None, weight=None, **kwargs):
-        """
-        Take simple mean along dimension(s), preserving attributes and coordinates.
-
-        Parameters
-        ----------
-        dim : str or list of str, optional
-            The dimensions.
-        skipna : bool, optional
-            Whether to skip NaN values.
-        weight : xr.DataArray, optional
-            Optional weighting.
-        **kwargs
-            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of mean.
-        """
         return self._mean_or_sum('mean', dim, **kwargs)
 
+    @docstring.add_template('meansum', operator='sum')
     def sum(self, dim=None, skipna=None, weight=None, **kwargs):
-        """
-        Take simple summation along dimension(s), preserving attributes and coordinates.
-
-        Parameters
-        ----------
-        dim : str or list of str, optional
-            The dimensions.
-        skipna : bool, optional
-            Whether to skip NaN values.
-        weight : xr.DataArray, optional
-            Optional weighting.
-        **kwargs
-            Passed to `~ClimoAccessor.truncate`. Used to limit bounds of summation.
-        """
         return self._mean_or_sum('sum', dim, **kwargs)
 
     @_keep_tracked_attrs
@@ -2656,38 +2707,16 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         return data
 
+    @docstring.add_template('divcon', operator='convergence')
     def convergence(self, *args, **kwargs):
-        """
-        Return the spherical meridional convergence. To calculate the convergence at the
-        poles, the numerator is assumed to vanish and l'Hopital's rule is invoked.
-
-        Parameters
-        ----------
-        half : bool, optional
-            Whether to use more accurate (but less convenient) half-level
-            differentiation rather than centered differentiation.
-        **kwargs
-            Passed to `~.diff.deriv_uneven` or `~.diff.deriv_half`.
-        """
         result = self.divergence(*args, **kwargs)
         with xr.set_options(keep_attrs=True):
             return -1 * result
 
     @_while_quantified
     @_keep_tracked_attrs
+    @docstring.add_template('divcon', operator='divergence')
     def divergence(self, half=False, **kwargs):
-        """
-        Return the spherical meridional divergence. To calculate the divergence at the
-        poles, the numerator is assumed to vanish and l'Hopital's rule is invoked.
-
-        Parameters
-        ----------
-        half : bool, optional
-            Whether to use more accurate (but less convenient) half-level
-            differentiation rather than centered differentiation.
-        **kwargs
-            Passed to `~.diff.deriv_uneven` or `~.diff.deriv_half`.
-        """
         # Compute divergence in spherical coordinates
         # div = diff.deriv1(y[:2], data * cos, **kwargs) / cos
         y = self.coords['meridional_coordinate']
@@ -2718,17 +2747,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_while_quantified
     @_keep_tracked_attrs
+    @docstring.add_template('auto', operator='correlation', func='corr')
     def autocorr(self, dim, **kwargs):
-        """
-        Calculate the autocorrelation.
-
-        Parameters
-        ----------
-        dim : str
-            The dimension.
-        **kwargs
-            Passed to `~.var.autocorr`.
-        """
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
             kwargs['ilag'] = 1
@@ -2738,17 +2758,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_while_quantified
     @_keep_tracked_attrs
+    @docstring.add_template('auto', operator='covariance', func='covar')
     def autocovar(self, dim, **kwargs):
-        """
-        Calculate the autocovariance.
-
-        Parameters
-        ----------
-        dim : str
-            The dimension.
-        **kwargs
-            Passed to `~.var.autocovar`.
-        """
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
             kwargs['ilag'] = 1
@@ -2888,139 +2899,48 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         return data
 
+    @docstring.add_template('minmax', extrema='mimima', prefix='')
     def min(self, dim=None, **kwargs):
-        """
-        Return the local minima along the dimension.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        dim_track : str, optional
-            The dimension along which minima are tracked.
-        **kwargs
-            Passed to `~.utils.zerofind`.
-        """
         kwargs.update(which='min', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    @docstring.add_template('minmax', extrema='maxima', prefix='')
     def max(self, dim=None, **kwargs):
-        """
-        Return the local maxima along the dimension.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        dim_track : str, optional
-            The dimension along which maxima are tracked.
-        **kwargs
-            Passed to `~.utils.zerofind`.
-        """
         kwargs.update(which='max', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    @docstring.add_template('absminmax', extrema='minima', prefix='')
     def absmin(self, dim=None, **kwargs):
-        """
-        Return the global minimum along the dimension.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        **kwargs
-            Passed to `~.utils.zerofind`.
-        """
         kwargs.update(which='min', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    @docstring.add_template('absminmax', extrema='maxima', prefix='')
     def absmax(self, dim=None, **kwargs):
-        """
-        Return the global maximum along the dimension.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        **kwargs
-            Passed to `~.utils.zerofind`.
-        """
         kwargs.update(which='max', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    @docstring.add_template('minmax', extrema='minima', prefix='coordinates of ')
     def argmin(self, dim=None, **kwargs):
-        """
-        Return locations of the local minima along the dimension.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        dim_track : str, optional
-            The dimension along which minima are tracked.
-        **kwargs
-            Passed to `~.utils.zerofind`.
-        """
         kwargs.update(which='min', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    @docstring.add_template('minmax', extrema='maxima', prefix='coordinates of ')
     def argmax(self, dim=None, **kwargs):
-        """
-        Return locations of the local maxima along the dimension.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        dim_track : str, optional
-            The dimension along which maxima are tracked.
-        **kwargs
-            Passed to `~.utils.zerofind`.
-        """
         kwargs.update(which='max', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    @docstring.add_template('absminmax', extrema='minima', prefix='coordinates of ')
     def absargmin(self, dim=None, **kwargs):
-        """
-        Return location of the global minimum along the dimension.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        **kwargs
-            Passed to `~.utils.zerofind`.
-        """
         kwargs.update(which='min', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    @docstring.add_template('absminmax', extrema='maxima', prefix='coordinates of ')
     def absargmax(self, dim=None, **kwargs):
-        """
-        Return location of the global maximum along the dimension.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        **kwargs
-            Passed to `~.utils.zerofind`.
-        """
         kwargs.update(which='max', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
 
-    def argzero(self, dim=None, **kwargs):
-        """
-        Return locations of the zero-valued points along the dimension.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        dim_track : str, optional
-            The dimension along which zeros are tracked.
-        **kwargs
-            Passed to `~.utils.zerofind`.
-        """
+    @docstring.add_template('argloc')
+    def argloc(self, dim=None, value=0, **kwargs):
         kwargs.update(which='zero', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
@@ -3540,9 +3460,9 @@ class ClimoDatasetAccessor(ClimoAccessor):
         **kwargs
     ):
         """
-        Call `~ClimoDatasetAccessor.__getitem__`, with optional post-processing steps
-        and special behavior when variables are prefixed or suffixed with certain
-        values.
+        Call `~ClimoDatasetAccessor.__getitem__`, with optional post-processing
+        steps and special behavior when variables are prefixed or suffixed with
+        certain values.
 
         Parameters
         ----------
@@ -3564,15 +3484,17 @@ class ClimoDatasetAccessor(ClimoAccessor):
         quantify : bool, optional
             Whether to quantify the data with `~ClimoDataArrayAccessor.quantify()`.
         standardize : bool, optional
-            Whether to standardize the resulting units with
+            Convert the result to the standard units with
             `~ClimoDataArrayAccessor.to_standard_units`.
         units : unit-like, optional
-            Convert the result to the input units using
-            `~ClimoDataArrayAccessor.to_units()`.
+            Convert the result to the input units with
+            `~ClimoDataArrayAccessor.to_units`.
         normalize : bool, optional
-            Whether to normalize the resulting data by the time-mean.
+            Whether to normalize the resulting data with
+            `~ClimoDataArrayAccessor.normalize`.
         running : bool, optional
-            Apply a running mean with `~ClimoDataArrayAccessor.runmean`.
+            Apply a length-`running` running mean to the time dimension with
+            `~ClimoDataArrayAccessor.runmean`.
         **kwargs
             Passed to `~ClimoDataArrayAccessor.reduce`. Used to reduce the dimensions.
 
@@ -3787,6 +3709,7 @@ def _find_this_transformation(src, dest, error=False, registry=None):
             return lambda da, **kwargs: outer(transformation(da, **kwargs))
 
 
+@docstring.add_snippets
 def register_derivation(spec, /, override=True):
     """
     Register a function that derives one variable from one or more others, for use
@@ -3796,12 +3719,7 @@ def register_derivation(spec, /, override=True):
     Parameters
     ----------
     spec : str, tuple, or re.Pattern
-        The destination variable name, a tuple of valid destination names, or an
-        `re.compile`'d pattern matching a set of valid destination names. In the latter
-        two cases, the derivation function must accept a `name` keyword argument.
-        This is useful if you want to register a single function capable of deriving
-        multiple related variables (e.g., registering the regex ``r'\\Ad.*dy\\Z'``
-        to return the meridional gradient of an arbitrary variable).
+        %(dest)s
     override : bool, optional
         Whether to override existing transformations. ``True`` by default.
 
@@ -3837,6 +3755,7 @@ def register_derivation(spec, /, override=True):
     return _decorator
 
 
+@docstring.add_snippets
 def register_transformation(src, dest, /, *, override=True):
     """
     Register a function that transforms one variable to another, for use with
@@ -3849,9 +3768,7 @@ def register_transformation(src, dest, /, *, override=True):
     src : str
         The source variable name.
     dest : str, tuple, or re.Pattern
-        The destination variable name, a tuple of valid destination names, or an
-        `re.compile`'d pattern matching a set of valid destination names. In the latter
-        two cases, the transformation function must accept a `name` keyword argument.
+        %(dest)s
     override : bool, optional
         Whether to override existing transformations. ``True`` by default.
 
