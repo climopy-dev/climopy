@@ -158,7 +158,8 @@ ureg.setup_matplotlib()
 def encode_units(units, /):
     """
     Convert `pint.Unit` units to an unambiguous unit string. This is used with
-    `ClimoAccessor.dequantify` to encode units in the `xarray.DataArray` attributes.
+    `~ClimoDataArrayAccessor.dequantify` to encode units in the `xarray.DataArray`
+    attributes.
     """
     if isinstance(units, str):
         units = parse_units(units)
@@ -171,7 +172,8 @@ def encode_units(units, /):
 def parse_units(units, /):
     """
     Translate unit string into `pint` units, with support for CF compliant constructs.
-    Includes the following features:
+    This is used with `~ClimoDataArrayAccessor.quantify` and
+    `~ClimoDataArrayAccessor.to_units`. Includes the following features:
 
     * Interpret CF standard where exponents are expressed as numbers adjacent to
       letters without any exponentiation marker, e.g. ``m2`` for ``m^2``.

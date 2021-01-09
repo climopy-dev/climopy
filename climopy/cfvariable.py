@@ -490,7 +490,7 @@ class CFVariableRegistry(object):
     """
     def __init__(self):
         self._database = {}
-        self._overwrite = False
+        self._override = False
 
     def __contains__(self, key):
         try:
@@ -512,7 +512,7 @@ class CFVariableRegistry(object):
             raise AttributeError(f'Unknown CFVariable {attr!r}.')
 
     def __setattr__(self, attr, value):
-        if attr[:1] == '_' or attr == 'overwrite':
+        if attr[:1] == '_' or attr == 'override':
             super().__setattr__(attr, value)
         else:
             raise RuntimeError('Cannot set attributes on variable registry.')
@@ -745,7 +745,7 @@ class CFVariableRegistry(object):
         var = vars[0]
         var._aliases.extend(arg for arg in args if arg not in var.identifiers)
 
-    def define(self, name, *args, aliases=None, parents=None, overwrite=None, **kwargs):
+    def define(self, name, *args, aliases=None, parents=None, override=None, **kwargs):
         """
         Define a `CFVariable` instance. Inspired by `pint.UnitRegistry.define`.
 
@@ -768,9 +768,9 @@ class CFVariableRegistry(object):
             ``parents=('lorenz_energy_budget_term', 'energy_flux')`` will yield both
             ``'eddy_potential_energy' in vreg['lorenz_energy_budget_term']``
             and ``'eddy_potential_energy' in vreg['energy_flux']``.
-        overwrite : bool, optional
-            Whether to overwrite existing variables. Default is ``False``, but can
-            be changed globally using the `CFVariableRegistry.overwrite` property.
+        override : bool, optional
+            Whether to override existing variables. Default is ``False``, but can
+            be changed globally using the `CFVariableRegistry.override` property.
             Child variables are also removed when a parent is overwritten, as are
             variables whose aliases or standard names match `name`.
         *args, **kwargs
@@ -793,20 +793,20 @@ class CFVariableRegistry(object):
 
         # Delete old variables and children, ensuring zero conflict between sets
         # of unique identifiers and forbidding deletion of parent variables.
-        if overwrite is None:
-            overwrite = self.overwrite
+        if override is None:
+            override = self.override
         for identifier in var.identifiers:
             try:
                 prev = self._get_item(identifier)
             except KeyError:
                 pass
             else:
-                if not overwrite:
+                if not override:
                     raise ValueError(f'Name conflict between {var} and {prev}.')
                 else:
                     warnings._warn_climopy(f'Overwriting {prev} with {var}.')
                 for other in prev:  # iterate over self and all children
-                    if other is var:  # i.e. we are trying to overwrite a parent!
+                    if other is var:  # i.e. we are trying to override a parent!
                         raise ValueError(f'Name conflict between {var} and parent {other}.')  # noqa: E501
                     self._database.pop(other.name, None)
 
@@ -824,15 +824,15 @@ class CFVariableRegistry(object):
             return default
 
     @property
-    def overwrite(self):
+    def override(self):
         """
-        The default overwrite mode when defining new variables.
+        The default override mode when defining new variables.
         """
-        return self._overwrite
+        return self._override
 
-    @overwrite.setter
-    def overwrite(self, b):
-        self._overwrite = b
+    @override.setter
+    def override(self, b):
+        self._override = b
 
 
 #: The default `CFVariableRegistry` paired with `~.accessor.ClimoDataArrayAccessor`

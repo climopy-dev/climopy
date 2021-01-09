@@ -41,3 +41,19 @@ def _is_scalar(data):
         data = data.magnitude
     data = np.asarray(data)
     return data.ndim == 0
+
+
+def _make_stopwatch(verbose=False, fixedwidth=20):
+    """
+    Return a simple stopwatch.
+    """
+    import time
+    t = time.time()
+    def _stopwatch(message):  # noqa: E306
+        nonlocal t
+        if verbose:
+            print(
+                message + ':' + ' ' * (fixedwidth - len(message)),
+                -t + (t := time.time())  # reassign t in enclosing scope
+            )
+    return _stopwatch
