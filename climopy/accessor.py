@@ -3791,9 +3791,7 @@ def register_derivation(spec, /, override=True):
     """
     Register a function that derives one variable from one or more others, for use
     with `ClimoDatasetAccessor.get_variable`. All derivations are carried out with
-    data arrays quantified by `pint`. Input can be a string or compiled regular
-    expression pattern (in the latter case the function must also accept a `name`
-    keyword argument, and the behavior of the derivation should depend on the name).
+    data arrays quantified by `pint`.
 
     Parameters
     ----------
@@ -3801,6 +3799,9 @@ def register_derivation(spec, /, override=True):
         The destination variable name, a tuple of valid destination names, or an
         `re.compile`'d pattern matching a set of valid destination names. In the latter
         two cases, the derivation function must accept a `name` keyword argument.
+        This is useful if you want to register a single function capable of deriving
+        multiple related variables (e.g., registering the regex ``r'\\Ad.*dy\\Z'``
+        to return the meridional gradient of an arbitrary variable).
     override : bool, optional
         Whether to override existing transformations. ``True`` by default.
 
