@@ -915,7 +915,7 @@ class ClimoAccessor(object):
             parts.append((dims, value))
         return parts
 
-    def _iter_data_arrays(self):
+    def _iter_data_arrays(self, dataset=False):
         """
         Iterate over DataArray(s). If this is a DataArray itself just yield it.
         """
@@ -923,6 +923,8 @@ class ClimoAccessor(object):
         if isinstance(data, xr.DataArray):
             yield data
         else:
+            if dataset:
+                yield data
             yield from data.values()
 
     def _iter_by_indexer_coords(self, func, indexers, **kwargs):
@@ -1204,7 +1206,7 @@ class ClimoAccessor(object):
             key = self._to_native_name(key)
         except KeyError:
             pass
-        for measure, names in self.cf.cell_measures.items():
+        for measure, names in self.data.cf.cell_measures.items():
             if key in names:
                 return measure
 
@@ -1216,7 +1218,7 @@ class ClimoAccessor(object):
             key = self._to_native_name(key)
         except KeyError:
             pass
-        for coord, names in self.cf.coordinates.items():
+        for coord, names in self.data.cf.coordinates.items():
             if key in names:
                 return coord
 
@@ -1366,11 +1368,13 @@ class ClimoAccessor(object):
         **kwargs
             Cell methods passed as keyword args.
         """
-        attr = 'cell_methods'
         methods = methods or {}
         methods.update(kwargs)
         for da in self._iter_data_arrays():
-            da.attrs[attr] = self._build_cf_attr(da.attrs.get(attr), methods.items())
+            if not self._is_bounds(da.name):
+                da.attrs['cell_methods'] = self._build_cf_attr(
+                    da.attrs.get('cell_methods'), methods.items()
+                )
 
     def add_cell_measures(
         self, measures=None, *, dataset=None, override=False, **kwargs
@@ -1430,15 +1434,11 @@ class ClimoAccessor(object):
             if not isinstance(da, xr.DataArray):
                 raise ValueError('Input cell measures must be DataArrays.')
             data.coords[da.name] = da.climo.dequantify()
-            objs = [data]
-            attr = 'cell_measures'
-            if isinstance(data, xr.Dataset):
-                objs.extend(data.climo._iter_data_arrays())
-            for obj in objs:
-                attr = 'cell_measures'
-                obj.attrs[attr] = self._build_cf_attr(
-                    obj.attrs.get(attr), ((measure, da.name),)
-                )
+            for obj in data.climo._iter_data_arrays(dataset=True):
+                if not self._is_bounds(getattr(obj, 'name', '')):
+                    obj.attrs['cell_measures'] = self._build_cf_attr(
+                        obj.attrs.get('cell_measures'), ((measure, da.name),)
+                    )
 
         return data
 
@@ -1744,10 +1744,9 @@ class ClimoAccessor(object):
 
     def standardize_coords(self, verbose=False):
         """
-        Standardize coordinates to satisfy CF conventions using
-        `cf_xarray.guess_coord_axis` and `cf_xarray.rename_like`. May also support
-        variable standardization in the future using `~.cfvariable.CFVariableRegistry`.
-        For now, this function does the following:
+        Infer and standardize coordinates to satisfy CF conventions with the help of
+        `~cf_xarray.CFAccessor.guess_coord_axis` and `cf_xarray.CFAccessor.rename_like`.
+        This function does the following:
 
         * Adds ``longitude`` and ``latitude`` standard names and ``degrees_east``
           and ``degrees_north`` units to detected ``X`` and ``Y`` axes.
@@ -1847,7 +1846,7 @@ class ClimoAccessor(object):
         # Manage bounds variables
         for name, da in data.coords.items():
             if isinstance(data, xr.Dataset):
-                # Delete missing bounds attributes
+                # Delete bounds indicators when the bounds variable is missind
                 bounds = da.attrs.get('bounds')
                 if bounds and bounds not in data:
                     del da.attrs['bounds']
@@ -1871,11 +1870,13 @@ class ClimoAccessor(object):
                 if bounds and bounds != (bounds_new := da.name + '_bnds'):
                     da.attrs['bounds'] = bounds_new
                     data = data.rename_vars({bounds: bounds_new})
-                    data[bounds_new].attrs.clear()
                     if verbose:
                         print(
                             'Renamed bounds variable {bounds!r} to {bounds_new!r}.'
                         )
+                # Delete all bounds attributes as recommended by CF manual
+                if bounds:
+                    data[bounds_new].attrs.clear()
             # Delete bounds variables for DataArrays, to prevent CF warning issue
             elif 'bounds' in da.attrs:
                 del da.attrs['bounds']
@@ -3039,7 +3040,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Return a copy of the `xarray.DataArray` with underlying data converted to
         `pint.Quantity` using the ``'units'`` attribute. If the data is already
         quantified, nothing is done. If the ``'units'`` attribute is missing, a warning
-        is raised. Units are parsed with `~unit.parse_units`.
+        is raised. Units are parsed with `~.unit.parse_units`.
         """
         # WARNING: In-place conversion resulted in endless bugs related to
         # ipython %autoreload, was departure from metpy convention, was possibly
@@ -3059,7 +3060,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Return a copy of the `xarray.DataArray` with underlying data stripped of
         its units and units written to the ``'units'`` attribute. If the data is already
-        dequantified, nothing is done. Units are written with `~unit.encode_units`.
+        dequantified, nothing is done. Units are written with `~.unit.encode_units`.
         """
         # WARNING: Try to preserve *order* of units for fussy formatting later on.
         # Avoid default alphabetical sorting by pint.__format__.
@@ -3073,7 +3074,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     def to_units(self, units):
         """
         Return a copy converted to the desired units. Unit strings are parsed
-        with `~unit.parse_units`.
+        with `~.unit.parse_units`.
         """
         if not self._is_quantity:
             raise ValueError('Data should be quantified.')
@@ -3242,6 +3243,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data
         if data.name is None:
             raise AttributeError('DataArray name required to get cfvariable.')
+        # Get keyword args for CFVariable
         kwargs = {key: val for key, val in data.attrs.items() if key in CFVARIABLE_ARGS}
         methods = self._decode_cf_attr(data.attrs.get('cell_methods', ''))
         for dim, da in data.coords.items():
@@ -3255,8 +3257,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 kwargs[coord] = units * da.item()
             elif any(da.name in d for d, m in methods):
                 kwargs[coord] = tuple(m for d, m in methods if da.name in d)
-            # else:
-            #     warnings._warn_climopy(f'Unknown cell method for {coord.name!r}.')
+        # Create the CFVariable
         try:
             return self.registry(data.name, accessor=self, **kwargs)
         except KeyError:
@@ -3275,7 +3276,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @property
     def quantity(self):
         """
-        The data values of this DataArray as a `pint.Quantity`.
+        The data values of this `~xarray.DataArray` as a `pint.Quantity`.
         """
         if isinstance(self.data.data, pint.Quantity):
             return self.data.data
@@ -3285,9 +3286,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @property
     def units(self):
         """
-        The units of this DataArray as a `pint.Unit`, taken from the underlying
-        `pint.Quantity` or the ``'units'`` attribute. Unit strings are parsed
-        with `~unit.parse_units`.
+        The units of this `~xarray.DataArray` as a `pint.Unit`, taken from the
+        underlying `pint.Quantity` or the ``'units'`` attribute. Unit strings are
+        parsed with `~.unit.parse_units`.
         """
         if isinstance(self.data.data, pint.Quantity):
             return self.data.data.units
@@ -3297,11 +3298,19 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             raise RuntimeError('Units not present in attributes or as pint.Quantity.')
 
     @property
-    def units_latex(self):
+    def units_label(self):
         """
-        Units label formatted for matplotlib.
+        The units of this `~xarray.DataArray` formatted LaTeX-style. Suitable for
+        adding text to matplotlib figures. This works even when a
+        `~ClimoDataArrayAccessor.cfvariable` is not available (see also the
+        `units_label` `~.cfvariable.CFVariable` property).
         """
-        return latex_units(self.units)
+        units = self.units
+        if self._has_cf_attr('units_standard'):
+            units_standard = self.cfvariable.units_standard
+            if units == parse_units(units_standard):
+                return latex_units(units_standard)
+        return latex_units(units)
 
 
 @xr.register_dataset_accessor('climo')

@@ -470,7 +470,12 @@ class CFVariable(object):
     @property
     def units_label(self):
         """
-        The current units or standard units formatted for matplotlib labels.
+        The active accessor units or the standard units formatted for matplotlib
+        labels. When they are equivalent (as determined by `pint`), the
+        `~CFVariable.standard_units` string is used rather than the `pint.Unit` object.
+        This permits specifying a numerator and denominator by the position of the
+        forward slash in the standard units string. See `~.unit.latex_units` for
+        details.
         """
         if self.standard_units is None:
             if not self._accessor:
