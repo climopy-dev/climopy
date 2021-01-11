@@ -7,6 +7,7 @@ import numpy as np
 from . import const
 from .accessor import register_derivation, register_transformation
 from .cfvariable import vreg
+from .internals import ic  # noqa: F401
 from .internals import warnings
 from .unit import ureg
 

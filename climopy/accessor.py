@@ -284,28 +284,26 @@ def _manage_reduced_coords(func):
         if no_manage_coords:
             return result
 
-        # Add back lost coords
+        # Treat lost coordinates
         coords_lost = coords.keys() - result.coords.keys()
         for name in coords_lost:
             prev = coords[name]
             measure = self._to_cf_measure_name(name)
-
-            # Replace lost dimension coordinates with scalar NaNs. Drop 1D cell
-            # measure coordinates, as that information is no longer needed
-            coord = None
             if prev.ndim == 1 and not measure:
+                # Replace lost dimension coordinates with scalar NaNs. Drop 1D cell
+                # measure coordinates, as that information is no longer needed
                 coord = xr.DataArray(np.nan, name=name, attrs=coords[name].attrs)
-
-            # Replace lost cell measures using unweighted sum. Drop non-cell measure
-            # coordinates; usually makes no sense to get an 'average' coordinate
-            elif (
-                prev.ndim > 1 and measure and prev.sizes.keys() & result.sizes.keys()
-                and func.__name__ in ('average', 'integrate')
-            ):
-                coord = prev.climo.sum(*args, no_manage_coords=True, **kwargs)
-
-            # Add weights
-            if coord is not None:
+                result = result.assign_coords({name: coord})
+            if prev.ndim > 1 and measure and prev.sizes.keys() & result.sizes.keys():
+                # Replace lost cell measures using unweighted sum. Drop non-cell measure
+                # coordinates; usually makes no sense to get an 'average' coordinate
+                if func.__name__ in ('sum', 'integrate'):
+                    method = prev.climo.sum
+                elif func.__name__ in ('mean', 'average'):
+                    method = prev.climo.mean
+                else:
+                    raise RuntimeError(f'Unsure what to do with func {func.__name__!r}')
+                coord = method(*args, no_manage_coords=True, **kwargs)
                 result = result.assign_coords({name: coord})
 
         return result
@@ -1542,7 +1540,6 @@ class ClimoAccessor(object):
         """
         return self._cls_groupby(self.data, group, *args, **kwargs)
 
-    @_manage_reduced_coords
     @_keep_tracked_attrs
     def _mean_or_sum(self, method, dim=None, skipna=None, weight=None, **kwargs):
         """
@@ -1556,10 +1553,12 @@ class ClimoAccessor(object):
         data.climo.add_cell_methods({dims: method})
         return data
 
+    @_manage_reduced_coords  # need access to cell_measures, so place before keep_attrs
     @docstring.add_template('meansum', operator='mean', notes='avgmean')
     def mean(self, dim=None, skipna=None, weight=None, **kwargs):
         return self._mean_or_sum('mean', dim, **kwargs)
 
+    @_manage_reduced_coords  # need access to cell_measures, so place before keep_attrs
     @docstring.add_template('meansum', operator='sum')
     def sum(self, dim=None, skipna=None, weight=None, **kwargs):
         return self._mean_or_sum('sum', dim, **kwargs)
@@ -2230,6 +2229,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             ``'rcumavg'``    Cumulative average from the right.
             ``'lcumanom'``   Anomaly w.r.t. cumulative average from the left.
             ``'rcumanom'``   Anomaly w.r.t. cumulative average from the right.
+            ``'mean'``       Simple arithmetic mean.
+            ``'sum'``        Simple arithmetic sum.
             ``'min'``        Local minima along the dimension.
             ``'max'``        Local maxima along the dimension.
             ``'argmin'``     Location(s) of local minima along the dimension.
@@ -2295,6 +2296,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             'rcumavg': ('cumaverage', {'reverse': True}),
             'lcumanom': ('cumanomaly', {}),
             'rcumanom': ('cumanomaly', {'reverse': True}),
+            'mean': ('mean', {}),
+            'sum': ('sum', {}),
         }
         method_keys = {  # keyword args that can be passed to different methods
             'autocorr': ('lag', 'ilag', 'maxlag', 'imaxlag'),
