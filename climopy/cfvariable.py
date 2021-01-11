@@ -11,6 +11,7 @@ import re
 import numpy as np
 import pint
 
+from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
 from .internals import warnings
 from .unit import latex_units, parse_units
@@ -809,7 +810,7 @@ class CFVariableRegistry(object):
                 if not override:
                     raise ValueError(f'Name conflict between {var} and {prev}.')
                 else:
-                    warnings._warn_climopy(f'Overwriting {prev} with {var}.')
+                    warnings._warn_climopy(f'Overriding {prev} with {var}.')
                 for other in prev:  # iterate over self and all children
                     if other is var:  # i.e. we are trying to override a parent!
                         raise ValueError(f'Name conflict between {var} and parent {other}.')  # noqa: E501

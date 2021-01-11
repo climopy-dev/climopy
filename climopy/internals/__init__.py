@@ -54,6 +54,6 @@ def _make_stopwatch(verbose=False, fixedwidth=20):
         if verbose:
             print(
                 message + ':' + ' ' * (fixedwidth - len(message)),
-                -t + (t := time.time())  # reassign t in enclosing scope
+                format(-t + (t := time.time()), '.6f')  # reassign t in enclosing scope
             )
     return _stopwatch
