@@ -36,11 +36,13 @@ __all__ = [
 #:     degree_East = degree = °E = degree_east = degE = deg_E = ...
 #:
 #: This also registers a `pint.Context` manager named ``'climo'`` for converting
-#: static energy components, their rates of change (:math:`s^{-1}`), their fluxes
-#: (:math:`m\,s^{-1}`), and their *absolute* fluxes integrated over latitude bands
-#: (:math:`m^2\,s^{-1}`) between temperature and sensible heat (:math:`x \cdot c_p`),
+#: static energy components, their rates of change (:math:`s^{-1}`), and their fluxes
+#: (:math:`m\,s^{-1}`) between temperature and sensible heat (:math:`x \cdot c_p`),
 #: between absolute humidity and latent heat (:math:`x \cdot L`), and between
-#: geopotential height and geopotential (:math:`x \cdot g`).
+#: geopotential height and geopotential (:math:`x \cdot g`). It also supports
+#: transforming static energy terms between those normalized with respect to unit
+#: vertical pressure distance and terms normalized per unit mass per unit area
+#: (:math:`x \cdot g`).
 ureg = units = pint.UnitRegistry(
     preprocessors=[
         lambda s: s.replace('%%', ' permille '),

@@ -18,6 +18,7 @@ from .spectral import *  # noqa: F401, F403
 from .spherical import *  # noqa: F401, F403
 from .downloads import *  # noqa: F401, F403
 from . import const  # noqa: F401
+from . import context  # noqa: F401
 from . import internals  # noqa: F401
 from . import definitions  # noqa: F401
 
