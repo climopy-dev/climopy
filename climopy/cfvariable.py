@@ -292,7 +292,8 @@ class CFVariable(object):
     @property
     def identifiers(self):
         """
-        Tuple of unique identifiers for the variable.
+        Tuple of unique variable identifiers (the `~CFVariable.name`, the
+        `~CFVariable.standard_name`, and the `~CFVariable.aliases`).
         """
         names = (self.name,)
         if self.standard_name:
@@ -496,7 +497,6 @@ class CFVariableRegistry(object):
     """
     def __init__(self):
         self._database = {}
-        self._override = False
 
     def __contains__(self, key):
         try:
@@ -518,7 +518,7 @@ class CFVariableRegistry(object):
             raise AttributeError(f'Unknown CFVariable {attr!r}.')
 
     def __setattr__(self, attr, value):
-        if attr[:1] == '_' or attr == 'override':
+        if attr[:1] == '_':
             super().__setattr__(attr, value)
         else:
             raise RuntimeError('Cannot set attributes on variable registry.')
@@ -751,7 +751,7 @@ class CFVariableRegistry(object):
         var = vars[0]
         var._aliases.extend(arg for arg in args if arg not in var.identifiers)
 
-    def define(self, name, *args, aliases=None, parents=None, override=None, **kwargs):
+    def define(self, name, *args, aliases=None, parents=None, **kwargs):
         """
         Define a `CFVariable` instance. Inspired by `pint.UnitRegistry.define`.
 
@@ -774,13 +774,14 @@ class CFVariableRegistry(object):
             ``parents=('lorenz_energy_budget_term', 'energy_flux')`` will yield both
             ``'eddy_potential_energy' in vreg['lorenz_energy_budget_term']``
             and ``'eddy_potential_energy' in vreg['energy_flux']``.
-        override : bool, optional
-            Whether to override existing variables. Default is ``False``, but can
-            be changed globally using the `CFVariableRegistry.override` property.
-            Child variables are also removed when a parent is overwritten, as are
-            variables whose aliases or standard names match `name`.
         *args, **kwargs
             Passed to `CFVariable`.
+
+        Notes
+        -----
+        If the input variable's `~CFVariable.identifiers` conflict with an existing
+        variable's `~CFVariable.identifiers`, a warning message is printed and the
+        conflicting variable is removed from the registry (along with its children).
         """
         # Create new variable or child variable
         if not parents:
@@ -799,18 +800,13 @@ class CFVariableRegistry(object):
 
         # Delete old variables and children, ensuring zero conflict between sets
         # of unique identifiers and forbidding deletion of parent variables.
-        if override is None:
-            override = self.override
         for identifier in var.identifiers:
             try:
                 prev = self._get_item(identifier)
             except KeyError:
                 pass
             else:
-                if not override:
-                    raise ValueError(f'Name conflict between {var} and {prev}.')
-                else:
-                    warnings._warn_climopy(f'Overriding {prev} with {var}.')
+                warnings._warn_climopy(f'Overriding {prev} with {var}.')
                 for other in prev:  # iterate over self and all children
                     if other is var:  # i.e. we are trying to override a parent!
                         raise ValueError(f'Name conflict between {var} and parent {other}.')  # noqa: E501
@@ -829,21 +825,14 @@ class CFVariableRegistry(object):
         except KeyError:
             return default
 
-    @property
-    def override(self):
-        """
-        The default override mode when defining new variables.
-        """
-        return self._override
-
-    @override.setter
-    def override(self, b):
-        self._override = b
-
 
 #: The default `CFVariableRegistry` paired with `~.accessor.ClimoDataArrayAccessor`
 #: xarray accessor instances. `CFVariable` properties can be retrieved from an
 #: `xarray.DataArray` whose name matches a variable name using
 #: ``data_array.climo.cfvariable.property`` or the shorthand form
 #: ``data_array.climo.property``.
-vreg = variables = CFVariableRegistry()
+vreg = CFVariableRegistry()
+
+#: Alias for the default `CFVariableRegistry` `vreg`. Mimics the alias `~.unit.units`
+#: used for the default `~pint.UnitRegistry` `~.unit.ureg`.
+variables = vreg

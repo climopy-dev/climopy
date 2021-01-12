@@ -3782,7 +3782,7 @@ def _find_this_transformation(src, dest, error=False, registry=None):
 
 
 @docstring.add_snippets
-def register_derivation(spec, /, override=True):
+def register_derivation(spec, /):
     """
     Register a function that derives one variable from one or more others, for use
     with `ClimoDatasetAccessor.get_variable`. All derivations are carried out with
@@ -3792,8 +3792,6 @@ def register_derivation(spec, /, override=True):
     ----------
     spec : str, tuple, or re.Pattern
         %(dest)s
-    override : bool, optional
-        Whether to override existing transformations. ``True`` by default.
 
     Examples
     --------
@@ -3807,12 +3805,9 @@ def register_derivation(spec, /, override=True):
         raise TypeError(f'Invalid name or regex {spec!r}.')
 
     def _decorator(func):  # noqa: E306
-        # Possibly override
+        # Warning
         if spec in DERIVATIONS:
-            if override:
-                raise TypeError(f'Derivation of {spec!r} already registered.')
-            else:
-                warnings._warn_climopy(f'Overriding existing derivation {spec!r}.')
+            warnings._warn_climopy(f'Overriding existing derivation {spec!r}.')
 
         # Wrap function to assign a DataArray name. Also ensure we use the
         # registered name rather than a CF-style alias
@@ -3828,7 +3823,7 @@ def register_derivation(spec, /, override=True):
 
 
 @docstring.add_snippets
-def register_transformation(src, dest, /, *, override=True):
+def register_transformation(src, dest, /):
     """
     Register a function that transforms one variable to another, for use with
     `ClimoDataArrayAccessor.to_variable`. Transformations should depend only on the
@@ -3841,8 +3836,6 @@ def register_transformation(src, dest, /, *, override=True):
         The source variable name.
     dest : str, tuple, or re.Pattern
         %(dest)s
-    override : bool, optional
-        Whether to override existing transformations. ``True`` by default.
 
     Examples
     --------
@@ -3858,12 +3851,9 @@ def register_transformation(src, dest, /, *, override=True):
         raise ValueError(f'Invalid destination {dest!r}. Must be string, tuple, regex.')
 
     def _decorator(func):
-        # Possibly override
+        # Warning
         if (src, dest) in TRANSFORMATIONS:
-            if override:
-                raise TypeError(f'Transformation {src!r}->{dest!r} already registered.')
-            else:
-                warnings._warn_climopy(f'Overriding existing {src!r}->{dest!r} transformation.')  # noqa: E501
+            warnings._warn_climopy(f'Overriding existing {src!r}->{dest!r} transformation.')  # noqa: E501
 
         # Wrap function to assign a DataArray name. Also ensure we use the
         # registered name rather than a CF-style alias

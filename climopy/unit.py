@@ -43,7 +43,7 @@ __all__ = [
 #: transforming static energy terms between those normalized with respect to unit
 #: vertical pressure distance and terms normalized per unit mass per unit area
 #: (:math:`x \cdot g`).
-ureg = units = pint.UnitRegistry(
+ureg = pint.UnitRegistry(
     preprocessors=[
         lambda s: s.replace('%%', ' permille '),
         lambda s: s.replace('%', ' percent '),
@@ -56,6 +56,10 @@ ureg = units = pint.UnitRegistry(
     # https://github.com/hgrecco/pint/issues/1203
     # force_ndarray_like=True,
 )
+
+#: Alias for the default `pint.UnitRegistry` `ureg`. `units` is consistent with
+#: the `metpy` convention, while `ureg` is consistent with the `pint` convention.
+units = ureg
 
 # Dimensionless definitions (see https://github.com/hgrecco/pint/issues/185)
 ureg.define(
