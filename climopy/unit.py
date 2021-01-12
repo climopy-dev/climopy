@@ -17,8 +17,8 @@ __all__ = [
 ]
 
 
-#: The `pint.UnitRegistry` used throughout climopy. Adds flexible aliases for
-#: temperature, pressure, vorticity, and various dimensionless quantities with
+#: The default `pint.UnitRegistry` used throughout climopy. Includes flexible aliases
+#: for temperature, pressure, vorticity, and various dimensionless quantities with
 #: support for nice short-form ``'~'`` formatting as follows:
 #:
 #: .. code-block:: txt
@@ -57,8 +57,8 @@ ureg = pint.UnitRegistry(
     # force_ndarray_like=True,
 )
 
-#: Alias for the default `pint.UnitRegistry` `ureg`. `units` is consistent with
-#: the `metpy` convention, while `ureg` is consistent with the `pint` convention.
+#: Alias for the default `pint.UnitRegistry` `ureg`. The name "units" is consistent
+#: with the `metpy` convention, while "ureg" is consistent with the `pint` convention.
 units = ureg
 
 # Dimensionless definitions (see https://github.com/hgrecco/pint/issues/185)

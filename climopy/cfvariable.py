@@ -834,5 +834,5 @@ class CFVariableRegistry(object):
 vreg = CFVariableRegistry()
 
 #: Alias for the default `CFVariableRegistry` `vreg`. Mimics the alias `~.unit.units`
-#: used for the default `~pint.UnitRegistry` `~.unit.ureg`.
+#: used for the default unit registry `~.unit.ureg`.
 variables = vreg
