@@ -2,7 +2,6 @@
 """
 Warnings used internally by climo.
 """
-import contextlib
 import re
 import sys
 import warnings
@@ -34,13 +33,3 @@ def _warn_climopy(message):
         frame = frame.f_back
         stacklevel += 1
     warnings.warn(message, ClimoPyWarning, stacklevel=stacklevel)
-
-
-@contextlib.contextmanager
-def _unit_stripped_ignore():
-    """
-    Warning strip.
-    """
-    with warnings.catch_warnings():  # make one context manager from another
-        warnings.simplefilter('ignore', category=pint.UnitStrippedWarning)
-        yield

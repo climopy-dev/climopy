@@ -41,7 +41,7 @@ with warnings.catch_warnings():
     # Register coordinate-related transformations and derivations
     @register_transformation('latitude', 'meridional_coordinate')
     def meridional_coordinate(da):
-        return (da * const.a).climo.to_units('km')
+        return (const.a * da).climo.to_units('km')
 
     @register_transformation('latitude', 'cosine_latitude')
     def cosine_latitude(da):
@@ -69,28 +69,43 @@ with warnings.catch_warnings():
 
     @register_derivation('cell_width')
     def cell_width(self):
-        coord = const.a * self.coords['cosine_latitude'] * self.coords['longitude_del']
-        return coord.climo.to_units('km')
+        # NOTE: Add measures as coords to be consistent with result of ds['cell_width']
+        # for datasets with measures already present in coordinates, while preventing
+        # recalculation of exact same measures.
+        data = const.a * self.coords['cosine_latitude'] * self.coords['longitude_delta']  # noqa: E501
+        data = data.climo.to_units('km')
+        data.name = 'cell_width'
+        return data.climo.add_cell_measures(width=data)
 
     @register_derivation('cell_depth')
     def cell_depth(self):
-        coord = const.a * self.coords['latitude_del']
-        return coord.climo.to_units('km')
+        # NOTE: Depth is interpreted as if looking northward at 3D cell rectangle.
+        # Think of depth as 'into the distance' instead of 'into the ground'.
+        data = const.a * self.coords['latitude_delta']
+        data = data.climo.to_units('km')
+        data.name = 'cell_depth'
+        return data.climo.add_cell_measures(depth=data)
 
     @register_derivation('cell_duration')
     def cell_duration(self):
-        coord = self.coords['time_del']
-        return coord.climo.to_units('days')
+        # NOTE: Xarray coerces datetime.timedelta arrays resulting from cftime
+        # subtraction into native timedelta64 arrays. See _make_coords for details.
+        data = self.coords['time_delta']
+        if data.data.dtype.kind == 'm':  # datetime64, if time coordinate was decoded
+            data = ureg.days * data.dt.days
+        data = data.climo.to_units('days')
+        data.name = 'cell_duration'
+        return data.climo.add_cell_measures(duration=data)
 
     @register_derivation('cell_height')
     def cell_height(self):
         # WARNING: Must use _get_item with add_cell_measures=False to avoid recursion
         vertical = self.vertical_type
         if vertical == 'temperature':
-            data = self.vars['pseudo_density'] * self.coords['vertical_del']
+            data = self.vars['pseudo_density'] * self.coords['vertical_delta']
         elif vertical == 'pressure':
             ps = None
-            data = self.coords['vertical_del']
+            data = self.coords['vertical_delta']
             for candidate in ('surface_air_pressure', 'air_pressure_at_mean_sea_level'):
                 if candidate not in self.vars:
                     continue
@@ -114,7 +129,7 @@ with warnings.catch_warnings():
                 f'Unknown cell height for vertical type {vertical!r}.'
             )
         data = data.climo.to_units('kg m^-2')
-        zero = 0 * ureg.kg / ureg.m ** 2
-        data.data[data.data < zero] = zero
+        data.data[data.data < 0] = 0 * ureg.kg / ureg.m ** 2
         data = data.fillna(0)
-        return data
+        data.name = 'cell_height'
+        return data.climo.add_cell_measures(height=data)

@@ -43,7 +43,7 @@ def _is_scalar(data):
     return data.ndim == 0
 
 
-def _make_stopwatch(verbose=False, fixedwidth=20):
+def _make_stopwatch(verbose=True, fixedwidth=20):
     """
     Return a simple stopwatch.
     """
