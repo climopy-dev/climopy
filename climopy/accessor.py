@@ -288,11 +288,11 @@ def _manage_reduced_coords(func):
     identically reduce cell weights. See `add_scalar_coords` for details on motivation.
     """
     @functools.wraps(func)
-    def _wrapper(self, *args, no_manage_coords=False, **kwargs):
+    def _wrapper(self, dim=None, *, no_manage_coords=False, **kwargs):
         # Call wrapped function
         # NOTE: Existing scalar coordinates should be retained by xarray been retained
         coords = self.data.coords
-        result = func(self, *args, **kwargs)
+        result = func(self, dim, **kwargs)
         if no_manage_coords:
             return result
 
@@ -315,7 +315,12 @@ def _manage_reduced_coords(func):
                     method = prev.climo.mean
                 else:
                     raise RuntimeError(f'Unsure what to do with func {func.__name__!r}')
-                coord = method(*args, no_manage_coords=True, **kwargs)
+                if not dim:  # entire domain
+                    dim = 'volume'
+                if isinstance(dim, str):
+                    dim = (dim,)
+                dim = tuple(d for m in dim for d in CELL_MEASURE_COORDS.get(m, (m,)))
+                coord = method(dim, no_manage_coords=True, **kwargs)
                 result = result.assign_coords({name: coord})
 
         return result
