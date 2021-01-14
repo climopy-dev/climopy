@@ -49,11 +49,9 @@ def _make_stopwatch(verbose=True, fixedwidth=20):
     """
     import time
     t = time.time()
-    def _stopwatch(message):  # noqa: E306
+    def _stopwatch(message=None):  # noqa: E306
         nonlocal t
-        if verbose:
-            print(
-                message + ':' + ' ' * (fixedwidth - len(message)),
-                format(-t + (t := time.time()), '.6f')  # reassign t in enclosing scope
-            )
+        delta = format(-t + (t := time.time()), '.6f')  # reassign t in enclosing scope
+        if verbose and message:
+            print(message + ':' + ' ' * (fixedwidth - len(message)), delta)
     return _stopwatch
