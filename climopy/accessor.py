@@ -576,12 +576,15 @@ class _CoordsQuantified(object):
 
         # Find CF alias
         if search_cf:
-            if axes is None:  # CF is slow!
-                axes = data.cf.axes
-            if coordinates is None:  # CF is slow!
-                coordinates = data.cf.coordinates
-            if key in axes or key in coordinates:
-                coord = data.climo.cf[key]  # may raise error if multiple options
+            coord, coordinates = self._accessor._get_cf_item(
+                key, data.coords, 'coordinates', coordinates
+            )
+            if coord is not None:
+                return transformation, coord, flag
+            coord, axes = self._accessor._get_cf_item(
+                key, data.coords, 'axes', axes
+            )
+            if coord is not None:
                 return transformation, coord, flag
 
         # Find transformed coordinate
@@ -837,6 +840,7 @@ class _VarsQuantified(object):
         """
         self._data = dataset
         self._registry = registry
+        self._accessor = dataset.climo
 
     def __contains__(self, key):
         return self._get_item(key) is not None
@@ -879,15 +883,16 @@ class _VarsQuantified(object):
 
         # Find CF alias
         if search_cf:
-            if cell_measures is None:  # CF is slow!
-                cell_measures = data.cf.cell_measures
-            if standard_names is None:  # CF is slow!
-                standard_names = {
-                    key: opts for key, names in data.cf.standard_names.items()
-                    if (opts := sorted(set(names) - data.coords.keys()))
-                }
-            if key in cell_measures or key in standard_names:  # e.g. 'area'
-                return data.climo.cf[key]
+            da, standard_names = self._accessor._get_cf_item(
+                key, data.data_vars, 'standard_names', standard_names
+            )
+            if da is not None:
+                return da
+            da, cell_measures = self._accessor._get_cf_item(
+                key, data.data_vars, 'cell_measures', cell_measures
+            )
+            if da is not None:
+                return da
 
         # Locate using identifier synonyms
         if search_registry:
@@ -983,6 +988,27 @@ class ClimoAccessor(object):
             value = substring[idx:].strip()
             parts.append((dims, value))
         return parts
+
+    def _get_cf_item(self, key, database, property, mapping=None):
+        """
+        Get single using its CF name. We search the properties (or mappings) supplied
+        by keyword args and filter to variables in the database (e.g. `.data_vars`).
+        """
+        database = database or ()
+        if mapping is None:  # can pass the cf dict directly to save time
+            mapping = getattr(self.cf, property)
+        for cf_name, native_names in mapping.items():
+            if key == cf_name:
+                native_names = tuple(filter(lambda n: n in database, native_names))
+                if not native_names:
+                    continue
+                if len(native_names) > 1:
+                    raise RuntimeError(
+                        f'Too many options for CF {property} key {key!r}: '
+                        f'{native_names!r}'
+                    )
+                return database[native_names[0]], mapping
+        return None, mapping
 
     @staticmethod
     def _matching_function(key, func, name):
@@ -1402,10 +1428,9 @@ class ClimoAccessor(object):
         # Add default cell measures
         if not measures:
             import warnings
-            stopwatch('init')
             coordinates = data.cf.coordinates
             cell_measures = data.cf.cell_measures
-            stopwatch('cf')
+            stopwatch('init')
             for measure in ('width', 'depth', 'height', 'duration'):
                 # Skip measures that already exist in coordinates and measures that
                 # aren't subset of existing spatial coordinates
@@ -1581,10 +1606,11 @@ class ClimoAccessor(object):
         # Add circular longitude coordinates
         data = self.data
         stopwatch = _make_stopwatch(verbose=False)
+        coordinates = data.cf.coordinates
         concatenate = functools.partial(
             xr.concat, data_vars='minimal', combine_attrs='no_conflicts'
         )
-        if longitude and 'longitude' in data.cf.coordinates:
+        if longitude and 'longitude' in coordinates:
             coord = data.climo.coords['longitude']
             lon = coord.name
             if coord.size > 1 and not np.isclose(coord[-1], coord[0] + 360 * ureg.deg):
@@ -1594,7 +1620,7 @@ class ClimoAccessor(object):
                 stopwatch('longitude')
 
         # Add latitude coordinates at poles
-        if latitude and 'latitude' in data.cf.coordinates:
+        if latitude and 'latitude' in coordinates:
             coord = data.climo.coords['latitude']
             if coord.size > 1:
                 lat = coord.name
@@ -1612,7 +1638,7 @@ class ClimoAccessor(object):
                 stopwatch('latitude')
 
         # Add pressure coordinates at surface and "top of atmosphere"
-        if vertical and 'vertical' in data.cf.coordinates:
+        if vertical and 'vertical' in coordinates:
             coord = data.climo.coords['vertical']
             if coord.climo.units.is_compatible_with('Pa'):
                 lev = coord.name
@@ -3655,10 +3681,10 @@ class ClimoDatasetAccessor(ClimoAccessor):
         # NOTE: This lets us implement a quick __contains__ that works on derived vars
         # TODO: Add robust method for automatically removing dimension reduction
         # suffixes from variable names and adding them as cell methods
-        if search_vars and (var := self.vars.get(key, **kwargs)) is not None:
+        if search_vars and (da := self.vars.get(key, **kwargs)) is not None:
             regex = r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z'
-            var.name = re.sub(regex, r'\1', var.name)
-            return 'var', var
+            da.name = re.sub(regex, r'\1', da.name)
+            return 'var', da
 
         # Return a coord, transformation, or derivation
         # NOTE: Coordinate searce rules out coordinate transformations
