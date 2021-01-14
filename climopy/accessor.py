@@ -576,14 +576,14 @@ class _CoordsQuantified(object):
         # Find CF alias
         data = self._data
         if search_cf:
-            coord, coordinates = data.climo._get_cf_item(
-                key, data.coords, coordinates, 'coordinates'
-            )
+            if coordinates is None:
+                coordinates = data.cf.coordinates
+            coord = data.climo._get_cf_item(key, data.coords, coordinates)
             if coord is not None:
                 return transformation, coord, flag
-            coord, axes = data.climo._get_cf_item(
-                key, data.coords, axes, 'axes'
-            )
+            if axes is None:
+                axes = data.cf.axes
+            coord = data.climo._get_cf_item(key, data.coords, axes)
             if coord is not None:
                 return transformation, coord, flag
 
@@ -882,14 +882,14 @@ class _VarsQuantified(object):
 
         # Find CF alias
         if search_cf:
-            da, standard_names = data.climo._get_cf_item(
-                key, data.data_vars, standard_names, 'standard_names'
-            )
+            if standard_names is None:
+                standard_names = data.cf.standard_names
+            da = data.climo._get_cf_item(key, data.data_vars, standard_names)
             if da is not None:
                 return da
-            da, cell_measures = data.climo._get_cf_item(
-                key, data.data_vars, cell_measures, 'cell_measures'
-            )
+            if cell_measures is None:
+                cell_measures = data.cf.cell_measures
+            da = data.climo._get_cf_item(key, data.data_vars, cell_measures)
             if da is not None:
                 return da
 
@@ -975,17 +975,16 @@ class ClimoAccessor(object):
             parts.append((dims, value))
         return parts
 
-    def _get_cf_item(self, key, database, mapping, property=None):
+    def _get_cf_item(self, key, database, mapping):
         """
         Get single using its CF name. We search the properties (or mappings) supplied
         by keyword args and filter to variables in the database (e.g. `.data_vars`).
         """
-        database = database or ()
-        if mapping is None:  # can pass the cf dict directly to save time
-            mapping = getattr(self.data.cf, property)
+        if isinstance(mapping, str):  # pass cf dict directly to save time
+            mapping = getattr(self.data.cf, mapping)
         for cf_name, native_names in mapping.items():
             if key == cf_name:
-                native_names = tuple(filter(lambda n: n in database, native_names))
+                native_names = tuple(filter(database.__contains__, native_names))
                 if not native_names:
                     continue
                 if len(native_names) > 1:
@@ -993,8 +992,7 @@ class ClimoAccessor(object):
                         f'Too many options for CF {property} key {key!r}: '
                         f'{native_names!r}'
                     )
-                return database[native_names[0]], mapping
-        return None, mapping
+                return database[native_names[0]]
 
     @staticmethod
     def _matching_function(key, func, name):
@@ -1337,7 +1335,7 @@ class ClimoAccessor(object):
             return key
         if search_cf:
             for property in ('standard_names', 'cell_measures', 'coordinates', 'axes'):
-                da, _ = self._get_cf_item(key, database, None, property)
+                da = self._get_cf_item(key, database, property)
                 if da is not None:
                     return da.name
         if search_registry:
@@ -1514,7 +1512,7 @@ class ClimoAccessor(object):
         if data.cf.sizes.get('time', None) == 1:  # time dimension exists
             data = data.cf.squeeze('time')  # may remove time coordinate
         for dim, coord in zip(attrs, coords):
-            da, _ = self._get_cf_item(coord, data.coords, coordinates, 'coordinates')
+            da = self._get_cf_item(coord, data.coords, coordinates)
             if da is None:
                 if dim in data.dims:
                     if data.sizes[dim] == 1:  # exists as singleton dim but not coord
@@ -1815,7 +1813,7 @@ class ClimoAccessor(object):
         """
         # Bail out if already is single hemisphere
         data = self.data
-        lat, _ = self._get_cf_item('latitude', data.coords, None, 'coordinates')
+        lat = self._get_cf_item('latitude', data.coords, 'coordinates')
         if np.all(np.sign(lat) == np.sign(lat[0])):
             return data
 
@@ -2000,7 +1998,7 @@ class ClimoAccessor(object):
         coordinates = data.cf.coordinates
         for axis, coord in zip(('X', 'Y'), ('longitude', 'latitude')):
             if axis not in axes and coord in coordinates:
-                da, _ = self._get_cf_item(coord, data.coords, coordinates)
+                da = self._get_cf_item(coord, data.coords, coordinates)
                 data.coords[da.name].attrs['axis'] = axis
                 if verbose:
                     print(f'Set {coord} coordinate {da.name!r} axis type to {axis!r}.')
@@ -2190,7 +2188,7 @@ class ClimoAccessor(object):
                 for measure, (varname,) in cell_measures.items():
                     if coord_name not in CELL_MEASURE_COORDS.get(measure, ()):
                         continue
-                    weight, _ = self._get_cf_item(measure, data.coords, cell_measures)
+                    weight = self._get_cf_item(measure, data.coords, cell_measures)
                     if weight is None:
                         warnings._warn_climopy(f'Cell measure {measure!r} with name {varname!r} not found.')  # noqa: E501
                         continue
@@ -2305,7 +2303,7 @@ class ClimoAccessor(object):
         ``'temperature'``, ``'pressure'``, ``'height'``, or ``'unknown'``.
         Model levels and hybrid sigme coordinates are not yet supported.
         """
-        da, _ = self._get_cf_item('vertical', self.data.coords, None, 'coordinates')
+        da = self._get_cf_item('vertical', self.data.coords, 'coordinates')
         if da is None:
             return 'unknown'
         units = da.climo.units
@@ -2667,7 +2665,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     continue
                 measure = COORD_CELL_MEASURE[coord]
                 coords = (coord,)
-            weight, _ = self._get_cf_item(measure, data.coords, cell_measures)
+            weight = self._get_cf_item(measure, data.coords, cell_measures)
             if weight is None:
                 raise ValueError(f'Cell measure {measure!r} for dim {dim!r} not found.')
             dims.extend(self._to_native_name(coord) for coord in coords)
