@@ -864,8 +864,8 @@ class _VarsQuantified(object):
         key,
         search_cf=True,
         search_registry=True,
-        standard_names=None,
         cell_measures=None,
+        standard_names=None,
     ):
         """
         Return a function that generates the variable, accounting for CF and
@@ -874,16 +874,19 @@ class _VarsQuantified(object):
         # Find native variable
         # NOTE: Compare with _CoordsQuantified._get_item and ClimoDatasetAccessor
         data = self._data
-        if key in data:
+        if key in data.data_vars:  # exclude coords
             return data[key]
 
         # Find CF alias
         if search_cf:
-            if standard_names is None:  # CF is slow!
-                standard_names = data.cf.standard_names
             if cell_measures is None:  # CF is slow!
                 cell_measures = data.cf.cell_measures
-            if key in standard_names or key in cell_measures:  # e.g. 'area'
+            if standard_names is None:  # CF is slow!
+                standard_names = {
+                    key: opts for key, names in data.cf.standard_names.items()
+                    if (opts := sorted(set(names) - data.coords.keys()))
+                }
+            if key in cell_measures or key in standard_names:  # e.g. 'area'
                 return data.climo.cf[key]
 
         # Locate using identifier synonyms
@@ -895,8 +898,8 @@ class _VarsQuantified(object):
                     name,
                     search_cf=search_cf,
                     search_registry=False,
-                    standard_names=standard_names,
                     cell_measures=cell_measures,
+                    standard_names=standard_names,
                 )
                 if da is not None:
                     return da
