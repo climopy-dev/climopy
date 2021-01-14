@@ -1382,7 +1382,7 @@ class ClimoAccessor(object):
         **kwargs
             Cell measures passed as keyword args.
         """
-        stopwatch = _make_stopwatch(verbose=True)
+        stopwatch = _make_stopwatch(verbose=False)
         data = self.data.copy(deep=False)
         action = 'default'
         measures = measures or {}
@@ -2891,7 +2891,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @docstring.add_template('divcon', operator='divergence')
     def divergence(self, half=False, cos_power=1, **kwargs):
         # Compute divergence in spherical coordinates
-        # div = diff.deriv1(y[:2], data * cos, **kwargs) / cos
         y = self.coords['meridional_coordinate']
         cos = self.coords['cosine_latitude']
         data = self.data
@@ -2908,9 +2907,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # If numerator vanishes, divergence at poles is precisely 2 * dflux / dy.
         # See Hantel 1974, Journal of Applied Meteorology, or just work it out
         # for yourself (simple l'Hopital's rule application).
-        lat = self.coords['latitude']  # without units
+        lat = self.coords['latitude']
         for lat, isel in ((lat[0], slice(None, 2)), (lat[-1], slice(-2, None))):
-            if abs(lat) == 90:
+            if abs(lat) == 90 * ureg.deg:
                 div.climo.loc[{'lat': lat}] = (
                     2 * data.isel(lat=isel).diff(dim='lat').isel(lat=0).data
                     / (y.data[isel][1] - y.data[isel][0])
@@ -3618,19 +3617,17 @@ class ClimoDatasetAccessor(ClimoAccessor):
         from `_get_item_or_func` to facillitate fast `__contains__`.
         """
         # Retrieve quantity
-        stopwatch = _make_stopwatch(verbose=True)
+        stopwatch = _make_stopwatch(verbose=False)
         tup = self._get_item_or_func(key, **kwargs)
-        stopwatch('get item')
+        stopwatch(f'get {key!r}')
         if not tup:
             raise KeyError(f'Invalid variable name {key!r}.')
         type_, da = tup
-        ic(da)
         if callable(da):
             da = da()  # ta-da!
-            stopwatch('compute item')
+            stopwatch(f'compute {key!r}')
         data = da.climo.quantify()  # should already be quantified, but just in case
         data.name = data.name or 'unknown'  # just in case
-        ic(da.name, type_)
         if type_ != 'coord' and add_cell_measures:
             data = data.climo.add_cell_measures(dataset=self.data)
             stopwatch('cell measures')
@@ -3651,24 +3648,23 @@ class ClimoDatasetAccessor(ClimoAccessor):
         Return a DataArray or function that generates the data and a string indicating
         the object type. Extra args are passed to `.vars.get` and `.coords.get`.
         """
-        # Return a coord or variable, removing special suffixes from variable names
+        # Return a variable, removing special suffixes from variable names
         # NOTE: This lets us implement a quick __contains__ that works on derived vars
         # TODO: Add robust method for automatically removing dimension reduction
         # suffixes from variable names and adding them as cell methods
-        if search_coords and (coord := self.coords.get(key, **kwargs)) is not None:
-            return 'coord', coord
         if search_vars and (var := self.vars.get(key, **kwargs)) is not None:
             regex = r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z'
             var.name = re.sub(regex, r'\1', var.name)
             return 'var', var
 
-        # Return a transformation or derivation
-        # NOTE: Coordinate search already ruled out coordinate transformations
+        # Return a coord, transformation, or derivation
+        # NOTE: Coordinate searce rules out coordinate transformations
+        if search_coords and (coord := self.coords.get(key, **kwargs)) is not None:
+            return 'coord', coord
         if search_derivations and (func := self._find_derivation(key)):
             return 'derivation', functools.partial(_keep_tracked_attrs(func), self)
         if search_transformations and (tup := self._find_any_transformation(self.data.values(), key)):  # noqa: E501
-            func, data = tup
-            return 'transformation', functools.partial(_keep_tracked_attrs(func), data)
+            return 'transformation', functools.partial(_keep_tracked_attrs(tup[0]), tup[1])  # noqa: E501
 
         # Recursively check if any aliases are valid
         if search_registry:
