@@ -128,13 +128,13 @@ reverse : bool, optional
     Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
 """
 docstring.snippets['avgmean'] = """
-ClimoPy makes an artifical distinction between a `mean` as a naive, unweighted
-average and an `average` as a cell measures-aware, mass-weighted average.
+ClimoPy makes an artifical distinction between the "mean" as a naive, unweighted
+average and the "average" as a cell measures-aware, mass-weighted average.
 """
 docstring.snippets['weighted'] = """
-ClimoPy's mass-weighted operators work with dedicated functions rather than
-`~xarray.core.weighted.Weighted` objects because the selection of mass weights
-depends on the dimension(s) specified by the user.
+This was added as a dedicated accessor function rather than creating a
+custom `~xarray.core.weighted.Weighted` object because the selection of
+mass weights depends on the dimension(s) passed by the user.
 """
 
 # Extrema snippets
@@ -1805,10 +1805,10 @@ class ClimoAccessor(object):
         **indexers_kwargs
     ):
         """
-        Wrap `~xarray.DataArray.interp` to handle units, support indexers aliases,
-        preserve coordinate attributes, units, and perform extrapolation for
-        out-of-range coordinates by default. Also permit interpolating to different
-        points as a function of other coordinates.
+        Call `~xarray.DataArray.interp` with support for units and indexer aliases. Also
+        preserve coordinate attributes, perform extrapolation for out-of-range
+        coordinates by default, and permit interpolating to different points as a
+        function of other coordinates.
 
         Parameters
         ----------
@@ -1828,8 +1828,13 @@ class ClimoAccessor(object):
 
     def isel(self, indexers=None, drop=None, **indexers_kwargs):
         """
-        Wrap `~xarray.DataArray.sel` to handle units. Also permit selecting different
-        points as a function of other coordinates.
+        Call `~xarray.DataArray.isel` with support for units and indexer aliases. Also
+        permit selecting different points as a function of other coordinates.
+
+        Parameters
+        ----------
+        *args, **kwargs
+            Passed to `~xarray.DataArray.isel`.
         """
         indexers, _ = self._parse_indexers(
             indexers, allow_kwargs=False, **indexers_kwargs
@@ -1878,8 +1883,8 @@ class ClimoAccessor(object):
         self, indexers=None, method=None, tolerance=None, drop=False, **indexers_kwargs
     ):
         """
-        Wrap `~xarray.DataArray.sel` to handle units and indexer aliases. Also permit
-        selecting different points as a function of other coordinates.
+        Call `~xarray.DataArray.sel` with support for units and indexer aliases. Also
+        permit selecting different points as a function of other coordinates.
 
         Parameters
         ----------
