@@ -3228,15 +3228,15 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # WARNING: In-place conversion resulted in endless bugs related to
         # ipython %autoreload, was departure from metpy convention, was possibly
         # confusing for users, and not even sure if faster. So abandoned this.
-        data = self.data.copy(deep=True)
+        data = self.data.copy(deep=False)
         if not isinstance(data.data, pint.Quantity) and _is_numeric(data.data):
             if 'units' in data.attrs:
                 data.data = data.data * self.units
+                del data.attrs['units']
             else:
                 warnings._warn_climopy(
                     f'Failed to quantify {data.name=} (units attribute not found).'
                 )
-            data.attrs.pop('units', None)
         return data
 
     def dequantify(self):
@@ -3247,7 +3247,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # WARNING: Try to preserve *order* of units for fussy formatting later on.
         # Avoid default alphabetical sorting by pint.__format__.
-        data = self.data.copy(deep=True)
+        data = self.data.copy(deep=False)
         if isinstance(self.data.data, pint.Quantity):
             data.data = data.data.magnitude
             data.attrs['units'] = encode_units(self.units)
@@ -3278,12 +3278,12 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         if not self._is_quantity:
             raise ValueError('Data should be quantified.')
-        data = self.data.copy(deep=True)
+        data = self.data.copy(deep=False)
         if isinstance(units, str):
             units = parse_units(units)
         args = (context,) if context else ()
         try:
-            data.data = data.data.to(units, *args)
+            data.data = data.data.to(units, *args)  # NOTE: not ito()
         except Exception:
             raise RuntimeError(
                 f'Failed to convert {data.name!r} from current units '
@@ -3298,7 +3298,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # NOTE: assign_coords has issues with multiple DataArray values. See:
         # https://github.com/pydata/xarray/issues/3483
-        data = self.data.copy(deep=True)
+        data = self.data.copy(deep=False)
         data.data = data.data.to_base_units()
         if coords:
             data = data.assign_coords({
@@ -3314,7 +3314,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # NOTE: assign_coords has issues with multiple DataArray values. See:
         # https://github.com/pydata/xarray/issues/3483
-        data = self.data.copy(deep=True)
+        data = self.data.copy(deep=False)
         data.data = data.data.to_compact_units()
         if coords:
             data = data.assign_coords({
@@ -3865,10 +3865,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         converted to `pint.Quantity` using the ``'units'`` attributes. Coordinate bounds
         variables are excluded. Already-quantified data is left alone.
         """
-        return self.data.map(
-            lambda da: da if self._is_bounds(da) else da.climo.quantify(),
-            keep_attrs=True
-        )
+        return self.data.map(lambda d: d if self._is_bounds(d) else d.climo.quantify())
 
     def dequantify(self):
         """
@@ -3876,7 +3873,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         stripped of its units and the units written to the ``'units'`` attributes.
         Already-dequantified data is left alone.
         """
-        return self.data.map(lambda da: da.climo.dequantify(), keep_attrs=True)
+        return self.data.map(lambda d: d.climo.dequantify())
 
     @property
     def vars(self):
