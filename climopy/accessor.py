@@ -1063,9 +1063,9 @@ class ClimoAccessor(object):
             if outer := self._find_this_transformation(idest, dest):  # noqa: E501
                 return lambda da, **kwargs: outer(transformation(da, **kwargs))
 
-    def _iter_variables(self, dataset=False):
+    def _iter_data_vars(self, dataset=False):
         """
-        Iterate over non-coordinate DAtaArrays. If this is a DataArray just yield it.
+        Iterate over non-coordinate DataArrays. If this is a DataArray just yield it.
         """
         data = self.data
         if isinstance(data, xr.DataArray):
@@ -1078,9 +1078,9 @@ class ClimoAccessor(object):
     def _iter_by_indexer_coords(self, func, indexers, **kwargs):
         """
         Apply function `func` (currently `.sel` or `.interp`) to each scalar value
-        in the indexers, then merge along the indexer coordinate axes. This supports
-        arbitrary ND multiple selections. Example usage: Selecting the storm track
-        latitude as a function of some parametric or ensemble member axis.
+        in the indexers, then merge along the indexer coordinate axes. Always preserves
+        coordinate attributes and supports arbitrary ND multiple selections (e.g.,
+        selecting the storm track latitude at every time step).
         """
         # Iterate over non-scalar indexer coordinates
         # NOTE: Input indexers should alredy have been standardized and translated
@@ -1090,7 +1090,7 @@ class ClimoAccessor(object):
         # lev=xr.DataArray([250, 500, 750], coords={'dummy': [10, 20, 30]})
         indexers_fancy = {k: v for k, v in indexers.items() if isinstance(v, xr.DataArray)}  # noqa: E501
         indexers = {k: indexers[k] for k in indexers.keys() - indexers_fancy.keys()}
-        datas = np.empty((1,), dtype='O')
+        datas = np.empty((1,), dtype='O')  # stores xarray objects
         dims = ()
         if indexers_fancy:
             sample = tuple(indexers_fancy.values())[0]
@@ -1110,14 +1110,20 @@ class ClimoAccessor(object):
 
         # Make selections or interpolations
         data = self.data
-        for idx in np.ndindex(datas.shape):  # ignore 'startstop' dimension
+        for idx in np.ndindex(datas.shape):
+            # Call main function
             isel = {k: v for k, v in zip(dims, idx)}
             idata = data.isel(isel, drop=True)
-            indexer = {
-                **{k: v.isel(isel, drop=True) for k, v in indexers_fancy.items()},
-                **indexers,
-            }
-            datas[idx] = getattr(idata, func)(indexer, **kwargs)
+            indexer = indexers.copy()
+            for key, val in indexers_fancy.items():
+                indexer[key] = val.isel(isel, drop=True)
+            datas[idx] = idata = getattr(idata, func)(indexer, **kwargs)
+            # Always preserve attributes
+            # NOTE: This is critical for CF interpretation of coords! Right now
+            # interp drops attrs. See: https://github.com/pydata/xarray/issues/4239
+            for dim, value in indexer.items():
+                if dim in idata.coords:  # wasn't dropped
+                    idata.coords[dim].attrs.update(data.coords[dim].attrs)
 
         # Merge along indexer coordinates, and return to original permution order
         if indexers_fancy:
@@ -1158,44 +1164,50 @@ class ClimoAccessor(object):
         ignore_scalar=False,
         include_scalar=False,
         include_pseudo=False,
+        include_no_coords=False,
         search_transformations=False,
         **kwargs
     ):
         """
         Parse and translate keyword dimension indexers.
         """
-        # NOTE: Currently this only supports dimensions with attached coordinates!
-        # Pretty sure every function that invokes this requires coordinate info
         dims = self.data.dims
         coords = self.data.coords
-        filtered = {}
         indexers = indexers or {}
-        kwargs = {**indexers, **kwargs}
-        for key in tuple(kwargs):
+        indexers.update(kwargs)
+        indexers_filtered = {}
+        for key in tuple(indexers):
+            # Translate indexer name
             dim = key
             if dim in dims and dim not in coords:  # but not coordinates
-                raise RuntimeError(f'Dimension {key!r} is missing coordinate data.')
+                if include_no_coords:
+                    indexers_filtered[dim] = indexers.pop(key)
+                    continue
+                else:
+                    raise RuntimeError(f'Dimension {key!r} is missing coordinate data.')
             try:
                 dim = self._to_native_name(dim)
             except KeyError:
                 pass
+            # Handle salar indexer
             if dim in coords and coords[dim].size == 1:
                 if ignore_scalar:  # used for .sum() and .mean()
-                    del kwargs[key]
+                    del indexers[key]
                     continue
-                if not include_scalar:  # used for .integrate() and .average()
+                elif not include_scalar:  # used for .integrate() and .average()
                     raise RuntimeError(f'Coordinate {key!r} is scalar.')
+            # Validate indexer
             if (
                 dim in coords
                 or include_pseudo and dim in ('area', 'volume')
                 or search_transformations and self._find_any_transformation(coords.values(), dim)  # noqa: E501
             ):
                 # e.g. integral('area') or deriative('meridional_coordinate')
-                filtered[dim] = kwargs.pop(key)
+                indexers_filtered[dim] = indexers.pop(key)
             elif not allow_kwargs:
                 raise ValueError(f'Invalid argument or unknown dimension {key!r}.')
 
-        return filtered, kwargs
+        return indexers_filtered, indexers
 
     def _parse_truncate_args(self, **kwargs):
         """
@@ -1214,8 +1226,10 @@ class ClimoAccessor(object):
             # Interpret dimension and bounds
             # WARNING: Below precludes us from using _[min|max|lim] suffix for other
             # keyword args. Might reconsider but we use "special" suffixes and prefixes
-            # everywhere (e.g. _[lat|strength]) so this is consistent with API.
-            m = re.match(r'\A(.*?)_(min|max|lim|)\Z', key)
+            # everywhere (e.g. _[lat|strength]) so this is consistent with API. Makes
+            # things much easier if we can just detect special suffix without trying
+            # to figure out if the rest of the string matches a dimension yet.
+            m = re.match(r'\A(.*?)_(min|max|lim)\Z', key)
             if not m:
                 continue
             if key not in kwargs:  # happens with e.g. latitude_min=x latitude_max=y
@@ -1231,17 +1245,17 @@ class ClimoAccessor(object):
             # Handle passing e.g. latmin=x latmax=y instead of latlim=z
             loc = kwargs.pop(key)
             if mode == 'max':
-                start = kwargs.pop(dim + 'min', None)
+                start = kwargs.pop(dim + '_min', None)
                 stop = loc
             elif mode == 'min':
                 start = loc
-                stop = kwargs.pop(dim + 'max', None)
+                stop = kwargs.pop(dim + '_max', None)
             else:
                 start, stop = loc
 
             # Get 'variable-spec' bounds and translate units
             # Then add to the list of starts and stops
-            dims.append(dim)
+            dims.append(dim + '_lim')
             for bound, mode in zip((start, stop), ('min', 'max')):
                 # Translate 'parameter' bounds
                 if isinstance(bound, (str, tuple)):  # 'name' or ('name', {})
@@ -1250,7 +1264,8 @@ class ClimoAccessor(object):
                     bound = data.climo.get(bound)  # may add a 'track' dimension
                 else:
                     if bound is None:
-                        bound = getattr(data.climo.coords[dim].climo.magnitude, mode)()
+                        bound = getattr(data.coords[dim], mode)()
+                        # bound = getattr(data.climo.coords[dim].climo.magnitude, mode)()  # noqa: E501
                     bound = np.atleast_1d(bound)
                     if bound.ndim > 1:
                         raise ValueError('Too many dimensions for bounds {bound!r}.')
@@ -1473,7 +1488,7 @@ class ClimoAccessor(object):
             if da.name is None:
                 raise ValueError('Input cell measures must have names.')
             data.coords[da.name] = da.climo.dequantify()
-            for obj in data.climo._iter_variables(dataset=True):
+            for obj in data.climo._iter_data_vars(dataset=True):
                 if isinstance(self.data, xr.Dataset) and self._is_bounds(obj):
                     continue
                 obj.attrs['cell_measures'] = self._build_cf_attr(
@@ -1667,7 +1682,7 @@ class ClimoAccessor(object):
             # loc = coord[np.abs(coord) == 90 * ureg.deg]
             coord = data.coords[lat]
             loc = coord[np.abs(coord) == 90]
-            for da in data.climo._iter_variables():
+            for da in data.climo._iter_data_vars():
                 if da.name in zero and lat in da.coords:
                     # da.climo.loc[{lat: loc}] = 0
                     da.loc[{lat: loc}] = 0
@@ -1702,7 +1717,9 @@ class ClimoAccessor(object):
         Simple average or summation.
         """
         data = self.truncate(**kwargs)
-        dims = data.dims if dim is None else self._parse_dims(dim, ignore_scalar=True)
+        dims = data.dims if dim is None else self._parse_dims(
+            dim, include_scalar=True, include_no_coords=True,
+        )
         if weight is not None:
             data = data.weighted(weight.climo.truncate(**kwargs))
         data = getattr(data, method)(dims, skipna=skipna, keep_attrs=True)
@@ -1719,8 +1736,11 @@ class ClimoAccessor(object):
     def sum(self, dim=None, skipna=None, weight=None, **kwargs):
         return self._mean_or_sum('sum', dim, **kwargs)
 
-    @_while_dequantified
-    def interp(self, indexers=None, method='linear', assume_sorted=False, **kwargs):
+    # @_while_dequantified
+    def interp(
+        self, indexers=None, method='linear', assume_sorted=False, kwargs=None,
+        **indexers_kwargs
+    ):
         """
         Wrap `~xarray.DataArray.interp` to handle units, preserve coordinate attributes,
         units, and perform extrapolation for out-of-range coordinates by default. Also
@@ -1731,13 +1751,15 @@ class ClimoAccessor(object):
         *args, **kwargs
             Passed to `~xarray.DataArray.interp`.
         """
-        indexers = indexers or {}
-        indexers.update(kwargs)
-        indexers, _ = self._parse_indexers(indexers)
+        kwargs = kwargs or {}
+        kwargs.setdefault('fill_value', 'extrapolate')
+        indexers, _ = self._parse_indexers(
+            indexers, allow_kwargs=False, **indexers_kwargs
+        )
         indexers = self._reassign_quantity_indexer(indexers)
         return self._iter_by_indexer_coords(
             'interp', indexers, method=method, assume_sorted=assume_sorted,
-            kwargs={'fill_value': 'extrapolate'},
+            kwargs=kwargs,
         )
 
     def replace_coords(self, indexers=None, **kwargs):
@@ -1778,7 +1800,10 @@ class ClimoAccessor(object):
             indexers_new[name] = coord
         return self.data.assign_coords(indexers_new)
 
-    def sel(self, indexers=None, method=None, tolerance=None, drop=False, **kwargs):
+    def sel(
+        self, indexers=None, method=None, tolerance=None, drop=False,
+        **indexers_kwargs
+    ):
         """
         Wrap `~xarray.DataArray.sel` to handle units. Also permit selecting different
         points as a function of other coordinates.
@@ -1788,9 +1813,9 @@ class ClimoAccessor(object):
         *args, **kwargs
             Passed to `~xarray.DataArray.sel`.
         """
-        indexers = indexers or {}
-        indexers.update(kwargs)
-        indexers, _ = self._parse_indexers(indexers)
+        indexers, _ = self._parse_indexers(
+            indexers, allow_kwargs=False, **indexers_kwargs
+        )
         indexers = self._reassign_quantity_indexer(indexers)
         return self._iter_by_indexer_coords(
             'sel', indexers, method=method, tolerance=tolerance, drop=drop
@@ -1861,7 +1886,7 @@ class ClimoAccessor(object):
         data.attrs.update(attrs)
         return data
 
-    def sel_pair(self, key, drop=True):
+    def sel_pair(self, key):
         """
         Return selection from pseudo "pair" or "parameter" axis. This searches for
         "parameter" axes as any axis whose associated coordinate
@@ -1878,18 +1903,17 @@ class ClimoAccessor(object):
             `~.cfvariable.CFVariable` names are modified by adding `prefix` and `suffix`
             attributes to the data that get passed to the
             `~.cfvariable.CFVariable.update` method.
-        drop : bool, optional
-            Whether to drop the coordinates when making selections or keep them
-            as scalar values. Default is ``True``.
         """
         key = str(key)
         if key not in ('1', '2', 'anom'):
             raise ValueError(f'Invalid pair spec {key!r}.')
 
-        # Find all parametric axes
+        # Find all non-reduced parametric axes
         data = self.data
         dims_param = {}
         for dim, coord in data.coords.items():
+            if coord.size == 1:
+                continue
             try:
                 reference = coord.climo.cfvariable.reference
             except AttributeError:
@@ -1923,10 +1947,10 @@ class ClimoAccessor(object):
         modify = modify and not re.search('(force|forcing)', data.name or '')
         if key == '1':
             prefix = 'unforced'
-            data = data.sel(sels[0], drop=drop)
+            data = data.sel(sels[0])
         elif key == '2':
             prefix = 'forced'
-            data = data.sel(sels[1], drop=drop)
+            data = data.sel(sels[1])
         else:
             suffix = 'response'
             with xr.set_options(keep_attrs=True):
@@ -2139,6 +2163,7 @@ class ClimoAccessor(object):
         # Iterate through truncations
         # NOTE: The below uses uses _iter_by_indexer_coords
         for dim, bound in bounds.items():
+            dim = re.sub(r'_lim\Z', '', dim)
             lo, hi = bound.values.squeeze()  # pull out of array
             coord = data.coords[dim]  # must be unquantified
             attrs = coord.attrs.copy()
@@ -2229,7 +2254,7 @@ class ClimoAccessor(object):
         """
         methods = methods or {}
         methods.update(kwargs)
-        for da in self._iter_variables():
+        for da in self._iter_data_vars():
             if isinstance(self.data, xr.Dataset) and self._is_bounds(da):
                 continue
             da.attrs['cell_methods'] = self._build_cf_attr(
@@ -2494,7 +2519,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         # Parse truncation args
         trunc, kwargs = (dataset or data).climo._parse_truncate_args(**kwargs)
-        if trunc.keys() - indexers.keys():
+        if tuple(re.sub(r'_lim\Z', '', key) for key in trunc) - indexers.keys():
             raise ValueError(
                 f'One of truncation dims {tuple(trunc)!r} missing from '
                 f'list of reduction dims {tuple(indexers)!r} for var {data.name!r}.'
@@ -3181,7 +3206,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 raise NotImplementedError
             else:
                 raise ValueError(f'Unknown mask preset {mask!r}.')
-            data = data.copy(deep=True)
             data[~mask] = np.nan * getattr(data.data, 'units', 1)
         return data
 
