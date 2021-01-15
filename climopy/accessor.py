@@ -212,13 +212,13 @@ dim : str
 """
 
 # Variable derivations
-docstring.snippets['dest'] = """
+docstring.snippets['dest'] = r"""
     The destination variable name, a tuple of valid destination names, or an
-    `re.compile`'d pattern matching a set of valid destination names. In the latter
-    two cases, the function must accept a `name` keyword argument. This is useful
-    if you want to register a single function capable of deriving multiple
-    related variables (e.g., registering the regex ``r'\\Ad.*dy\\Z'``
-    to return the meridional gradient of an arbitrary variable).
+    `re.compile`'d pattern matching a set of valid destination names. In the
+    latter two cases, the function must accept a `name` keyword argument. This is
+    useful if you want to register a single function capable of deriving multiple
+    related variables (e.g., registering the regex ``r'\Ad.*dy\Z'`` to return the
+    meridional gradient of an arbitrary variable).
 """
 
 
@@ -279,7 +279,7 @@ def _expand_indexer(key, ndim):
     return tuple(new_key)
 
 
-def _manage_reduced_coords(func):
+def _manage_coord_reductions(func):
     """
     Add back singleton NaN dummy coordinates after some dimension reduction, so that
     we can continue relating dimension names to CF axis and coordinate names, and
@@ -1776,7 +1776,7 @@ class ClimoAccessor(object):
         """
         # NOTE: Unweighted mean or sum along scalar coordinate conceptually is an
         # identity operation, so ignore them. This is also important when running
-        # integrate() and _manage_reduced_coords adjusted the cell methods.
+        # integrate() and _manage_coord_reductions adjusted the cell methods.
         data = self.truncate(**kwargs)
         dims = data.dims if dim is None else self._parse_dims(
             dim, ignore_scalar=True, include_no_coords=True,
@@ -1787,12 +1787,12 @@ class ClimoAccessor(object):
         data.climo.update_cell_methods({dims: method})
         return data
 
-    @_manage_reduced_coords  # need access to cell_measures, so place before keep_attrs
+    @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
     @docstring.add_template('meansum', operator='mean', notes='avgmean')
     def mean(self, dim=None, skipna=None, weight=None, **kwargs):
         return self._mean_or_sum('mean', dim, **kwargs)
 
-    @_manage_reduced_coords  # need access to cell_measures, so place before keep_attrs
+    @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
     @docstring.add_template('meansum', operator='sum')
     def sum(self, dim=None, skipna=None, weight=None, **kwargs):
         return self._mean_or_sum('sum', dim, **kwargs)
@@ -2678,10 +2678,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         if data.sizes['track'] == 1:
             data = data.isel(track=0, drop=True)
 
-        # Add back name and attributes
-        # NOTE: Climopy DataArray wrappers may rename output dimension to coordinate
-        # name e.g. with 'argmax'. Here we keep names the same.
-        data.name = name
+        # Possibly add back name
+        # TODO: Figure out which functions remove the name!
+        if data.name is None:
+            data.name = name
         return data
 
     @_while_quantified
@@ -2854,7 +2854,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         res = res.where(res != 0.0)  # 0.0 --> NaN; works with pint.Quantity data
         return res
 
-    @_manage_reduced_coords  # need access to cell_measures, so place before keep_attrs
+    @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
     @docstring.add_template(
         'avgint', operator='integral', action='integration', notes='weighted'
     )
@@ -2862,7 +2862,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(integral=True, cumulative=False)
         return self._integrate_or_average(dim, **kwargs)
 
-    @_manage_reduced_coords  # need access to cell_measures, so place before keep_attrs
+    @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
     @docstring.add_template(
         'avgint', operator='average', action='averaging', notes=('avgmean', 'weighted')
     )
@@ -3160,6 +3160,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         values.attrs.update(data.attrs)
         if arg:
             locs.coords[data.name] = values
+            locs.attrs['parent_name'] = data.name
             data = locs
         else:
             values.coords[coord.name] = locs
@@ -3168,55 +3169,55 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         return data
 
-    # @_manage_reduced_coords
+    # @_manage_coord_reductions
     @docstring.add_template('minmax', extrema='mimima', prefix='')
     def min(self, dim=None, **kwargs):
         kwargs.update(which='min', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
 
-    # @_manage_reduced_coords
+    # @_manage_coord_reductions
     @docstring.add_template('minmax', extrema='maxima', prefix='')
     def max(self, dim=None, **kwargs):
         kwargs.update(which='max', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
 
-    # @_manage_reduced_coords
+    # @_manage_coord_reductions
     @docstring.add_template('absminmax', extrema='minima', prefix='')
     def absmin(self, dim=None, **kwargs):
         kwargs.update(which='min', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
 
-    # @_manage_reduced_coords
+    # @_manage_coord_reductions
     @docstring.add_template('absminmax', extrema='maxima', prefix='')
     def absmax(self, dim=None, **kwargs):
         kwargs.update(which='max', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
 
-    # @_manage_reduced_coords
+    # @_manage_coord_reductions
     @docstring.add_template('minmax', extrema='minima', prefix='coordinates of ')
     def argmin(self, dim=None, **kwargs):
         kwargs.update(which='min', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
-    # @_manage_reduced_coords
+    # @_manage_coord_reductions
     @docstring.add_template('minmax', extrema='maxima', prefix='coordinates of ')
     def argmax(self, dim=None, **kwargs):
         kwargs.update(which='max', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
-    # @_manage_reduced_coords
+    # @_manage_coord_reductions
     @docstring.add_template('absminmax', extrema='minima', prefix='coordinates of ')
     def absargmin(self, dim=None, **kwargs):
         kwargs.update(which='min', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
 
-    # @_manage_reduced_coords
+    # @_manage_coord_reductions
     @docstring.add_template('absminmax', extrema='maxima', prefix='coordinates of ')
     def absargmax(self, dim=None, **kwargs):
         kwargs.update(which='max', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
 
-    # @_manage_reduced_coords
+    # @_manage_coord_reductions
     @docstring.add_template('argloc')
     def argloc(self, dim=None, value=0, **kwargs):
         kwargs.update(which='zero', abs=False, arg=True)
@@ -3565,32 +3566,20 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     kwargs[coord_cf] = units * da.item()
                 elif any(coord in dims for dims, _ in methods):
                     kwargs[coord_cf] = tuple(m for dims, m in methods if coord in dims)
-
-            # Find if coordinates refer to *actual* variable name, and the
-            # DataArray name is a coordinate. This happens e.g. with 'argmax'.
+            # Find if coordinates refer to *actual* variable name, and the DataArray
+            # name is a coordinate. This happens e.g. with 'argmax'. Also try to
+            # avoid e.g. name='ehf' combined with long_name='latitude'.
             coord_cf = self._to_cf_coord_name(name)
             if coord_cf in kwargs:  # variable name is referenced in cell_methods!
-                # Find 'actual' variable
-                actual = None
-                method = kwargs[coord_cf]
-                measures = data.cf.cell_measures
-                for coord, da in data.coords.items():
-                    if any(coord in names for names in measures.values()):
-                        continue
-                    if da.sizes != data.sizes:
-                        continue
-                    if actual is not None:
-                        raise RuntimeError(f'Multiple candidates for {method!r} var.')
-                    actual = da
-                if actual is None:
-                    raise RuntimeError(f'Could not find actual variable for {name!r}.')
-                # Update relevant attributes
-                # NOTE: Trying to avoid situation where we have something like
-                # name='ehf' with long_name='latitude'.
-                name = actual.name
+                if 'parent_name' not in data.attrs:
+                    raise RuntimeError(f'Unknown parent name for coordinate {name!r}.')
+                name = data.attrs['parent_name']
+                if name not in data.coords:
+                    raise RuntimeError(f'Parent coordinate {name!r} not found.')
+                parent = data.coords[name]
                 for attr in ('long_name', 'short_name', 'standard_name'):
-                    if attr in actual.attrs:
-                        kwargs[attr] = actual.attrs[attr]
+                    if attr in parent.attrs:
+                        kwargs[attr] = parent.attrs[attr]
                     else:
                         kwargs.pop(attr, None)
 
@@ -3783,7 +3772,8 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
         # Add units and cell measures
         data = da.climo.quantify()  # should already be quantified, but just in case
-        data.name = data.name or 'unknown'  # just in case
+        if data.name is None:
+            data.name = 'unknown'  # just in case
         if type_ != 'coord' and add_cell_measures:
             data = data.climo.add_cell_measures(dataset=self.data)
             stopwatch('cell measures')
