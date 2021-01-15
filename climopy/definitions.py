@@ -74,7 +74,7 @@ with warnings.catch_warnings():
         # recalculation of exact same measures.
         data = const.a * self.coords['cosine_latitude'] * self.coords['longitude_delta']  # noqa: E501
         data = data.climo.to_units('km')
-        data.name = 'cell_width'
+        data.name = 'cell_width'  # avoids calculation of other measures
         return data.climo.add_cell_measures(width=data)
 
     @register_derivation('cell_depth')
@@ -105,20 +105,21 @@ with warnings.catch_warnings():
             data = self.vars['pseudo_density'] * self.coords['vertical_delta']
         elif vertical == 'pressure':
             ps = None
-            data = self.coords['vertical_delta']
+            data = self.coords['vertical_bnds']
             for candidate in ('surface_air_pressure', 'air_pressure_at_mean_sea_level'):
                 if candidate not in self.vars:
                     continue
-                ps = self.vars[candidate]
-                loc = {'vertical': np.max(self.coords['vertical'].data)}
-                bott = ps - self.coords['vertical_bot'].climo.sel(loc)
+                ps = 0 * data + self.vars[candidate]
                 data = data + 0 * ps  # conform shape
-                data.climo.loc[loc] = bott
+                data = data.transpose(*ps.dims)
+                mask = data > ps
+                data.data[mask] = ps.data[mask]
             if ps is None:
                 _warn_climopy(
                     'Surface pressure not found. '
                     'Vertical mass weighting will be inaccurate in lower levels.'
                 )
+            data = data.diff('bnds').isel(bnds=0)
             data = data / const.g
         elif vertical == 'hybrid':
             raise NotImplementedError(
@@ -129,7 +130,7 @@ with warnings.catch_warnings():
                 f'Unknown cell height for vertical type {vertical!r}.'
             )
         data = data.climo.to_units('kg m^-2')
-        data.data[data.data < 0] = 0 * ureg.kg / ureg.m ** 2
-        data = data.fillna(0)
+        data.data[data.data < 0] = ureg.Quantity(0, 'kg m^-2')
+        data = data.fillna(0)  # seems to work without units in the 'fill' part
         data.name = 'cell_height'
         return data.climo.add_cell_measures(height=data)

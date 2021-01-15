@@ -194,7 +194,7 @@ class CFVariable(object):
     def update(
         self,
         long_name=None, standard_units=None, short_name=None, standard_name=None, *,
-        prefix=None, suffix=None, prefix_both=None, suffix_both=None,
+        prefix_long=None, suffix_long=None, prefix_both=None, suffix_both=None,
         symbol=None, sigfig=1, reference=None, colormap=None,
         axis_scale=None, axis_reverse=None, axis_formatter=None,
     ):
@@ -225,7 +225,7 @@ class CFVariable(object):
             the non-alphanumeric characters in `long_name` with underscores. Since
             the `standard_name` is supposed to be a *unique* variable identifier,
             it is never inherited from parent variables.
-        prefix, suffix : str, optional
+        prefix_long, suffix_long : str, optional
             Prefix and suffix to be added to the long name. So far this is just used
             with `~.accessor.ClimoAccessor.sel_pair`.
         prefix_both, suffix_both : str, optional
@@ -257,11 +257,11 @@ class CFVariable(object):
         # Parse input names and apply prefixes and suffixes
         # NOTE: Important to add prefixes and suffixes to long_name *after* using
         # as default short_name. Common use case is to create "child" variables with
-        # identical short_name using e.g. vreg.define('var', prefix='prefix')
+        # identical short_name using e.g. vreg.define('var', prefix_long='prefix')
         standard_units = self._inherit('standard_units', standard_units)
         long_name = self._inherit('long_name', long_name)
         short_name = self._inherit('short_name', short_name, default=long_name)
-        long_name = self._mod_name(long_name, prefix or prefix_both, suffix or suffix_both)  # noqa: E501
+        long_name = self._mod_name(long_name, prefix_long or prefix_both, suffix_long or suffix_both)  # noqa: E501
         short_name = self._mod_name(short_name, prefix_both, suffix_both)
         standard_name = self._inherit('standard_name', standard_name)
         if standard_name is None and long_name is not None:
@@ -598,15 +598,17 @@ class CFVariableRegistry(object):
                 time.add(method)
 
         # Get variable
-        kwmod = {
-            key: kwargs.pop(key) for key in tuple(kwargs)
-            if 'prefix' in key or 'suffix' in key
-        }
         var = self._get_item(name)
         if var.name[0] == 'c' and 'convergence' in var.long_name and _pop_integral(latitude):  # noqa: E501
             var = self._get_item(name[1:])  # Green's theorem; e.g. cehf --> ehf
         var = copy.copy(var)
         var._accessor = accessor
+
+        # Apply basic overrides
+        kwmod = {
+            key: kwargs.pop(key) for key in tuple(kwargs)
+            if key in ('prefix_long', 'suffix_long', 'prefix_both', 'suffix_both')
+        }
         var.update(**kwargs)
 
         # Handle unit changes due to integration
@@ -660,14 +662,14 @@ class CFVariableRegistry(object):
                 standard_units='deg_north',
                 symbol=fr'\phi_{{{var.symbol}}}',
                 axis_formatter='deg',
-                suffix=f'{args.pop()[3:]} latitude',  # use the first one
-                # suffix='latitude',
+                suffix_long=f'{args.pop()[3:]} latitude',  # use the first one
+                # suffix_long='latitude',
             )
 
         # Centroid reduction
         if 'centroid' in latitude:
             var.update(
-                suffix='centroid',
+                suffix_long='centroid',
                 short_name='centroid',
                 standard_units='km',
                 axis_formatter=False,
@@ -676,7 +678,7 @@ class CFVariableRegistry(object):
         # Time dimension reductions of variable in question
         if 'timescale' in time:
             var.update(  # modify existing
-                suffix='e-folding timescale',
+                suffix_long='e-folding timescale',
                 short_name='timesale',
                 standard_units='day',
                 symbol=fr'T_e({var.symbol})',
@@ -684,7 +686,7 @@ class CFVariableRegistry(object):
             )
         elif 'autocorr' in time:
             var.update(  # modify existing
-                suffix='autocorrelation',
+                suffix_long='autocorrelation',
                 short_name='autocorrelation',
                 standard_units='',
                 symbol=fr'\rho({var.symbol})',
@@ -692,7 +694,7 @@ class CFVariableRegistry(object):
             )
         elif 'hist' in time:
             var.update(
-                suffix='histogram',
+                suffix_long='histogram',
                 short_name='count',
                 standard_units='',
                 axis_formatter=False,
@@ -706,7 +708,7 @@ class CFVariableRegistry(object):
             if isinstance(method, (pint.Quantity, numbers.Number))
         ]
         if coords:
-            var.update(suffix='at ' + ', '.join(coords))
+            var.update(suffix_long='at ' + ', '.join(coords))
         if any('normalized' in dim for dim in (longitude, latitude, vertical, time)):
             var.update(standard_units='')
 

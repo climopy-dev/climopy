@@ -59,6 +59,9 @@ if hasattr(_cf_accessor, '_CELL_MEASURES'):
     _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
 else:
     warnings._warn_climopy('cf_xarray API changed. Cannot update cell measures.')
+CFVARIABLE_ARGS = (
+    'long_name', 'short_name', 'standard_name', 'prefix_long', 'suffix_long'
+)
 
 # Expand regexes for automatic coordinate detection with standardize_coords
 if hasattr(_cf_accessor, 'regex'):
@@ -74,9 +77,6 @@ if hasattr(_cf_accessor, 'regex'):
     _cf_accessor.regex['T'] = _cf_accessor.regex['time']
 else:
     warnings._warn_climopy('cf_xarray API changed. Cannot update regexes.')
-
-# Internal global variables
-CFVARIABLE_ARGS = ('long_name', 'short_name', 'standard_name', 'prefix', 'suffix')
 
 # Mean and average snippets
 docstring.templates['meansum'] = """
@@ -603,7 +603,7 @@ class _CoordsQuantified(object):
         Return the coordinates, transformation function, and flag.
         """
         # Interpret bounds specification
-        m = re.match(r'\A(.*?)(?:_(top|bot(?:tom)?|del(?:ta)?))?\Z', key)
+        m = re.match(r'\A(.*?)(?:_(top|bot(?:tom)?|del(?:ta)?|b(?:ou)?nds))?\Z', key)
         key, flag = m.groups()  # fix bounds flag
         flag = flag or ''
 
@@ -658,27 +658,28 @@ class _CoordsQuantified(object):
         """
         Return the coordinates, accounting for `CF` and `CFVariableRegistry` names.
         """
-        # Select bounds
+        # Select or return bounds
         # WARNING: Get bounds before doing transformation because halfway points in
         # actual lattice may not equal halfway points after nonlinear transformation
         dest = coord
         suffix = ''
         if flag:
             bnds = self._get_bounds(coord, **kwargs)
-            if bnds is not None:
-                if flag[:3] in ('bot', 'del'):
-                    dest = bottom = bnds[..., 0]  # NOTE: scalar coord bnds could be 1D
-                    suffix = ' bottom edge'
-                if flag[:3] in ('top', 'del'):
-                    dest = top = bnds[..., 1]
-                    suffix = ' top edge'
-                if flag[:3] == 'del':
-                    # NOTE: If top and bottom are cftime or native python datetime,
-                    # xarray coerces array of resulting native python timedeltas to a
-                    # numpy timedelta64 array (not the case with numpy arrays). See:
-                    # http://xarray.pydata.org/en/stable/time-series.html#creating-datetime64-data
-                    dest = np.abs(top - bottom)  # e.g. lev --> z0, order reversed
-                    suffix = ' thickness'
+            if flag in ('bnds', 'bounds'):
+                return bnds.climo.quantify()
+            if flag[:3] in ('bot', 'del'):
+                dest = bottom = bnds[..., 0]  # NOTE: scalar coord bnds could be 1D
+                suffix = ' bottom edge'
+            if flag[:3] in ('top', 'del'):
+                dest = top = bnds[..., 1]
+                suffix = ' top edge'
+            if flag[:3] == 'del':
+                # NOTE: If top and bottom are cftime or native python datetime,
+                # xarray coerces array of resulting native python timedeltas to a
+                # numpy timedelta64 array (not the case with numpy arrays). See:
+                # http://xarray.pydata.org/en/stable/time-series.html#creating-datetime64-data
+                dest = np.abs(top - bottom)  # e.g. lev --> z0, order reversed
+                suffix = ' thickness'
 
         # Build quantified copy of coordinate array and take transformation
         # NOTE: coord.copy() and coord.copy(data=data) both fail, have to make
@@ -1216,6 +1217,7 @@ class ClimoAccessor(object):
         dims = self.data.dims
         coords = self.data.coords
         indexers = indexers or {}
+        indexers = indexers.copy()
         indexers.update(kwargs)
         indexers_filtered = {}
         for key in tuple(indexers):
@@ -1803,9 +1805,10 @@ class ClimoAccessor(object):
         **indexers_kwargs
     ):
         """
-        Wrap `~xarray.DataArray.interp` to handle units, preserve coordinate attributes,
-        units, and perform extrapolation for out-of-range coordinates by default. Also
-        permit interpolating to different points as a function of other coordinates.
+        Wrap `~xarray.DataArray.interp` to handle units, support indexers aliases,
+        preserve coordinate attributes, units, and perform extrapolation for
+        out-of-range coordinates by default. Also permit interpolating to different
+        points as a function of other coordinates.
 
         Parameters
         ----------
@@ -1822,6 +1825,16 @@ class ClimoAccessor(object):
             'interp', indexers, method=method, assume_sorted=assume_sorted,
             kwargs=kwargs,
         )
+
+    def isel(self, indexers=None, drop=None, **indexers_kwargs):
+        """
+        Wrap `~xarray.DataArray.sel` to handle units. Also permit selecting different
+        points as a function of other coordinates.
+        """
+        indexers, _ = self._parse_indexers(
+            indexers, allow_kwargs=False, **indexers_kwargs
+        )
+        return self._iter_by_indexer_coords('isel', indexers, drop=drop)
 
     def replace_coords(self, indexers=None, **kwargs):
         """
@@ -1862,12 +1875,11 @@ class ClimoAccessor(object):
         return self.data.assign_coords(indexers_new)
 
     def sel(
-        self, indexers=None, method=None, tolerance=None, drop=False,
-        **indexers_kwargs
+        self, indexers=None, method=None, tolerance=None, drop=False, **indexers_kwargs
     ):
         """
-        Wrap `~xarray.DataArray.sel` to handle units. Also permit selecting different
-        points as a function of other coordinates.
+        Wrap `~xarray.DataArray.sel` to handle units and indexer aliases. Also permit
+        selecting different points as a function of other coordinates.
 
         Parameters
         ----------
@@ -2003,27 +2015,35 @@ class ClimoAccessor(object):
             raise ValueError('No parameter dimensions found.')
 
         # Make selection and repair cfvariable
-        # TODO: Standardize prefix and suffix
+        # NOTE: We are careful here to track parent_name variables found in
+        # coordinates, i.e. variables associated with _find_extrema.
         prefix = suffix = None
         modify = isinstance(data, xr.DataArray)
         modify = modify and not re.search('(force|forcing)', data.name or '')
         if key == '1':
             prefix = 'unforced'
-            data = data.sel(sels[0])
+            result = data.sel(sels[0])
         elif key == '2':
             prefix = 'forced'
-            data = data.sel(sels[1])
+            result = data.sel(sels[1])
         else:
             suffix = 'response'
             with xr.set_options(keep_attrs=True):
-                data = data.climo.sel(sels[1]) - data.climo.sel(sels[0])
-        attrs = data.attrs
-        if prefix and modify:
-            attrs['prefix'] = ' '.join(filter(None, (prefix, attrs.get('prefix'))))
-        if suffix and modify:
-            attrs['suffix'] = ' '.join(filter(None, (attrs.get('suffix'), suffix)))
+                name = data.attrs.get('parent_name', None)
+                result = data.climo.sel(sels[1]) - data.climo.sel(sels[0])
+                if name and name in data.coords:
+                    parent = data.coords[name]
+                    result.coords[name] = parent.climo.sel(sels[1]) - parent.climo.sel(sels[0])  # noqa: E501
 
-        return data
+        # Add prefixes and suffixes
+        attrs = result.attrs
+        combine = lambda *args: ' '.join(filter(None, args))  # noqa: E731
+        if prefix and modify:
+            attrs['long_prefix'] = combine(prefix, attrs.get('long_prefix'))
+        if suffix and modify:
+            attrs['long_suffix'] = combine(attrs.get('long_suffix'), suffix)
+
+        return result
 
     def sel_time(self, date=None, **kwargs):
         """
@@ -2335,7 +2355,8 @@ class ClimoAccessor(object):
 
         The coordinate top boundaries, bottom boundaries, or thicknesses can be returned
         by appending the key with ``_top``, ``_bot``, or ``_del`` (or ``_delta``),
-        respectively. If explicit boundary variables do not exist, boundaries are
+        respectively, or the N x 2 bounds array can be returned by apppending ``_bnds``
+        (or ``_bounds``). If explicit boundary variables do not exist, boundaries are
         inferred by assuming datetime-like coordinates represent end-points of temporal
         cells and numeric coordinates represent center-points of spatial cells (i.e.,
         numeric coordinate bounds are found halfway between the coordinates).
@@ -3874,11 +3895,11 @@ class ClimoDatasetAccessor(ClimoAccessor):
             The variable name. The following prefix and suffix shorthands
             are supported:
 
-            * Prepend ``abs_`` to return the absolute value of the result.
-            * Append ``_lat`` or ``_strength`` to return vertically and zonally
+            * Append ``_latitude`` or ``_strength`` to return vertically and zonally
               integrated or maximum energy and momentum budget terms.
-            * Append ``_1``, ``_2``, or ``_diff`` to make a selection or take an
+            * Append ``_1``, ``_2``, or ``_anomaly`` to make a selection or take an
               anomaly pair difference using `~ClimoDatasetAccessor.sel_pair`.
+            * Prepend ``abs_`` to return the absolute value of the result.
 
             You can also pass a 2-tuple to return the difference between two variables.
             And all names can be replaced with 2-tuples of the form ('name', kwargs)
@@ -4079,6 +4100,7 @@ def register_derivation(spec, /):
             return data
 
         DERIVATIONS[spec] = _wrapper
+        return _wrapper
 
     return _decorator
 
@@ -4125,5 +4147,6 @@ def register_transformation(src, dest, /):
             return data
 
         TRANSFORMATIONS[(src, dest)] = _wrapper
+        return _wrapper
 
     return _decorator
