@@ -369,14 +369,29 @@ def _while_quantified(func):
     """
     @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
-        isquantity = self._is_quantity
-        if not isquantity:
-            self = self.quantify().climo
-        if not self._is_quantity:
-            raise RuntimeError('Failed to quantify data.')  # e.g. if no units attribute
-        result = func(self, *args, **kwargs)
-        if not isquantity:
+        # Dequantify
+        data = self.data
+        if isinstance(data, xr.Dataset):
+            data = data.copy(deep=False)
+            dequantify = set()
+            for da in data.values():
+                if not da.climo._is_quantity and not self._is_bounds(da):
+                    da.climo._quantify()
+                    dequantify.add(da.name)
+        elif not self._is_quantity:
+            data = data.climo.quantify()
+
+        # Main functoin
+        result = func(data.climo, *args, **kwargs)
+
+        # Requantify
+        if isinstance(data, xr.Dataset):
+            result = result.copy(deep=False)
+            for name in dequantify:
+                result[name].climo._dequantify()
+        elif not self._is_quantity:
             result = result.climo.dequantify()
+
         return result
 
     return _wrapper
@@ -384,17 +399,37 @@ def _while_quantified(func):
 
 def _while_dequantified(func):
     """
-    Wrapper that temporarily dequantifies the data. Works with `LocIndexer` and
-    `ClimoDataArrayAccessor`.
+    Wrapper that temporarily dequantifies the data.
     """
     @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
-        isquantity = self._is_quantity
-        if isquantity:
-            self = self.dequantify().climo
-        result = func(self, *args, **kwargs)
-        if isquantity:
-            result = result.climo.quantify()
+        # Dequantify
+        data = self.data
+        if isinstance(data, xr.Dataset):
+            data = data.copy(deep=False)
+            quantify = {}
+            for da in data.values():
+                if da.climo._is_quantity:
+                    quantify[da.name] = encode_units(da.data.units)
+                    da.climo._dequantify()
+        elif self._is_quantity:
+            units = encode_units(data.data.units)
+            data = data.climo.dequantify()
+
+        # Main functoin
+        result = func(data.climo, *args, **kwargs)
+
+        # Requantify
+        if isinstance(data, xr.Dataset):
+            result = result.copy(deep=False)
+            for name, units in quantify.items():
+                result[name].attrs.setdefault('units', units)
+                result[name].climo._quantify()
+        elif self._is_quantity:
+            result = result.copy(deep=False)
+            result.attrs.setdefault('units', units)
+            result.climo._quantify()
+
         return result
 
     return _wrapper
@@ -1736,7 +1771,7 @@ class ClimoAccessor(object):
     def sum(self, dim=None, skipna=None, weight=None, **kwargs):
         return self._mean_or_sum('sum', dim, **kwargs)
 
-    # @_while_dequantified
+    @_while_dequantified
     def interp(
         self, indexers=None, method='linear', assume_sorted=False, kwargs=None,
         **indexers_kwargs
@@ -3242,40 +3277,58 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.update_cell_methods({dim: 'slope'})
         return data
 
-    def quantify(self):
+    @_while_quantified
+    @_keep_tracked_attrs
+    def timescale(self, dim, maxlag=None, imaxlag=None, **kwargs):
         """
-        Return a copy of the `xarray.DataArray` with underlying data converted to
-        `pint.Quantity` using the ``'units'`` attribute. If the data is already
-        quantified, nothing is done. If the ``'units'`` attribute is missing, a warning
-        is raised. Units are parsed with `~.unit.parse_units`.
+        Return a best-fit estimate of the autocorrelation timescale.
+
+        Parameters
+        ----------
+        dim : str, optional
+            The dimension.
+        **kwargs
+            Passed to `~.var.rednoisefit`.
         """
-        # WARNING: In-place conversion resulted in endless bugs related to
-        # ipython %autoreload, was departure from metpy convention, was possibly
-        # confusing for users, and not even sure if faster. So abandoned this.
-        data = self.data.copy(deep=False)
-        if not isinstance(data.data, pint.Quantity) and _is_numeric(data.data):
-            if 'units' in data.attrs:
-                data.data = data.data * self.units
-                del data.attrs['units']
-            else:
-                warnings._warn_climopy(
-                    f'Failed to quantify {data.name=} (units attribute not found).'
-                )
+        dim = self._to_native_name(dim)
+        data = self.data
+        time = data.coords[dim]
+        if maxlag is None and imaxlag is None:
+            maxlag = 50.0  # default value is 50 days
+        if dim != 'lag':
+            time, data = var.autocorr(time, data, maxlag=maxlag, imaxlag=imaxlag)
+        data, _, _ = var.rednoisefit(time, data, maxlag=maxlag, imaxlag=imaxlag, **kwargs)  # noqa: E501
+        data.climo.update_cell_methods({dim: 'timescale'})
         return data
 
-    def dequantify(self):
+    @_while_quantified
+    def to_variable(self, dest, standardize=False, **kwargs):
         """
-        Return a copy of the `xarray.DataArray` with underlying data stripped of
-        its units and units written to the ``'units'`` attribute. If the data is already
-        dequantified, nothing is done. Units are written with `~.unit.encode_units`.
+        Transform this variable to another variable using two-way transformations
+        registered with `register_transformation`. Transformations work recursively,
+        i.e. definitions for A --> B and B --> C permit transforming A --> C.
+
+        Parameters
+        ----------
+        dest : str
+            The destination variable.
+        standardize : bool, optional
+            Whether to standardize the units afterward.
+        **kwargs
+            Passed to the transformation function.
         """
-        # WARNING: Try to preserve *order* of units for fussy formatting later on.
-        # Avoid default alphabetical sorting by pint.__format__.
-        data = self.data.copy(deep=False)
-        if isinstance(self.data.data, pint.Quantity):
-            data.data = data.data.magnitude
-            data.attrs['units'] = encode_units(self.units)
-        return data
+        data = self.data
+        if data.name is None:
+            raise RuntimeError('DataArray name is empty. Cannot get transformation.')
+        func = self._find_this_transformation(data, dest)
+        if func is None:
+            raise ValueError(f'Transformation {data.name!r} --> {dest!r} not found.')
+        with xr.set_options(keep_attrs=False):  # ensure invalid attributes are lost
+            param = func(data, **kwargs)
+        param.name = dest
+        if standardize:
+            param = param.climo.to_standard_units()
+        return param
 
     @_while_quantified
     def to_units(self, units, context='climo'):
@@ -3373,58 +3426,61 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             })
         return data
 
-    @_while_quantified
-    def to_variable(self, dest, standardize=False, **kwargs):
+    def quantify(self):
         """
-        Transform this variable to another variable using two-way transformations
-        registered with `register_transformation`. Transformations work recursively,
-        i.e. definitions for A --> B and B --> C permit transforming A --> C.
-
-        Parameters
-        ----------
-        dest : str
-            The destination variable.
-        standardize : bool, optional
-            Whether to standardize the units afterward.
-        **kwargs
-            Passed to the transformation function.
+        Return a copy of the `xarray.DataArray` with underlying data converted to
+        `pint.Quantity` using the ``'units'`` attribute. If the data is already
+        quantified, nothing is done. If the ``'units'`` attribute is missing, a warning
+        is raised. Units are parsed with `~.unit.parse_units`.
         """
-        data = self.data
-        if data.name is None:
-            raise RuntimeError('DataArray name is empty. Cannot get transformation.')
-        func = self._find_this_transformation(data, dest)
-        if func is None:
-            raise ValueError(f'Transformation {data.name!r} --> {dest!r} not found.')
-        with xr.set_options(keep_attrs=False):  # ensure invalid attributes are lost
-            param = func(data, **kwargs)
-        param.name = dest
-        if standardize:
-            param = param.climo.to_standard_units()
-        return param
-
-    @_while_quantified
-    @_keep_tracked_attrs
-    def timescale(self, dim, maxlag=None, imaxlag=None, **kwargs):
-        """
-        Return a best-fit estimate of the autocorrelation timescale.
-
-        Parameters
-        ----------
-        dim : str, optional
-            The dimension.
-        **kwargs
-            Passed to `~.var.rednoisefit`.
-        """
-        dim = self._to_native_name(dim)
-        data = self.data
-        time = data.coords[dim]
-        if maxlag is None and imaxlag is None:
-            maxlag = 50.0  # default value is 50 days
-        if dim != 'lag':
-            time, data = var.autocorr(time, data, maxlag=maxlag, imaxlag=imaxlag)
-        data, _, _ = var.rednoisefit(time, data, maxlag=maxlag, imaxlag=imaxlag, **kwargs)  # noqa: E501
-        data.climo.update_cell_methods({dim: 'timescale'})
+        # WARNING: In-place conversion resulted in endless bugs related to
+        # ipython %autoreload, was departure from metpy convention, was possibly
+        # confusing for users, and not even sure if faster. So abandoned this.
+        data = self.data.copy(deep=False)
+        data.climo._quantify()
         return data
+
+    def dequantify(self):
+        """
+        Return a copy of the `xarray.DataArray` with underlying data stripped of
+        its units and units written to the ``'units'`` attribute. If the data is already
+        dequantified, nothing is done. Units are written with `~.unit.encode_units`.
+        """
+        # WARNING: Try to preserve *order* of units for fussy formatting later on.
+        # Avoid default alphabetical sorting by pint.__format__.
+        data = self.data.copy(deep=False)
+        data.climo._dequantify()
+        return data
+
+    def _quantify(self):
+        """
+        In-place version of `~ClimoDataArrayAccessor.quantify`.
+        """
+        # NOTE: This won't affect shallow DataArray or Dataset copy parents
+        # TODO: Support dask arrays here
+        data = self.data
+        if isinstance(data.data, pint.Quantity) or not _is_numeric(data.data):
+            return
+        if 'units' in data.attrs:
+            data.data = data.data * self.units
+            del data.attrs['units']
+        else:
+            warnings._warn_climopy(
+                f'Failed to quantify {data.name=} (units attribute not found).'
+            )
+
+    def _dequantify(self):
+        """
+        In-place version of `~ClimoDataArrayAccessor.dequantify`.
+        """
+        # NOTE: This won't affect shallow DataArray or Dataset copy parents
+        # TODO: Support dask arrays here
+        data = self.data
+        if not isinstance(data.data, pint.Quantity):
+            return
+        units = data.data.units
+        data.data = data.data.magnitude
+        data.attrs['units'] = encode_units(units)
 
     def _cf_repr(self, brackets=True, maxlength=None, varwidth=None, **kwargs):
         """
