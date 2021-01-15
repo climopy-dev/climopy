@@ -4,11 +4,6 @@ Utilities used internally by climopy.
 """
 from . import array, docstring, quack, warnings  # noqa: F401
 
-# Global constants
-# NOTE: Keep databases here so that autoreload doesn't break everything
-DERIVATIONS = {}
-TRANSFORMATIONS = {}
-
 try:  # print debugging
     from icecream import ic
 except ImportError:  # graceful fallback if IceCream isn't installed

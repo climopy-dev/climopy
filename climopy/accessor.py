@@ -17,19 +17,11 @@ import pint
 import xarray as xr
 from cf_xarray import accessor as _cf_accessor
 
-from . import const, diff, ureg, utils, var
+from . import DERIVATIONS, TRANSFORMATIONS, const, diff, ureg, utils, var
 from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
-from .internals import (
-    DERIVATIONS,
-    TRANSFORMATIONS,
-    _first_unique,
-    _is_numeric,
-    _is_scalar,
-    docstring,
-    warnings,
-)
+from .internals import _first_unique, _is_numeric, _is_scalar, docstring, warnings
 from .unit import encode_units, latex_units, parse_units
 
 __all__ = [

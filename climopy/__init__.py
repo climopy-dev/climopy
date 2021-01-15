@@ -2,9 +2,12 @@
 """
 A python package for climate scientists.
 """
+# Global constants
+# NOTE: Keep databases here so that autoreload doesn't break everything
+DERIVATIONS = {}
+TRANSFORMATIONS = {}
+
 # Import functions to top-level. Recommended syntax for registries is one of:
-# from climopy import const, units, descriptors
-# from climopy import const, ureg, dreg
 # NOTE: Submodules are for organization and should not be accessible by users
 import pkg_resources as _pkg
 from .unit import *  # noqa: F401, F403
