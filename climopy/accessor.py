@@ -21,7 +21,15 @@ from . import const, diff, ureg, utils, var
 from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
-from .internals import _first_unique, _is_numeric, _is_scalar, docstring, warnings
+from .internals import (
+    DERIVATIONS,
+    TRANSFORMATIONS,
+    _first_unique,
+    _is_numeric,
+    _is_scalar,
+    docstring,
+    warnings,
+)
 from .unit import encode_units, latex_units, parse_units
 
 __all__ = [
@@ -77,8 +85,6 @@ else:
 
 # Internal global variables
 CFVARIABLE_ARGS = ('long_name', 'short_name', 'standard_name', 'prefix', 'suffix')
-TRANSFORMATIONS = {}
-DERIVATIONS = {}
 
 # Mean and average snippets
 docstring.templates['meansum'] = """
@@ -523,15 +529,16 @@ class _DataArrayLocIndexerQuantified(object):
             if value.climo._has_units and data.climo._has_units:
                 value = value.climo.to_units(data.climo.units)
             value = value.data
-        elif isinstance(value, pint.Quantity):
+        if isinstance(value, pint.Quantity):
             if not data.climo._has_units:
                 raise ValueError('Cannot assign pint quantities to data with unclear units.')  # noqa: E501
             value = value.to(data.climo.units)
-        if isinstance(value, pint.Quantity) and not data.climo._is_quantity:
-            value = value.magnitude  # we always apply to dequantified data
-        elif not isinstance(value, pint.Quantity) and data.climo._is_quantity:
+            if not data.climo._is_quantity:
+                value = value.magnitude  # apply to dequantified data
+        elif data.climo._is_quantity:
             value = value * self._data.data.units
 
+        value = np.atleast_1d(value)  # fixes assignment of scalar pint quantities
         self._data.loc[key] = value
 
 
@@ -1123,6 +1130,11 @@ class ClimoAccessor(object):
         # NOTE: If coordinates are present on indexers, they must match! For example:
         # lat=xr.DataArray([30, 60, 90], coords={'dummy': [10, 20, 30]})
         # lev=xr.DataArray([250, 500, 750], coords={'dummy': [10, 20, 30]})
+        # NOTE: The native xarray approach is: "if DataArrays are passed as new
+        # coordinates, their dimensions are used for the broadcasting." This includes
+        # ugly behavior of *replacing* existing coordinate values. By contrast, we
+        # *require* indexer coordinates must correspond to data coordinates, and
+        # *require* that they match the existing coordinate values.
         indexers_fancy = {k: v for k, v in indexers.items() if isinstance(v, xr.DataArray)}  # noqa: E501
         indexers = {k: indexers[k] for k in indexers.keys() - indexers_fancy.keys()}
         datas = np.empty((1,), dtype='O')  # stores xarray objects
@@ -1169,7 +1181,7 @@ class ClimoAccessor(object):
                 compat='identical',
                 combine_attrs='identical',
             )
-            data = data.climo.replace_coords(coords)
+            data = data.climo.replace_coords(dict(coords))
         else:
             data = datas[0]
 
@@ -1347,13 +1359,18 @@ class ClimoAccessor(object):
         """
         def _to_magnitude(value, units, scalar=True):
             if isinstance(value, xr.DataArray):
+                # Strip non-dimensional coordinates to avoid indexer/indexee conflicts
+                # WARNING: Keep DataArray indexers as DataArrays! Xarray can read from
+                # them, and coords could be interpreted by _iter_by_indexer_coords.
                 if value.climo._has_units and value.dtype.kind != 'b':
                     value = value.climo.to_units(units)
-                value = value.climo.dequantify().data
+                value = value.climo.dequantify()
+                value = value.squeeze(drop=True)
+                value = value.drop_vars(value.coords.keys() - value.sizes.keys())
             elif isinstance(value, pint.Quantity):
                 value = value.to(units).magnitude
-            if np.atleast_1d(value).size == 1:
-                value = np.atleast_1d(value)[0]  # convert to scalar index
+            if np.asarray(value).size == 1:
+                value = np.asarray(value).item()  # pull out of ndarray or DataArray
             elif scalar:
                 raise ValueError(f'Expected scalar indexer, got {value=}.')
             return value
@@ -1665,6 +1682,8 @@ class ClimoAccessor(object):
                 stopwatch('longitude')
 
         # Add latitude coordinates at poles
+        # WARNING: Containers of scalar quantities like [90 * ureg.deg] silently have
+        # units stripped and are transformed to 1. Submit github issue?
         if latitude and 'latitude' in coordinates:
             coord = data.climo.coords['latitude']
             if coord.size > 1:
@@ -1740,9 +1759,10 @@ class ClimoAccessor(object):
         >>> ds = xr.tutorial.open_dataset('rasm').load()
         ... ds = ds.coarsen(x=25, y=25, boundary='trim').mean()
         ... ds.Tair.attrs['units'] = 'degC'
-        ... group = ureg.kg * (ds.Tair > 0)  # arbitrary group with units
+        ... T = ds.Tair.climo.quantify()
+        ... group = ureg.kg * (T > 0)  # arbitrary group with units
         ... group.name = 'group'
-        ... ds.climo.quantify().climo.groupby(group).mean()
+        ... T.climo.groupby(group).mean()
         """
         return self._cls_groupby(self.data, group, *args, **kwargs)
 
@@ -1799,9 +1819,9 @@ class ClimoAccessor(object):
 
     def replace_coords(self, indexers=None, **kwargs):
         """
-        Return a copy with replaced coordinate values and preserved attributes. If
-        input coordinates are already `~xarray.DataArray`\\ s, its existing attributes
-        are not overwritten. Inspired by `xarray.DataArray.assign_coords`.
+        Return a copy with coordinate values added or replaced (if they already exist).
+        If the input coordinates are `~xarray.DataArray`\\ s, the non-conflicting
+        coordinate attributes are kept.
 
         Parameters
         ----------
@@ -1811,28 +1831,28 @@ class ClimoAccessor(object):
             Coordinates passed as keyword args.
         """
         indexers, _ = self._parse_indexers(
-            indexers, allow_kwargs=False, include_scalar=True, **kwargs
+            indexers, include_no_coords=True, include_scalar=True, allow_kwargs=False, **kwargs  # noqa: E501
         )
         indexers_new = {}
         for name, coord in indexers.items():
-            if name not in self.data.coords:
-                raise ValueError(f'Coordinate {name!r} not found.')
             if isinstance(coord, tuple):
                 raise ValueError('Coordinate data must be array-like.')
-            prev = self.data.coords[name]
-            if isinstance(coord, xr.DataArray):
-                for key, value in prev.attrs.items():
-                    coord.attrs.setdefault(key, value)
-            else:
-                # WARNING: containers of scalar quantities like [90 * ureg.deg]
-                # silently have units stripped and are transformed to 1.
+            # Build coordinate DataArray
+            if not isinstance(coord, xr.DataArray):
                 dims = () if _is_scalar(coord) else (name,)
-                coord = xr.DataArray(coord, dims=dims, name=name, attrs=prev.attrs)
-            if coord.climo._has_units:
-                coord = coord.climo.to_units(prev.climo.units)  # units support
-                coord = coord.climo.dequantify()
-                coord.attrs['units'] = prev.attrs['units']  # ensure exact match
-            indexers_new[name] = coord
+                coord = xr.DataArray(coord, dims=dims, name=name)
+            # Fix coordinate units and attributes
+            # WARNING: Absolutely *critical* that DataArray unit string exactly
+            # mathes old one. Otherwise concatenate will strip unit attribute.
+            coord = coord.climo.dequantify()
+            if name in self.data.coords:
+                prev = self.data.coords[name]
+                if coord.climo._has_units:
+                    coord = coord.climo.to_units(prev.climo.units)  # may raise error
+                    coord.attrs['units'] = prev.attrs['units']  # *always* identical
+                for key, value in prev.attrs.items():
+                    coord.attrs.setdefault(key, value)  # avoid overriding
+            indexers_new[name] = coord.climo.dequantify()
         return self.data.assign_coords(indexers_new)
 
     def sel(
@@ -1950,7 +1970,8 @@ class ClimoAccessor(object):
             if coord.size == 1:
                 continue
             try:
-                reference = coord.climo.cfvariable.reference
+                cfvariable = coord.climo._cf_variable(use_methods=False)
+                reference = cfvariable.reference
             except AttributeError:
                 continue
             if reference is not None:
@@ -3457,24 +3478,19 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         In-place version of `~ClimoDataArrayAccessor.quantify`.
         """
         # NOTE: This won't affect shallow DataArray or Dataset copy parents
-        # TODO: Support dask arrays here
         data = self.data
+        units = self.units  # may raise error!
         if isinstance(data.data, pint.Quantity) or not _is_numeric(data.data):
             return
         if 'units' in data.attrs:
-            data.data = data.data * self.units
+            data.data = data.data * units
             del data.attrs['units']
-        else:
-            warnings._warn_climopy(
-                f'Failed to quantify {data.name=} (units attribute not found).'
-            )
 
     def _dequantify(self):
         """
         In-place version of `~ClimoDataArrayAccessor.dequantify`.
         """
         # NOTE: This won't affect shallow DataArray or Dataset copy parents
-        # TODO: Support dask arrays here
         data = self.data
         if not isinstance(data.data, pint.Quantity):
             return
@@ -3520,7 +3536,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             methods = self._decode_cf_attr(data.attrs.get('cell_methods', ''))
             coordinates = data.cf.coordinates if coordinates is None else coordinates
             for name, da in data.coords.items():
-                if da.size > 1:
+                if da.size != 1:
                     continue
                 coord = self._to_cf_coord_name(name, coordinates=coordinates)
                 if not coord:
@@ -3593,7 +3609,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         elif 'units' in self.data.attrs:
             return parse_units(self.data.attrs['units'])
         else:
-            raise RuntimeError('Units not present in attributes or as pint.Quantity.')
+            raise RuntimeError(
+                'Units not present in attributes or as pint.Quantity '
+                f'for DataArray with name {self.data.name!r}.'
+            )
 
     @property
     def units_label(self):
@@ -3701,7 +3720,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         Return a quantified DataArray with weights optionally added. This is separated
         from `_get_item_or_func` to facillitate fast `__contains__`.
         """
-        # Retrieve quantity
+        # Retrieve and compute quantity
         stopwatch = _make_stopwatch(verbose=False)
         tup = self._get_item_or_func(key, **kwargs)
         stopwatch(f'get {key!r}')
@@ -3711,11 +3730,24 @@ class ClimoDatasetAccessor(ClimoAccessor):
         if callable(da):
             da = da()  # ta-da!
             stopwatch(f'compute {key!r}')
+
+        # Add units and cell measures
         data = da.climo.quantify()  # should already be quantified, but just in case
         data.name = data.name or 'unknown'  # just in case
         if type_ != 'coord' and add_cell_measures:
             data = data.climo.add_cell_measures(dataset=self.data)
             stopwatch('cell measures')
+
+        # Transpose, potentially after derivation or transformation moved dims around
+        # See: https://github.com/pydata/xarray/issues/2811#issuecomment-473319350
+        # NOTE: Also re-order spectral dimensions for 3 plot types: YZ, CY, YK, and CK
+        # (with row-major ordering), or simply preserve original dimension order based
+        # on dimension order that appears in dataset variables.
+        if 'k' in data.dims:
+            dims = ('lev', 'k', 'lat', 'c')
+        else:
+            dims = _first_unique(dim for da in self.data.values() for dim in da.dims if not self._is_bounds(da))  # noqa: E501
+        data = data.transpose(..., *(dim for dim in dims if dim in data.dims))
 
         return data
 
@@ -3926,16 +3958,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
                 data = data.climo.quantify()
             else:
                 data = data.climo.dequantify()
-
-        # Re-order spectral dimensions for 3 plot types: YZ, CY, YK, and CK (with
-        # row-major ordering), or simply preserve original dimension order based on
-        # dimension order that appears in dataset variables.
-        # See: https://github.com/pydata/xarray/issues/2811#issuecomment-473319350
-        if 'k' in data.dims:
-            dims = ('lev', 'k', 'lat', 'c')
-        else:
-            dims = _first_unique(d for v in self.data.values() for d in v.dims)
-        data = data.transpose(..., *(d for d in dims if d in data.dims))
 
         return data
 
