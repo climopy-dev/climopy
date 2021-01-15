@@ -263,8 +263,8 @@ class CFVariable(object):
         short_name = self._mod_name(short_name, prefix, suffix)
         standard_name = self._inherit('standard_name', standard_name)
         if standard_name is None and long_name is not None:
-            standard_name = re.sub(r'\W', '_', long_name).lower()
-            standard_name = re.sub(r'_+', '_', standard_name)  # squeeze underscores
+            standard_name = re.sub(r'\W', '_', long_name).strip('_').lower()
+            standard_name = re.sub(r'_+', '_', standard_name)  # squeeze consecutive
 
         # Add attributes
         # NOTE: Permit axis_formatter=False to revert to default formatter and
