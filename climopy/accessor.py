@@ -46,14 +46,14 @@ CELL_MEASURE_COORDS = {
     'area': ('longitude', 'latitude'),
     'volume': ('longitude', 'latitude', 'vertical'),
 }
+DEFAULT_CELL_MEASURES = {
+    # default cell measure names added in definitions.py
+    measure: 'cell_' + measure for measure in CELL_MEASURE_COORDS
+}
 COORD_CELL_MEASURE = {
     # cell measure associated with coords
     coords[0]: measure for measure, coords in CELL_MEASURE_COORDS.items()
     if len(coords) == 1
-}
-DEFAULT_CELL_MEASURES = {
-    # default cell measure names added in definitions.py
-    measure: 'cell_' + measure for measure in CELL_MEASURE_COORDS
 }
 if hasattr(_cf_accessor, '_CELL_MEASURES'):
     _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
@@ -151,7 +151,7 @@ dim_track : str, optional
     The dimension along which {extrema} are grouped into lines and tracked with
     `~.utils.linetrack`.
 **kwargs
-    Passed to `~.utils.zerofind`.
+    Passed to `~.utils.zerofind` or `~ClimoAccessor.truncate`.
 """
 docstring.templates['absminmax'] = """
 Return the {prefix}global {extrema} along the dimension.
@@ -161,7 +161,7 @@ Parameters
 dim : str, optional
     The dimension.
 **kwargs
-    Passed to `~.utils.zerofind`.
+    Passed to `~.utils.zerofind` or `~ClimoAccessor.truncate`.
 """
 docstring.templates['argloc'] = """
 Return the coordinate(s) of a given value along the dimension.
@@ -176,7 +176,7 @@ dim_track : str, optional
     The dimension along which coordinates are grouped into lines and tracked with
     `~.utils.linetrack`.
 **kwargs
-    Passed to `~.utils.zerofind`.
+    Passed to `~.utils.zerofind` or `~ClimoAccessor.truncate`.
 """
 
 # Differentiation
@@ -307,12 +307,15 @@ def _manage_reduced_coords(func):
             if prev.ndim > 1 and measure and prev.sizes.keys() & result.sizes.keys():
                 # Replace lost cell measures using unweighted sum. Drop non-cell measure
                 # coordinates; usually makes no sense to get an 'average' coordinate
+                # TODO: Support preserving measures for max, min, etc.
+                # TODO: Have max, min, etc. preserve coordinate indicating position of
+                # e.g. latitude max, min, etc. as functimon of other coords
                 if func.__name__ in ('sum', 'integrate'):
                     method = prev.climo.sum
                 elif func.__name__ in ('mean', 'average'):
                     method = prev.climo.mean
                 else:
-                    raise RuntimeError(f'Unsure what to do with func {func.__name__!r}')
+                    continue  # skip max, min, etc. for now
                 if not dim:  # entire domain
                     dim = 'volume'
                 if isinstance(dim, str):
@@ -326,7 +329,7 @@ def _manage_reduced_coords(func):
     return _wrapper
 
 
-def _keep_tracked_attrs(func):
+def _keep_cell_attrs(func):
     """
     Preserve special tracked attributes for duration of function call.
     """
@@ -334,16 +337,15 @@ def _keep_tracked_attrs(func):
     def _wrapper(self, *args, no_keep_attrs=False, **kwargs):
         # Initial stuff
         # TODO: Also track units attributes? Or always just use with quantified?
+        # NOTE: No longer track CFVARIABLE_ARGS attributes. Too complicated, and
+        # yields weird behavior like adding back long_name='zonal wind' after 'argmax'
         # WARNING: For datasets, we use data array with longest cell_methods, to try to
         # accomodate variable derivations from source variables with identical methods
         # and ignore variables like 'bounds' with only partial cell_methods. But this
         # is ugly kludge with side effects... should be refined.
         data = self.data if isinstance(self, ClimoAccessor) else self
-        attrs = {}
         if isinstance(data, xr.Dataset):  # get longest cell_methods
             data = max(data.values(), key=lambda _: len(_.attrs.get('cell_methods') or ''))  # noqa: E501
-        else:
-            attrs = {k: v for k, v in data.attrs.items() if k in CFVARIABLE_ARGS}
 
         # Call wrapped function
         result = func(self, *args, **kwargs)
@@ -351,7 +353,6 @@ def _keep_tracked_attrs(func):
             return result
 
         # Build back attributes
-        result.attrs.update(attrs)  # naively copied over
         for attr in ('cell_methods', 'cell_measures'):
             value = data.climo._build_cf_attr(data.attrs.get(attr), result.attrs.get(attr))  # noqa: E501
             if value:
@@ -414,10 +415,12 @@ def _while_dequantified(func):
             units = encode_units(data.data.units)
             data = data.climo.dequantify()
 
-        # Main functoin
+        # Main function
         result = func(data.climo, *args, **kwargs)
 
         # Requantify
+        # NOTE: In _find_extrema, units actually change! Critical that we use
+        # setdefault to prevent overwriting them!
         if isinstance(data, xr.Dataset):
             result = result.copy(deep=False)
             for name, units in quantify.items():
@@ -1427,14 +1430,22 @@ class ClimoAccessor(object):
         """
         Translate input variable name into coordinate name. Return None if not found.
         """
+        # TODO: Make CF coordinate variable search include the DataArray itself! Use
+        # case is e.g. argmin='lat'. For now use kludge that checks standard_name,
+        # but this fails for 'vertical' axes.
         # WARNING: CFAccessor.coordinates is slow (5-10 milliseconds). Calling it e.g.
         # 10 times per variable for dataset with 20 variables (e.g. the dataset repr)
         # causes annoying delay! Solution: call *once* and pass result as keyword
+        data = self.data
+        if isinstance(data, xr.DataArray):
+            standard_name = data.attrs.get('standard_name', None)
+            if key == data.name and standard_name in COORD_CELL_MEASURE:
+                return standard_name
         try:
             key = self._to_native_name(key)
         except KeyError:
             pass
-        coordinates = self.data.cf.coordinates if coordinates is None else coordinates
+        coordinates = data.cf.coordinates if coordinates is None else coordinates
         for coord, names in coordinates.items():
             if key in names:
                 return coord
@@ -1758,14 +1769,17 @@ class ClimoAccessor(object):
         """
         return self._cls_groupby(self.data, group, *args, **kwargs)
 
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     def _mean_or_sum(self, method, dim=None, skipna=None, weight=None, **kwargs):
         """
         Simple average or summation.
         """
+        # NOTE: Unweighted mean or sum along scalar coordinate conceptually is an
+        # identity operation, so ignore them. This is also important when running
+        # integrate() and _manage_reduced_coords adjusted the cell methods.
         data = self.truncate(**kwargs)
         dims = data.dims if dim is None else self._parse_dims(
-            dim, include_scalar=True, include_no_coords=True,
+            dim, ignore_scalar=True, include_no_coords=True,
         )
         if weight is not None:
             data = data.weighted(weight.climo.truncate(**kwargs))
@@ -2618,7 +2632,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     if method in find_names:
                         keys = method_keys['find']
                         if method == 'argzero':
-                            method = 'argloc'  # with default loc=0
+                            method = 'argloc'  # with default value=0
                     elif method in average_names:
                         method, kw = average_names[method]
                         keys = method_keys['average']
@@ -2671,7 +2685,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_while_quantified
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     def _integrate_or_average(
         self,
         dims,
@@ -2896,7 +2910,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         with xr.set_options(keep_attrs=True):
             return self.data - self.cumaverage(*args, **kwargs)
 
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     def runmean(self, indexers=None, **kwargs):
         """
         Return the running mean along different dimensions.
@@ -2924,7 +2938,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_while_quantified
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     def derivative(self, indexers=None, half=False, **kwargs):
         """
         Take the nth order centered finite difference for the specified dimensions.
@@ -2966,7 +2980,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             return -1 * result
 
     @_while_quantified
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     @docstring.add_template('divcon', operator='divergence')
     def divergence(self, half=False, cos_power=1, **kwargs):
         # Compute divergence in spherical coordinates
@@ -2998,7 +3012,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return div
 
     @_while_quantified
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     @docstring.add_template('auto', operator='correlation', func='corr')
     def autocorr(self, dim, **kwargs):
         dim = self._to_native_name(dim)
@@ -3010,7 +3024,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_while_quantified
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     @docstring.add_template('auto', operator='covariance', func='covar')
     def autocovar(self, dim, **kwargs):
         dim = self._to_native_name(dim)
@@ -3021,7 +3035,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.update_cell_methods({dim: 'covariance'})
         return data
 
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     def centroid(self, dataset=None, **kwargs):
         """
         Return the value-weighted average wavenumber.
@@ -3065,21 +3079,27 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.update_cell_methods({('lat', 'k'): 'centroid'})
         return data
 
-    @_manage_reduced_coords
-    @_keep_tracked_attrs
+    @_while_dequantified
+    @_keep_cell_attrs
     def _find_extrema(
         self, dim, abs=False, arg=False, which='max', dim_track=None, **kwargs
     ):
         """
         Find local or global extrema or their locations.
         """
-        # Manage keyword args
-        method = 'arg' + which if arg else which
+        # Parse and truncate
+        dim = self._parse_dims(dim, single=True)
+        trunc, kwargs = self._parse_truncate_args(**kwargs)
+        data = self.truncate(**trunc)
+        if dim == 'lat':  # TODO: remove kludge! error is with uweight lat=absmax
+            data = data.transpose(..., dim)
+
+        # Manage zerofind keyword args
         if abs:
             kwargs.setdefault('track', False)
         else:
             if dim_track:
-                kwargs['axis_track'] = self.data.dims.index(dim_track)
+                kwargs['axis_track'] = data.dims.index(dim_track)
                 kwargs.setdefault('track', True)
             elif 'axis_track' not in kwargs:
                 warnings._warn_climopy('Tracking dim for local zeros not provided.')
@@ -3092,113 +3112,117 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 kwargs['which'] = 'posneg'
 
         # Get precise local values using linear interpolation
-        # NOTE: The zerofind function applies pint units if not already applied
-        dim = self._parse_dims(dim, single=True)
-        data = self.data
-        if dim == 'lat':  # TODO: remove kludge! error is with uweight lat=absmax
-            data = data.transpose(..., dim)
-        locs, values = utils.zerofind(data.coords[dim], data, **kwargs)
+        # NOTE: The zerofind function applies pint units
+        coord = data.coords[dim]
+        locs, values = utils.zerofind(coord, data, **kwargs)
+        locs = locs.climo.dequantify()
+        values = values.climo.dequantify()
 
-        # Get global values
-        # TODO: Incorporate this into zerofind, and rename to 'extrema()'?
-        if not abs:
-            data = locs if arg else values
-
-        # If no extrema were found (e.g. there are only extrema on edges)
+        # Get global extrema. If none were found (e.g. there are only extrema on edges)
         # revert to native min max functions.
-        elif abs and locs.sizes['track'] == 0:
-            result = getattr(data, method)(dim)  # e.g. min() or argmin()
-            if arg:
-                data = data.climo.coords[dim][result].drop(dim)  # drop unused dim
-            else:
-                data = result.drop(dim)
+        # TODO: Incorporate this into zerofind, and rename to 'extrema()'?
+        if abs and locs.sizes['track'] == 0:
+            # Get both locations and values
+            locs = getattr(data, 'arg' + which)(dim)
+            locs = coord[locs].drop_vars(dim)
+            values = getattr(data, which)(dim).drop_vars(dim)
 
         # Otherwise select from the identified 'sandwiched' extrema and possible
         # extrema on the array edges. We merge zerofind values with array edges
-        else:
+        elif abs:
+            # Get array edges
             locs = [locs]
             values = [values]
-            for i, idx in enumerate((0, -1)):
-                ilocs = data.climo.coords[dim].isel({dim: idx}, drop=True)
-                ivalues = data.isel({dim: idx}, drop=True)
-                locs.append(ilocs.expand_dims('track'))
-                values.append(ivalues.expand_dims('track'))
-            locs = xr.concat(
-                locs,
-                dim='track',
-                compat='override',  # needed to merge cell weights
-                coords='minimal',
-                combine_attrs='no_conflicts'
-            )
-            values = xr.concat(
-                values,
-                dim='track',
-                compat='override',
-                coords='minimal',
-                combine_attrs='no_conflicts'
-            )
+            for cat, src in zip((locs, values), (coord, data)):
+                for idx in (0, -1):
+                    cat.append(src.isel({dim: idx}, drop=True).expand_dims('track'))
             # Select location of largest minimum or maximum
+            concatenate = functools.partial(
+                xr.concat,
+                dim='track',
+                coords='minimal',
+                compat='override',
+                combine_attrs='override'
+            )
+            locs = concatenate(locs)
+            values = concatenate(values)
             isel = {'track': getattr(values, 'arg' + which)('track')}
-            data = (locs if arg else values).isel(isel, drop=True)
+            locs = locs.isel(isel, drop=True)
+            values = values.isel(isel, drop=True)
 
         # Use either actual locations or interpolated values. Restore attributes
-        # TODO: By default, zerofind changes 'locs' name to coordinate name. Here,
-        # instead, we keep the original variable name and attributes, but the change in
-        # units is indicated with an 'argmin' cell method.
+        # NOTE: Add locs to coordinates for 'min', 'max', etc. and add values to
+        # coordinates for 'argmax', 'argmin', etc. Then e.g. for 'argmax' can leverage
+        # coordinate information to have '.cfvariable' interpret 'lat' with e.g.
+        # 'zonal_wind' coordinate data as e.g. the latitude of maximum zonal wind.
         # values = data.climo.interp({dim: locs.squeeze()}, method='cubic')
-        data.name = self.data.name  # original name
-        data.attrs.clear()
-        data.attrs.update(self.data.attrs)  # original attrs
-        data.climo.update_cell_methods({dim: method})
+        locs.attrs.update(coord.attrs)
+        values.attrs.update(data.attrs)
+        if arg:
+            locs.coords[data.name] = values
+            data = locs
+        else:
+            values.coords[coord.name] = locs
+            data = values
+        data.climo.update_cell_methods({dim: 'arg' + which if arg else which})
 
         return data
 
+    # @_manage_reduced_coords
     @docstring.add_template('minmax', extrema='mimima', prefix='')
     def min(self, dim=None, **kwargs):
         kwargs.update(which='min', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    # @_manage_reduced_coords
     @docstring.add_template('minmax', extrema='maxima', prefix='')
     def max(self, dim=None, **kwargs):
         kwargs.update(which='max', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    # @_manage_reduced_coords
     @docstring.add_template('absminmax', extrema='minima', prefix='')
     def absmin(self, dim=None, **kwargs):
         kwargs.update(which='min', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    # @_manage_reduced_coords
     @docstring.add_template('absminmax', extrema='maxima', prefix='')
     def absmax(self, dim=None, **kwargs):
         kwargs.update(which='max', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    # @_manage_reduced_coords
     @docstring.add_template('minmax', extrema='minima', prefix='coordinates of ')
     def argmin(self, dim=None, **kwargs):
         kwargs.update(which='min', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    # @_manage_reduced_coords
     @docstring.add_template('minmax', extrema='maxima', prefix='coordinates of ')
     def argmax(self, dim=None, **kwargs):
         kwargs.update(which='max', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    # @_manage_reduced_coords
     @docstring.add_template('absminmax', extrema='minima', prefix='coordinates of ')
     def absargmin(self, dim=None, **kwargs):
         kwargs.update(which='min', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    # @_manage_reduced_coords
     @docstring.add_template('absminmax', extrema='maxima', prefix='coordinates of ')
     def absargmax(self, dim=None, **kwargs):
         kwargs.update(which='max', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    # @_manage_reduced_coords
     @docstring.add_template('argloc')
     def argloc(self, dim=None, value=0, **kwargs):
         kwargs.update(which='zero', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     def hist(self, dim, bins=None):
         """
         Return the histogram along the given dimension(s).
@@ -3257,7 +3281,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             data[~mask] = np.nan * getattr(data.data, 'units', 1)
         return data
 
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     @_while_dequantified
     def normalize(self):
         """
@@ -3271,7 +3295,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_while_quantified
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     def slope(self, dim):
         """
         Return the best-fit slope with respect to some dimension.
@@ -3291,7 +3315,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_while_quantified
-    @_keep_tracked_attrs
+    @_keep_cell_attrs
     def timescale(self, dim, maxlag=None, imaxlag=None, **kwargs):
         """
         Return a best-fit estimate of the autocorrelation timescale.
@@ -3471,12 +3495,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # NOTE: This won't affect shallow DataArray or Dataset copy parents
         data = self.data
-        units = self.units  # may raise error!
         if isinstance(data.data, pint.Quantity) or not _is_numeric(data.data):
-            return
-        if 'units' in data.attrs:
-            data.data = data.data * units
-            del data.attrs['units']
+            pass
+        else:
+            data.data = data.data * self.units  # may raise error
+        data.attrs.pop('units', None)
 
     def _dequantify(self):
         """
@@ -3515,35 +3538,70 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Return a `CFVariable`, optionally including `cell_methods`.
         """
         data = self.data
-        if data.name is None:
+        name = data.name
+        if name is None:
             raise AttributeError('DataArray name is empty. Cannot get CFVariable.')
+
         # Get override attributes
         kwargs = {}
         if use_attrs:
             for key, val in data.attrs.items():
                 if key in CFVARIABLE_ARGS:
                     kwargs[key] = val
+
         # Get modifying cell methods
         if use_methods:
+            # Get methods dictionary by reading cell_methods and scalar coordinates
+            # NOTE: Include *this* array in case it is coordinate, e.g. lat='argmax'
             methods = self._decode_cf_attr(data.attrs.get('cell_methods', ''))
             coordinates = data.cf.coordinates if coordinates is None else coordinates
-            for name, da in data.coords.items():
-                if da.size != 1:
+            mapping = {name: data, **data.coords}
+            for coord, da in mapping.items():
+                coord_cf = self._to_cf_coord_name(coord, coordinates=coordinates)
+                if not coord_cf:
                     continue
-                coord = self._to_cf_coord_name(name, coordinates=coordinates)
-                if not coord:
-                    continue
-                if not da.isnull():  # selection of single coordinate
+                if da.size == 1 and not da.isnull():  # selection of single coordinate
                     units = parse_units(da.attrs['units']) if 'units' in da.attrs else 1
-                    kwargs[coord] = units * da.item()
-                elif any(name in dims for dims, _ in methods):
-                    kwargs[coord] = tuple(m for dims, m in methods if name in dims)
+                    kwargs[coord_cf] = units * da.item()
+                elif any(coord in dims for dims, _ in methods):
+                    kwargs[coord_cf] = tuple(m for dims, m in methods if coord in dims)
+
+            # Find if coordinates refer to *actual* variable name, and the
+            # DataArray name is a coordinate. This happens e.g. with 'argmax'.
+            coord_cf = self._to_cf_coord_name(name)
+            if coord_cf in kwargs:  # variable name is referenced in cell_methods!
+                # Find 'actual' variable
+                actual = None
+                method = kwargs[coord_cf]
+                measures = data.cf.cell_measures
+                for coord, da in data.coords.items():
+                    if any(coord in names for names in measures.values()):
+                        continue
+                    if da.sizes != data.sizes:
+                        continue
+                    if actual is not None:
+                        raise RuntimeError(f'Multiple candidates for {method!r} var.')
+                    actual = da
+                if actual is None:
+                    raise RuntimeError(f'Could not find actual variable for {name!r}.')
+                # Update relevant attributes
+                # NOTE: Trying to avoid situation where we have something like
+                # name='ehf' with long_name='latitude'.
+                name = actual.name
+                for attr in ('long_name', 'short_name', 'standard_name'):
+                    if attr in actual.attrs:
+                        kwargs[attr] = actual.attrs[attr]
+                    else:
+                        kwargs.pop(attr, None)
+
         # Create the CFVariable
-        try:
-            return self.registry(data.name, accessor=self, **kwargs)
-        except KeyError:
-            pass
-        raise AttributeError(f'CFVariable not found for name {data.name!r}.')
+        for name in (name, kwargs.pop('standard_name', None)):
+            if name is not None:
+                try:
+                    return self.registry(name, accessor=self, **kwargs)
+                except KeyError:
+                    pass
+        raise AttributeError(f'CFVariable not found for name {name!r}.')
 
     @property
     def _is_quantity(self):
@@ -3771,9 +3829,9 @@ class ClimoDatasetAccessor(ClimoAccessor):
         if search_coords and (coord := self.coords.get(key, **kwargs)) is not None:
             return 'coord', coord
         if search_derivations and (func := self._find_derivation(key)):
-            return 'derivation', functools.partial(_keep_tracked_attrs(func), self)
+            return 'derivation', functools.partial(_keep_cell_attrs(func), self)
         if search_transformations and (tup := self._find_any_transformation(self.data.values(), key)):  # noqa: E501
-            return 'transformation', functools.partial(_keep_tracked_attrs(tup[0]), tup[1])  # noqa: E501
+            return 'transformation', functools.partial(_keep_cell_attrs(tup[0]), tup[1])  # noqa: E501
 
         # Recursively check if any aliases are valid
         if search_registry:
@@ -3931,7 +3989,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
         # Take the absolute value, accounting for attribute-stripping xarray bug
         if abs:
-            data = _keep_tracked_attrs(np.abs)(data)
+            data = _keep_cell_attrs(np.abs)(data)
 
         # Select pair only *after* doing all the math. This is a convenient way
         # to get difference between reduced values
@@ -3977,12 +4035,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
         `~.cfvariable.CFVariableRegistry` identifiers.
         """
         return _VarsQuantified(self.data, self.registry)
-
-    def _is_coord(self, da):
-        """
-        Return whether object is a coordinate.
-        """
-        return da.name in self.data.coords
 
     def _is_bounds(self, da):
         """

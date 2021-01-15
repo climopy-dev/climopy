@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .diff import deriv_half, deriv_uneven
+from .internals import ic  # noqa: F401
 from .internals import quack, warnings
 from .internals.array import _ArrayContext
 
@@ -420,7 +421,7 @@ def zerofind(
         ys = context.data
         zxs = []
         zys = []
-        nextra, nalong, nacross = y.shape
+        nextra, nalong, nacross = ys.shape
         for i in range(nextra):
             # Optionally take derivatives onto half-levels and interpolate to points
             # on those half-levels.

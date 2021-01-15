@@ -3,6 +3,7 @@
 Array tools. Includes context object used to perform tasks "along an axis"
 for arbitrary n-dimensional arrays.
 """
+# Don't be scared!
 import logging
 
 import numpy as np
@@ -42,8 +43,8 @@ class _ArrayContext(object):
             ``data.ndim - len(push_left)``, and if only `push_right` is provided,
             `nflat_left` is set to ``data.ndim - len(push_right)``.
 
-        Example
-        -------
+        Examples
+        --------
         The general usage is as follows:
 
         >>> from climopy.internals import array
@@ -80,7 +81,6 @@ class _ArrayContext(object):
         ...     pcs = np.random.rand(nextra, 5, ntime, 1)  # singleton space dimension
         ...     context.replace_data(eofs, pcs, insert_left=1)
         ... logger.setLevel(logging.ERROR)
-
         """
         # Set arrays
         # NOTE: No array standardization here. Assume duck-type arrays (numpy
@@ -234,33 +234,26 @@ class _ArrayContext(object):
         that have the same
         shape as the old one(s), or have new leading and trailing dimensions.
 
-        Example
-        -------
+        Examples
+        --------
         Pre-pending or appending data does not mess up dimensions that come
         after or before. This is revealed by playing with a simple example.
 
-        .. code-block:: python
-
-            >>> a = np.array(
-                    [
-                        [[1, 2, 1], [3, 4, 3]],
-                        [[5, 6, 5], [7, 8, 7]],
-                        [[9, 10, 9], [11, 12, 11]],
-                    ]
-                )
-
-            >>> a.shape
-            (3, 2, 3)
-
-            >>> a[:, 0, 0]
-            array([1, 5, 9])
-
-            >>> np.reshape(a, (3, 6), order='F')[:, 0, 0]
-            array([1, 5, 9])
-
-            >>> np.reshape(a, (3, 6), order='C')[:, 0, 0]
-            array([1, 5, 9])
-
+        >>> a = np.array(
+        ...     [
+        ...         [[1, 2, 1], [3, 4, 3]],
+        ...         [[5, 6, 5], [7, 8, 7]],
+        ...         [[9, 10, 9], [11, 12, 11]],
+        ...     ]
+        ... )
+        >>> a.shape
+        (3, 2, 3)
+        >>> a[:, 0, 0]
+        array([1, 5, 9])
+        >>> np.reshape(a, (3, 6), order='F')[:, 0, 0]
+        array([1, 5, 9])
+        >>> np.reshape(a, (3, 6), order='C')[:, 0, 0]
+        array([1, 5, 9])
         """
         arrays = self._arrays
         if len(arrays) == 1:

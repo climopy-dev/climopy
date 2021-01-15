@@ -109,7 +109,9 @@ class CFVariable(object):
         elif all(s != o for s, o in zip(self_names, other_names)):
             return False
         else:
-            raise RuntimeError(f'Partial overlap between {self} and {other}. Equality is unclear.')  # noqa: E501
+            raise RuntimeError(
+                f'Partial overlap between {self} and {other}. Equality is unclear.'
+            )
 
     def __iter__(self):
         """
@@ -132,7 +134,7 @@ class CFVariable(object):
         name = ' '.join((prefix, name, suffix)).strip()
         name = re.sub(r'\s\+', ' ', name)  # squeeze consecutive spaces
         for modifier in ('strength', 'intensity', 'transport'):
-            for ending in ('latitude', 'anomaly'):
+            for ending in ('latitude', 'anomaly', 'response'):
                 name = name.replace(f'{modifier} {ending}', ending)
         return name
 
@@ -260,7 +262,7 @@ class CFVariable(object):
         long_name = self._inherit('long_name', long_name)
         short_name = self._inherit('short_name', short_name, default=long_name)
         long_name = self._mod_name(long_name, prefix or prefix_both, suffix or suffix_both)  # noqa: E501
-        short_name = self._mod_name(short_name, prefix, suffix)
+        short_name = self._mod_name(short_name, prefix_both, suffix_both)
         standard_name = self._inherit('standard_name', standard_name)
         if standard_name is None and long_name is not None:
             standard_name = re.sub(r'\W', '_', long_name).strip('_').lower()
@@ -556,7 +558,8 @@ class CFVariableRegistry(object):
             corresponding dimensions in the `cell_methods` attribute when requesting
             the accessor property `~.accessor.ClimoDataArrayAccessor.cfvariable`.
         **kwargs
-            Passed to `CFVariable.update`.
+            Passed to `CFVariable.update`. Prefixes and suffixes are applied at
+            the end, while name replacements are applied at the beginning
 
         Note
         ----
@@ -595,11 +598,16 @@ class CFVariableRegistry(object):
                 time.add(method)
 
         # Get variable
+        kwmod = {
+            key: kwargs.pop(key) for key in tuple(kwargs)
+            if 'prefix' in key or 'suffix' in key
+        }
         var = self._get_item(name)
         if var.name[0] == 'c' and 'convergence' in var.long_name and _pop_integral(latitude):  # noqa: E501
             var = self._get_item(name[1:])  # Green's theorem; e.g. cehf --> ehf
         var = copy.copy(var)
         var._accessor = accessor
+        var.update(**kwargs)
 
         # Handle unit changes due to integration
         # NOTE: Vertical integration should always be with units kg/m^2
@@ -702,8 +710,8 @@ class CFVariableRegistry(object):
         if any('normalized' in dim for dim in (longitude, latitude, vertical, time)):
             var.update(standard_units='')
 
-        # User-defined updates
-        var.update(**kwargs)
+        # Finally add user-specified prefixes and suffixes
+        var.update(**kwmod)
         return var
 
     def _get_item(self, key):
