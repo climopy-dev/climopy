@@ -1966,7 +1966,7 @@ class ClimoAccessor(object):
             `~.cfvariable.CFVariable.update` method.
         """
         key = str(key)
-        if key not in ('1', '2', 'anom'):
+        if key not in ('1', '2', 'anomaly'):
             raise ValueError(f'Invalid pair spec {key!r}.')
 
         # Find all non-reduced parametric axes
@@ -3925,7 +3925,8 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
         # Get the variable, translating meta-variable actions
         # NOTE: This supports e.g. edsef_strength_anom
-        regex = r'\A(abs_)?(.*?)(_lat|_strength)?(_1|_2|_anom)?\Z'
+        # TODO: Avoid name conflicts with functions and variables?
+        regex = r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly)?\Z'
         abs, key, reduce, pair = re.match(regex, key).groups()
         data = self._get_item(key, add_cell_measures=add_cell_measures)
 
