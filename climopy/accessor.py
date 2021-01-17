@@ -2613,15 +2613,16 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             weight = dataset.climo[weight]
 
         # Parse truncation args
+        dims = data.dims
         trunc, kwargs = (dataset or data).climo._parse_truncate_args(**kwargs)
         if trunc:
             sample = tuple(trunc.values())[0]
-            dims = sample.dims[1:]
+            dims_sample = sample.dims[1:]  # exclude 'startstop'
             datas = np.empty(sample.shape[1:], dtype='O')
             coords = {key: c for key, c in sample.coords.items() if key != 'startstop'}
         else:
             sample = None
-            dims = ('track',)
+            dims_sample = ('track',)
             datas = np.array([None])
             coords = {}
 
@@ -2634,9 +2635,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             # Limit range exactly be interpolating to bounds
             # NOTE: Common to use e.g. reduce(lat='int', latmin='ehf_lat') for data
             # with e.g. time axis. Here we are iterating through extra axes.
-            isel_trunc = dict(zip(dims, idx))
+            isel_trunc = dict(zip(dims_sample, idx))
             itrunc = {k: tuple(v.isel(isel_trunc).data) for k, v in trunc.items()}
-            isel_data = {dim: i for dim, i in zip(dims, idx) if dim != 'track'}
+            isel_data = {dim: i for dim, i in zip(dims_sample, idx) if dim != 'track'}
             idata = data.isel(isel_data).climo.truncate(**itrunc)
             if weight is None:
                 iweight = None
@@ -2695,14 +2696,13 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # Concatente with combine_nested, then fix weird dimension reordering
         data = xr.combine_nested(
             datas.tolist(),
-            concat_dim=dims,
+            concat_dim=dims_sample,
             join='exact',
             compat='identical',
             combine_attrs='identical',
         )
         data = data.assign_coords(coords)
-        dims = (*dims, *(_ for _ in tuple(data.dims)[::-1] if _ not in dims))
-        data = data.transpose(*dims)
+        data = data.transpose(..., *(dim for dim in dims if dim in data.dims))
         if data.sizes['track'] == 1:
             data = data.isel(track=0, drop=True)
 
@@ -3969,7 +3969,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
             raise ValueError(f'Invalid variable spec {keys!r}.')
 
         # Get the variable, translating meta-variable actions
-        # NOTE: This supports e.g. edsef_strength_anom
+        # NOTE: This supports e.g. edsef_strength_anomaly
         # TODO: Avoid name conflicts with functions and variables?
         regex = r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly)?\Z'
         abs, key, reduce, pair = re.match(regex, key).groups()
@@ -3985,14 +3985,13 @@ class ClimoDatasetAccessor(ClimoAccessor):
             transport = key in vreg['meridional_energy_flux'] or key in vreg['meridional_momentum_flux']  # noqa: E501
             if not content and not transport and not tendency:
                 raise ValueError(f'Invalid parameter {key!r}.')
-            lon = 'int' if tendency and reduce == 'strength' or transport else 'avg'
-            if tendency:  # e.g. magnitude of cooling over polar cap
-                lat = 'int' if reduce == 'strength' else 'argzero'
+            if data.sizes.get('lev', 1) > 1:
+                kwargs['lev'] = 'int'
+            if tendency and reduce == 'strength':
+                kwargs['area'] = 'int'
             else:
-                lat = 'absmax' if reduce == 'strength' else 'absargmax'
-            kwargs = {'lon': lon, 'lev': 'int', 'lat': lat, **kwargs}
-            if data.sizes.get('lev', 1) == 1:  # horizontal grid
-                del kwargs['lev']
+                kwargs['lon'] = 'int' if transport else 'avg'
+                kwargs['lat'] = 'absmax' if reduce == 'strength' else 'argzero' if tendency else 'absargmax'  # noqa: E501
 
         # Reduce dimensionality using keyword args
         # WARNING: For timescale variables take inverse before and after possible
