@@ -112,7 +112,7 @@ with warnings.catch_warnings():
                 ps = 0 * data + self.vars[candidate]
                 data = data + 0 * ps  # conform shape
                 data = data.transpose(*ps.dims)
-                mask = data > ps
+                mask = data.data > ps.data
                 data.data[mask] = ps.data[mask]
             if ps is None:
                 _warn_climopy(

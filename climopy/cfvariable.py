@@ -347,9 +347,9 @@ class CFVariable(object):
     @property
     def symbol(self):
         """
-        Mathematical symbol for this variable.
+        Mathematical symbol for this variable. Default is the first letter of the name.
         """
-        return '$' + self._symbol + '$'
+        return '$' + (self._symbol or self._name[:1]) + '$'
 
     @property
     def reference(self):
@@ -454,7 +454,10 @@ class CFVariable(object):
         value = accessor.to_standard_units()
         value = value.climo.dequantify()
         value = value.item()
-        value = plot.SigFigFormatter(sigfig=sigfig)(value)
+        if np.isnan(value):
+            value = 'NaN'
+        else:
+            value = plot.SigFigFormatter(sigfig=sigfig)(value)
         if '.' in value:
             if value[-1] == '1':  # close enough
                 value = value[:-1]
