@@ -1979,13 +1979,14 @@ class ClimoAccessor(object):
             the first position and the key ``2`` the second position. Otherwise, the
             key ``1`` returns the `~.cfvariable.CFVariable.reference` position and the
             key ``2`` is a no-op that returns the original data. To return the
-            difference between keys ``2`` and ``1``, pass ``'anom'``. The associated
+            difference between keys ``2`` and ``1``, pass ``'anomaly'``. To return
+            the ratio of key ``2`` over key ``1``, pass ``'ratio'``. The associated
             `~.cfvariable.CFVariable` names are modified by adding `prefix` and `suffix`
             attributes to the data that get passed to the
             `~.cfvariable.CFVariable.update` method.
         """
         key = str(key)
-        if key not in ('1', '2', 'anomaly'):
+        if key not in ('1', '2', 'anomaly', 'ratio'):
             raise ValueError(f'Invalid pair spec {key!r}.')
 
         # Find all non-reduced parametric axes
@@ -2037,8 +2038,11 @@ class ClimoAccessor(object):
             suffix = 'response'
             with xr.set_options(keep_attrs=True):
                 name = data.attrs.get('parent_name', None)
-                result = data.climo.sel(sels[1]) - data.climo.sel(sels[0])
-                if name and name in data.coords:
+                if key == 'anomaly':
+                    result = data.climo.sel(sels[1]) - data.climo.sel(sels[0])
+                else:
+                    result = data.climo.sel(sels[1]) / data.climo.sel(sels[0])
+                if name and name in data.coords and key == 'anomaly':
                     parent = data.coords[name]
                     result.coords[name] = parent.climo.sel(sels[1]) - parent.climo.sel(sels[0])  # noqa: E501
 
@@ -2490,8 +2494,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         except AttributeError:
             pass
         raise AttributeError(
-            f'Attribute {attr!r} does not exist and is not a DataArray '
-            'or CFVariable attribute (if a CFVariable was found).'
+            f'Attribute {attr!r} does not exist and is not a DataArray or CFVariable '
+            f'attribute, or a CFVariable was not found for the name {self.data.name!r}.'
         )
 
     @_while_quantified
@@ -3906,6 +3910,10 @@ class ClimoDatasetAccessor(ClimoAccessor):
         units=None,
         normalize=False,
         runmean=None,
+        add=None,
+        subtract=None,
+        multiply=None,
+        divide=None,
         **kwargs
     ):
         """
@@ -3919,15 +3927,14 @@ class ClimoDatasetAccessor(ClimoAccessor):
             The variable name. The following prefix and suffix shorthands
             are supported:
 
-            * Append ``_latitude`` or ``_strength`` to return vertically and zonally
-              integrated or maximum energy and momentum budget terms.
-            * Append ``_1``, ``_2``, or ``_anomaly`` to make a selection or take an
-              anomaly pair difference using `~ClimoDatasetAccessor.sel_pair`.
             * Prepend ``abs_`` to return the absolute value of the result.
+            * Append ``_latitude`` or ``_strength`` to return vertically and zonally
+              integrated energy and momentum budget maxima or latitudes of maxima.
+            * Append ``_1``, ``_2``, ``_anomaly``, or ``_ratio`` to make a selection or
+              take an anomaly pair difference using `~ClimoAccessor.sel_pair`.
 
-            You can also pass a 2-tuple to return the difference between two variables.
-            And all names can be replaced with 2-tuples of the form ('name', kwargs)
-            to pass keyword arguments positionally.
+            All names can be replaced with 2-tuples of the form ('name', kwargs) to
+            pass keyword arguments positionally.
         add_cell_measures : bool, optional
             Whether to add default cell measures to the coordinates.
         quantify : bool, optional
@@ -3944,6 +3951,9 @@ class ClimoDatasetAccessor(ClimoAccessor):
         runmean : bool, optional
             Apply a length-`runmean` running mean to the time dimension with
             `~ClimoDataArrayAccessor.runmean`.
+        add, subtract, multiply, divide : var-spec, optional
+            Modify the resulting variable by adding, subtracting, multiplying, or
+            dividing by this variable (passed to `~ClimoDatasetAccessor.get_variable`).
         **kwargs
             Passed to `~ClimoDataArrayAccessor.reduce`. Used to reduce the dimensions.
 
@@ -3952,27 +3962,13 @@ class ClimoDatasetAccessor(ClimoAccessor):
         data : xarray.DataArray
             The data.
         """
-        # Parse positional arguments and optionally return an anomaly
-        # NOTE: Derivations are for variables for which user-specified reductions
-        # come *after* all the other math. For things like forced-unforced anomaly
-        # the reduction comes *before* the math (difference), so put in get_variable.
-        if len(keys) == 1:
-            key = keys[0]
-        elif len(keys) == 2:
-            data1 = self.get_variable(keys[0], **kwargs)
-            data2 = self.get_variable(keys[1], **kwargs)
-            with xr.set_options(keep_attrs=True):
-                data = data1 - data2
-            data.name = data1.name
-            return data
-        else:
-            raise ValueError(f'Invalid variable spec {keys!r}.')
-
         # Get the variable, translating meta-variable actions
         # NOTE: This supports e.g. edsef_strength_anomaly
         # TODO: Avoid name conflicts with functions and variables?
-        regex = r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly)?\Z'
-        abs, key, reduce, pair = re.match(regex, key).groups()
+        if len(keys) != 1:
+            raise TypeError(f'Expected one positional argument, got {len(keys)}.')
+        regex = r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|_ratio)?\Z'
+        abs, key, reduce, pair = re.match(regex, *keys).groups()
         data = self._get_item(key, add_cell_measures=add_cell_measures)
 
         # Automatically determine 'reduce' kwargs for energy and momentum budget
@@ -4030,6 +4026,21 @@ class ClimoDatasetAccessor(ClimoAccessor):
         # to get difference between reduced values
         if pair:
             data = data.climo.sel_pair(pair.strip('_'))
+
+        # Modify the variable. This was used to compare storm track intensity changes
+        # under different temperature gradient adjustments.
+        for other, method in zip(
+            (multiply, divide, add, subtract),
+            ('mul', 'truediv', 'add', 'sub'),
+        ):
+            if other is not None:
+                if isinstance(other, (str, tuple)):
+                    other = self.get_variable(other)
+                with xr.set_options(keep_attrs=True):
+                    data = getattr(data, '__' + method + '__')(other)
+                if isinstance(other, xr.DataArray):
+                    data.name = other.name
+                    data.attrs.update(other.attrs)
 
         # Change the units
         if units is not None:  # permit units='' to translate to dimensionless
@@ -4119,7 +4130,8 @@ def register_derivation(spec, /):
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
             data = func(*args, **kwargs)
-            data.name = spec if isinstance(spec, str) else kwargs.get('name', None)
+            if data.name is None:
+                data.name = spec if isinstance(spec, str) else kwargs.get('name', None)
             return data
 
         DERIVATIONS[spec] = _wrapper
@@ -4166,7 +4178,8 @@ def register_transformation(src, dest, /):
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
             data = func(*args, **kwargs)
-            data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
+            if data.name is None:
+                data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
             return data
 
         TRANSFORMATIONS[(src, dest)] = _wrapper

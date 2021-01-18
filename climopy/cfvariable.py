@@ -26,7 +26,8 @@ __all__ = [
 
 class CFVariable(object):
     """
-    Lightweight CF-style representation of physical variables.
+    Lightweight CF-style representation of physical variables. Integrated
+    with the xarray accessor via `~.accessor.ClimoDataArrayAccessor.cfvariable`.
     """
     def __str__(self):
         names = ', '.join(self.identifiers)  # name, standard_name, aliases
@@ -497,8 +498,10 @@ class CFVariable(object):
 
 class CFVariableRegistry(object):
     """
-    Container of `CFVariable` instances supporting aliases and *ad hoc* generation
-    of `CFVariable` copies with properties modified by the coordinate cell methods.
+    Container of `CFVariable` instances supporting aliases and *ad hoc* generation of
+    `CFVariable` copies with properties modified by the coordinate cell methods.
+    Integrated with the xarray accessor via
+    `~.accessor.ClimoDataArrayAccessor.cfvariable`.
     """
     def __init__(self):
         self._database = {}
