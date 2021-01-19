@@ -2,7 +2,7 @@
 """
 Abstract implementation of the CF data model. Includes a class for holding physical
 variable metadata and grouping them into related hierarchies, and a registry for
-storing instances of these variables.
+storing the variables.
 """
 import copy
 import numbers

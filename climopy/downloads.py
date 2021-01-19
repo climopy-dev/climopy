@@ -2,6 +2,11 @@
 """
 Convenient wrappers for python APIs used to download climatological
 datasets.
+
+Warning
+-------
+This submodule out of date and poorly tested. It will eventually be cleaned up.
+In the meantime, feel free to copy and modify it.
 """
 import calendar
 
