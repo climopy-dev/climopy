@@ -536,10 +536,19 @@ def deriv_half(x, y, /, order=1, axis=0):
     Examples
     --------
     >>> import xarray as xr
-    ... import climopy as climo
-    ... x = xr.DataArray([0, 2, 4], name='x', dims='p', coords={'p': [1000, 800, 600]})
-    ... y = xr.DataArray([0, 4, 16], name='y', dims='p')
-    ... x_out, y_out = climo.deriv_half(x, y)
+    >>> import climopy as climo
+    >>> x = xr.DataArray([0, 2, 4], name='x', dims='p', coords={'p': [1000, 800, 600]})
+    >>> y = xr.DataArray([0, 4, 16], name='y', dims='p')
+    >>> dx, dy = climo.deriv_half(x, y)
+    >>> dx
+    <xarray.DataArray 'x' (p: 2)>
+    array([1., 3.])
+    Coordinates:
+      * p        (p) float64 900.0 700.0
+    >>> dy
+    <xarray.DataArray 'y' (p: 2)>
+    array([2., 6.])
+    Dimensions without coordinates: p
     """
     # Standardize
     x, y = _xy_standardize(x, y, axis)

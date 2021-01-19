@@ -7,6 +7,7 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 
 from .diff import deriv_half, deriv_uneven
 from .internals import ic  # noqa: F401
@@ -40,17 +41,36 @@ def calendar(dt, /):
         A calendar array matching the shape of the input array up to the rightmost axis.
         The rightmost axis is length 6; its indices contain the years, months, days,
         hours, minutes, and seconds of the input datetimes.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import climopy as climo
+    >>> idx = pd.date_range('2000-01-01', '2000-01-03', freq='450T')
+    >>> climo.calendar(idx)
+    array([[2000,    1,    1,    0,    0,    0],
+           [2000,    1,    1,    7,   30,    0],
+           [2000,    1,    1,   15,    0,    0],
+           [2000,    1,    1,   22,   30,    0],
+           [2000,    1,    2,    6,    0,    0],
+           [2000,    1,    2,   13,   30,    0],
+           [2000,    1,    2,   21,    0,    0]], dtype=uint32)
     """
     # See: https://stackoverflow.com/a/56260054/4970632
     # Allocate output
-    dt = np.asarray(dt)
+    # NOTE: asanyarray passes MaskedArrays through while asarray does not
+    fancy = isinstance(dt, (pd.Index, pd.Series, xr.DataArray))
+    if not fancy:
+        dt = np.asanyarray(dt)
     out = np.empty(dt.shape + (6,), dtype='u4')
 
     # Decompose calendar floors
     # NOTE: M8 is datetime64, m8 is timedelta64
-    if isinstance(dt, pd.DatetimeIndex):
-        # Datatype is subdtype of numpy.datetime64 but includes builtin
+    if fancy:
+        # Datatype is subdtype of numpy.datetime64 but array container includes builtin
         # methods for getting calendar properties
+        if isinstance(dt, xr.DataArray):
+            dt = dt.dt  # use builtin xarray datetime accessor
         out[..., 0] = dt.year
         out[..., 1] = dt.month
         out[..., 2] = dt.day
@@ -147,10 +167,11 @@ def intersection(x, y1, y2, /, xlog=False):
     Examples
     --------
     >>> import climopy as climo
-    ... x = 10 + np.arange(4)
-    ... y1 = np.array([4, 2, 0, -2])
-    ... y2 = np.array([0, 1, 2, 3])
-    ... climo.intersection(x, y1, y2)
+    >>> x = 10 + np.arange(4)
+    >>> y1 = np.array([4, 2, 0, -2])
+    >>> y2 = np.array([0, 1, 2, 3])
+    >>> climo.intersection(x, y1, y2)
+    (11.333333333333334, 1.333333333333334)
     """
     # Initial stuff
     x = np.asanyarray(x)
@@ -216,7 +237,7 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
     Examples
     --------
     >>> import climopy as climo
-    ... climo.linetrack(
+    >>> climo.linetrack(
     ...    [
     ...        [30, 20],
     ...        [22],
@@ -226,9 +247,16 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
     ...        [45],
     ...        [20, 47],
     ...        [23, 50],
-    ...    ],
-    ...    ntrack=3,
+    ...    ]
     ... )
+    array([[30., 20., nan],
+           [nan, 22., nan],
+           [nan, 24., nan],
+           [32., 25., nan],
+           [33., 26., 40.],
+           [nan, nan, 45.],
+           [20., nan, 47.],
+           [23., nan, 50.]])
     """
     # Parse input
     if ys is None:
@@ -384,22 +412,33 @@ def zerofind(
 
     Examples
     --------
+    >>> import numpy as np
     >>> import xarray as xr
-    ... import climopy as climo
-    ... ureg = climo.ureg
-    ... x = np.arange(100)
-    ... y = np.sort(np.random.rand(50, 10) - 0.5, axis=0)
-    ... y = np.concatenate((y, y[::-1, :]), axis=0)
-    ... xarr = xr.DataArray(
+    >>> import climopy as climo
+    >>> state = np.random.RandomState(51423)
+    >>> ureg = climo.ureg
+    >>> x = np.arange(100)
+    >>> y = np.sort(state.rand(50, 10) - 0.5, axis=0)
+    >>> y = np.concatenate((y, y[::-1, :]), axis=0)
+    >>> xarr = xr.DataArray(
     ...     x * ureg.s,
     ...     dims=('x',), attrs={'long_name': 'x coordinate'}
     ... )
-    ... with climo.internals.warnings._unit_stripped_ignore():
-    ...     yarr = xr.DataArray(
-    ...         y * ureg.m, name='variable',
-    ...         dims=('x', 'y'), coords={'x': xarr}
-    ...     )
-    ... zx, zy = climo.zerofind(xarr, yarr, ntrack=2)
+    >>> yarr = xr.DataArray(
+    ...     y * ureg.m, name='variable',
+    ...     dims=('x', 'y'), coords={'x': xarr.climo.dequantify()}
+    ... )
+    >>> zx, zy = climo.zerofind(xarr, yarr, axis=0, ntrack=2)
+    >>> zx
+    <xarray.DataArray 'x' (track: 2, y: 10)>
+    <Quantity([[25.56712412 17.1468964  25.94590963 24.43748793 25.96456694 23.50805224
+      24.26007638 25.76728476 26.30359681 22.41433647]
+     [73.43287588 81.8531036  73.05409037 74.56251207 73.03543306 75.49194776
+      74.73992362 73.23271524 72.69640319 76.58566353]], 'second')>
+    Dimensions without coordinates: track, y
+    Attributes:
+        long_name:  x coordinate
+        units:      second
     """
     # Tests
     # TODO: Support tracking across single axis
@@ -416,8 +455,11 @@ def zerofind(
         if ndim == 1:
             y = y[None, ...]
 
-    with _ArrayContext(y, push_right=(axis_track, axis)) as context:
+    with _ArrayContext(y, push_right=(axis, axis_track)) as context:
         # Get flattened data and iterate over extra dimensions
+        # NOTE: Axes are pushed to right in the specified order. Result: first axis
+        # contains flattened extra dimensions, second axis is dimension along which
+        # we are tracking zeros, and third axis is dimension across which we find zeros.
         ys = context.data
         zxs = []
         zys = []

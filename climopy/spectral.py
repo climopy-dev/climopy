@@ -151,16 +151,21 @@ The below example shows that the extent of power reduction resulting from
 non-boxcar windowing depends on the character of the signal.
 
 >>> import numpy as np
-... import climopy as climo
-... w = climo.window(200, 'hanning')
-... y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
-... y2 = np.random.rand(200) # complex signal
-... for y in (y1, y2):
+>>> import climopy as climo
+>>> state = np.random.RandomState(51423)
+>>> w = climo.window(200, 'hanning')
+>>> y1 = np.sin(np.arange(0, 8 * np.pi - 0.01, np.pi / 25)) # basic signal
+>>> y2 = state.rand(200) # complex signal
+>>> for y in (y1, y2):
 ...     yvar = y.var()
 ...     Y = (np.abs(np.fft.fft(y)[1:] / y.size) ** 2).sum()
 ...     Yw = (np.abs(np.fft.fft(y * w)[1:] / y.size) ** 2).sum()
 ...     print('Boxcar', Y / yvar)
 ...     print('Hanning', Yw / yvar)
+Boxcar 1.0
+Hanning 0.375
+Boxcar 0.9999999999999999
+Hanning 0.5728391743988162
 
 References
 ----------
@@ -703,16 +708,39 @@ def power(dx, y1, /, axis=0, **kwargs):
 
     Examples
     --------
+    >>> import numpy as np
+    >>> import xarray as xr
     >>> import climopy as climo
-    ... import xarray as xr
-    ... ureg = climo.ureg
-    ... x = xr.DataArray(
+    >>> state = np.random.RandomState(51423)
+    >>> ureg = climo.ureg
+    >>> x = xr.DataArray(
     ...     np.arange(1000, dtype=float) * ureg.day, dims=('time',), name='time'
     ... )
-    ... y = xr.DataArray(
-    ...     np.random.rand(1000, 50) * ureg.K, dims=('time', 'space'), name='variable'
+    >>> y = xr.DataArray(
+    ...     state.rand(1000, 50) * ureg.K, dims=('time', 'space'), name='variable'
     ... )
-    ... f, P = climo.power(x, y, axis=0)
+    >>> f, P = climo.power(x, y, axis=0)
+    >>> f.head()
+    <xarray.DataArray 'time' (f: 5)>
+    <Quantity([0.001 0.002 0.003 0.004 0.005], '1 / day')>
+    Dimensions without coordinates: f
+    Attributes:
+        long_name:  frequency
+    >>> P.head()
+    <xarray.DataArray 'variable' (f: 5, space: 5)>
+    <Quantity([[1.18298459e-04 1.09036599e-04 3.76719588e-04 3.36341980e-04
+      1.62219721e-04]
+     [1.74596838e-04 2.09816475e-04 1.26945159e-04 3.71464785e-04
+      4.18144064e-04]
+     [6.38233218e-05 1.52714331e-05 8.25923743e-05 3.31492680e-04
+      3.06457271e-05]
+     [1.71082223e-04 3.95808831e-05 5.23555579e-04 6.15207584e-05
+      5.59359839e-05]
+     [1.34026670e-04 3.90031444e-05 2.11700762e-04 2.69345283e-05
+      6.86978186e-05]], 'kelvin ** 2')>
+    Coordinates:
+      * f        (f) float64 0.001 0.002 0.003 0.004 0.005
+    Dimensions without coordinates: space
     """
     return _power_driver(dx, y1, y1, axis=axis, **kwargs)
 
@@ -740,20 +768,58 @@ def copower(dx, y1, y2, /, axis=0, **kwargs):
 
     Examples
     --------
+    >>> import numpy as np
+    >>> import xarray as xr
     >>> import climopy as climo
-    ... import xarray as xr
-    ... ureg = climo.ureg
-    ... x = xr.DataArray(
+    >>> state = np.random.RandomState(51423)
+    >>> ureg = climo.ureg
+    >>> x = xr.DataArray(
     ...     np.arange(1000, dtype=float) * ureg.day, dims=('time',), name='time'
     ... )
-    ... y1 = xr.DataArray(
-    ...     np.random.rand(1000, 50) * ureg.K, dims=('time', 'space'), name='variable'
+    >>> y1 = xr.DataArray(
+    ...     state.rand(1000, 50) * ureg.K, dims=('time', 'space'), name='variable'
     ... )
-    ... y2 = xr.DataArray(
-    ...     np.random.rand(1000, 50) * ureg.m / ureg.s,
+    >>> y2 = xr.DataArray(
+    ...     state.rand(1000, 50) * ureg.m / ureg.s,
     ...     dims=('time', 'space'), name='variable',
     ... )
-    ... f, C, Q, P1, P2, Coh, Phi = climo.copower(x, y1, y2, axis=0)
+    >>> f, C, Q, P1, P2, Coh, Phi = climo.copower(x, y1, y2, axis=0)
+    >>> f.head()
+    <xarray.DataArray 'time' (f: 5)>
+    <Quantity([0.001 0.002 0.003 0.004 0.005], '1 / day')>
+    Dimensions without coordinates: f
+    Attributes:
+        long_name:  frequency
+    >>> C.head()
+    <xarray.DataArray 'variable' (f: 5, space: 5)>
+    <Quantity([[-1.55726091e-04 -2.51099398e-04 -4.51984603e-05  3.38682324e-04
+       1.02699316e-04]
+     [ 6.03921637e-05  1.84940350e-04 -6.98685563e-06  1.25120193e-04
+      -5.62898627e-04]
+     [ 2.89041840e-05  1.62381854e-05  5.51445757e-05 -2.75903456e-04
+      -1.26185549e-05]
+     [ 5.04572726e-05 -6.94459577e-05  2.43580083e-04 -4.08724137e-05
+       6.86952412e-05]
+     [-2.18000152e-04  1.43110211e-05 -2.26535472e-04 -3.73436882e-05
+      -1.28860163e-04]], 'kelvin * meter / second')>
+    Coordinates:
+      * f        (f) float64 0.001 0.002 0.003 0.004 0.005
+    Dimensions without coordinates: space
+    >>> Q.head()
+    <xarray.DataArray 'variable' (f: 5, space: 5)>
+    <Quantity([[ 3.39059554e-05 -5.49872491e-05  3.83785647e-05  1.03330854e-04
+      -9.02664704e-06]
+     [ 1.65124562e-05 -4.40473709e-05 -5.06947002e-07  1.96874623e-04
+      -1.18780187e-04]
+     [-1.09859742e-04  2.31464562e-05 -4.98439846e-05  5.67827280e-05
+       3.39652860e-05]
+     [ 1.22685839e-04 -6.57993024e-05  2.23153696e-04 -9.57458276e-06
+       1.21946552e-06]
+     [-2.82846001e-05  4.62368401e-05  1.54712600e-05 -6.94771696e-05
+      -2.77645650e-05]], 'kelvin * meter / second')>
+    Coordinates:
+      * f        (f) float64 0.001 0.002 0.003 0.004 0.005
+    Dimensions without coordinates: space
     """
     return _power_driver(dx, y1, y2, axis=axis, **kwargs)
 
@@ -937,7 +1003,7 @@ def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
 
 
 @quack._pint_wrapper('=x', '=x')
-def waves(x, /, wavenums=None, wavelengths=None, phase=None):
+def waves(x, /, wavenums=None, wavelengths=None, phase=None, state=None):
     """
     Compose array of sine waves. Useful for testing the performance of filters.
 
@@ -952,6 +1018,8 @@ def waves(x, /, wavenums=None, wavelengths=None, phase=None):
         Wavenumbers for sine function. Required if `wavelengths` is ``None``.
     phase : float, optional
         Array of phase offsets.
+    state : `numpy.RandomState`, optional
+        The random state to use for generating the data.
 
     Returns
     -------
@@ -975,8 +1043,10 @@ def waves(x, /, wavenums=None, wavelengths=None, phase=None):
     data = np.zeros(x.shape)  # user can make N-D array
 
     # Get waves
+    if state is None:
+        state = np.random
     if phase is None:
-        phis = np.random.uniform(0, 2 * np.pi, len(wavenums))
+        phis = state.uniform(0, 2 * np.pi, len(wavenums))
     else:
         phis = phase * np.ones((len(wavenums),))
     for wavenum, phi in zip(wavenums, phis):

@@ -286,12 +286,12 @@ def _manage_coord_reductions(func):
     identically reduce cell weights. See `add_scalar_coords` for details on motivation.
     """
     @functools.wraps(func)
-    def _wrapper(self, dim=None, *, no_manage_coords=False, **kwargs):
+    def _wrapper(self, dim=None, *, manage_coords=True, **kwargs):
         # Call wrapped function
-        # NOTE: Existing scalar coordinates should be retained by xarray been retained
+        # NOTE: Existing scalar coordinates should be retained by xarray
         coords = self.data.coords
         result = func(self, dim, **kwargs)
-        if no_manage_coords:
+        if not manage_coords:
             return result
 
         # Treat lost coordinates
@@ -300,7 +300,7 @@ def _manage_coord_reductions(func):
             prev = coords[name]
             measure = self._to_cf_measure_name(name)
             if prev.ndim == 1 and not measure:
-                # Replace lost dimension coordinates with scalar NaNs. Drop 1D cell
+                # Replace lost dimension coordinates with scalar NaNs. Drop 0D cell
                 # measure coordinates, as that information is no longer needed
                 coord = xr.DataArray(np.nan, name=name, attrs=coords[name].attrs)
                 result = result.assign_coords({name: coord})
@@ -308,8 +308,6 @@ def _manage_coord_reductions(func):
                 # Replace lost cell measures using unweighted sum. Drop non-cell measure
                 # coordinates; usually makes no sense to get an 'average' coordinate
                 # TODO: Support preserving measures for max, min, etc.
-                # TODO: Have max, min, etc. preserve coordinate indicating position of
-                # e.g. latitude max, min, etc. as functimon of other coords
                 if func.__name__ in ('sum', 'integrate'):
                     method = prev.climo.sum
                 elif func.__name__ in ('mean', 'average'):
@@ -321,7 +319,7 @@ def _manage_coord_reductions(func):
                 if isinstance(dim, str):
                     dim = (dim,)
                 dim = tuple(d for m in dim for d in CELL_MEASURE_COORDS.get(m, (m,)))
-                coord = method(dim, no_manage_coords=True, **kwargs)
+                coord = method(dim, manage_coords=False, **kwargs)
                 result = result.assign_coords({name: coord})
 
         return result
@@ -336,16 +334,22 @@ def _keep_cell_attrs(func):
     @functools.wraps(func)
     def _wrapper(self, *args, no_keep_attrs=False, **kwargs):
         # Initial stuff
-        # TODO: Also track units attributes? Or always just use with quantified?
         # NOTE: No longer track CFVARIABLE_ARGS attributes. Too complicated, and
         # yields weird behavior like adding back long_name='zonal wind' after 'argmax'
+        # TODO: Stop defining cell measures for whole dataset, just like cell methods,
+        # to accomodate situation with multiple grids.
         # WARNING: For datasets, we use data array with longest cell_methods, to try to
         # accomodate variable derivations from source variables with identical methods
         # and ignore variables like 'bounds' with only partial cell_methods. But this
         # is ugly kludge with side effects... should be refined.
         data = self.data if isinstance(self, ClimoAccessor) else self
+        data_methods = data_measures = data
         if isinstance(data, xr.Dataset):  # get longest cell_methods
-            data = max(data.values(), key=lambda _: len(_.attrs.get('cell_methods') or ''))  # noqa: E501
+            data_methods = max(
+                data.values(),
+                key=lambda _: len(_.attrs.get('cell_methods') or ''),
+                default=data,  # no attributes found anyway
+            )
 
         # Call wrapped function
         result = func(self, *args, **kwargs)
@@ -353,7 +357,7 @@ def _keep_cell_attrs(func):
             return result
 
         # Build back attributes
-        for attr in ('cell_methods', 'cell_measures'):
+        for data, attr in zip((data_methods, data_measures), ('cell_methods', 'cell_measures')):  # noqa: E501
             value = data.climo._build_cf_attr(data.attrs.get(attr), result.attrs.get(attr))  # noqa: E501
             if value:
                 result.attrs[attr] = value
@@ -825,6 +829,7 @@ class _CoordsQuantified(object):
             name=coord.name + '_bnds',
             dims=(*coord.dims[:1], 'bnds'),  # nameless 'bnds' dimension
             coords=coord.coords,
+            attrs=coord.attrs,
         )
 
         return bounds
@@ -1641,36 +1646,41 @@ class ClimoAccessor(object):
         Examples
         --------
         >>> import numpy as np
-        ... import xarray as xr
-        ... import climopy as climo
-        ... ds = xr.Dataset(
+        >>> import xarray as xr
+        >>> import climopy as climo
+        >>> ds = xr.Dataset(
         ...     coords={
         ...         'lon': np.arange(0, 360, 30),
         ...         'lat': np.arange(-85, 86, 10),
         ...         'lev': ('lev', np.arange(100, 1000, 100), {'units': 'hPa'}),
         ...     }
         ... )
-        ... ds
+        >>> ds
         <xarray.Dataset>
         Dimensions:  (lat: 18, lev: 9, lon: 12)
         Coordinates:
-        * lon      (lon) int64 0 30 60 90 120 150 180 210 240 270 300 330
-        * lat      (lat) int64 -85 -75 -65 -55 -45 -35 -25 ... 25 35 45 55 65 75 85
-        * lev      (lev) int64 100 200 300 400 500 600 700 800 900
+          * lon      (lon) int64 0 30 60 90 120 150 180 210 240 270 300 330
+          * lat      (lat) int64 -85 -75 -65 -55 -45 -35 -25 ... 25 35 45 55 65 75 85
+          * lev      (lev) int64 100 200 300 400 500 600 700 800 900
         Data variables:
             *empty*
         >>> ds = ds.climo.standardize_coords()
-        ... ds = ds.climo.enforce_global(vertical=True)
-        ... ds = ds.climo.add_cell_measures()
-        ... ds
+        >>> ds = ds.climo.enforce_global(vertical=True)
+        >>> ds = ds.climo.add_cell_measures()
+        >>> ds
         <xarray.Dataset>
-        Dimensions:  (lat: 20, lev: 902, lon: 13)
+        Dimensions:      (lat: 20, lev: 11, lon: 13)
         Coordinates:
-        * lon      (lon) float64 -2.03e+04 0.0 30.0 60.0 ... 240.0 270.0 300.0 330.0
-        * lat      (lat) float64 -90.0 -85.0 -75.0 -65.0 -55.0 ... 65.0 75.0 85.0 90.0
-        * lev      (lev) float64 0.0 100.0 101.0 102.0 ... 997.0 998.0 999.0 1.013e+03
+          * lon          (lon) float64 -2.03e+04 0.0 30.0 60.0 ... 270.0 300.0 330.0
+          * lat          (lat) float64 -90.0 -85.0 -75.0 -65.0 ... 65.0 75.0 85.0 90.0
+          * lev          (lev) float64 0.0 100.0 200.0 300.0 ... 800.0 900.0 1.013e+03
+            cell_width   (lat, lon) float64 6.91e-11 6.92e-11 ... 2.043e-13 1.021e-13
+            cell_depth   (lat) float64 278.0 834.0 1.112e+03 ... 1.112e+03 834.0 278.0
+            cell_height  (lev) float64 509.9 1.02e+03 1.02e+03 ... 1.087e+03 577.4
         Data variables:
             *empty*
+        Attributes:
+            cell_measures:  width: cell_width depth: cell_depth height: cell_height
         """
         # Add circular longitude coordinates
         data = self.data
@@ -1764,12 +1774,16 @@ class ClimoAccessor(object):
         Examples
         --------
         >>> ds = xr.tutorial.open_dataset('rasm').load()
-        ... ds = ds.coarsen(x=25, y=25, boundary='trim').mean()
-        ... ds.Tair.attrs['units'] = 'degC'
-        ... T = ds.Tair.climo.quantify()
-        ... group = ureg.kg * (T > 0)  # arbitrary group with units
-        ... group.name = 'group'
-        ... T.climo.groupby(group).mean()
+        >>> ds = ds.coarsen(x=25, y=25, boundary='trim').mean()
+        >>> ds.Tair.attrs['units'] = 'degC'
+        >>> T = ds.Tair.climo.quantify()
+        >>> grp = ureg.kg * (T > 273 * ureg.K)  # arbitrary group with units
+        >>> grp.name = 'above_freezing'
+        >>> T.climo.groupby(grp).mean()
+        <xarray.DataArray 'Tair' (above_freezing: 2)>
+        <Quantity([-13.66380631  11.57033461], 'degree_Celsius')>
+        Coordinates:
+          * above_freezing  (above_freezing) int64 0 1
         """
         return self._cls_groupby(self.data, group, *args, **kwargs)
 
@@ -4112,10 +4126,19 @@ def register_derivation(spec, /):
     Examples
     --------
     >>> import climopy as climo
-    ... from climopy import const
-    ... @climo.register_derivation('pt')
+    >>> from climopy import const
+    >>> @climo.register_derivation('pot_temp')
     ... def potential_temp(self):
-    ...     return self['t'] * (const.p0 / self['p']).climo.to_units('') ** (2 / 7)
+    ...     return self.temp * (const.p0 / self.pres).climo.to_units('') ** (2 / 7)
+    >>> ds = xr.Dataset(
+    ...     {
+    ...         'temp': ((), 273, {'units': 'K'}),
+    ...         'pres': ((), 100, {'units': 'hPa'})
+    ...     }
+    ... )
+    >>> ds.climo['pot_temp']  # or ds.climo.pt
+    <xarray.DataArray 'pot_temp' ()>
+    <Quantity(527.08048, 'kelvin')>
     """
     if not isinstance(spec, (str, tuple, re.Pattern)):
         raise TypeError(f'Invalid name or regex {spec!r}.')
@@ -4158,10 +4181,17 @@ def register_transformation(src, dest, /):
     Examples
     --------
     >>> import climopy as climo
-    ... from climopy import const
-    ... @climo.register_transformation('lat', 'y')
+    >>> from climopy import const
+    >>> @climo.register_transformation('lat', 'y')
     ... def meridional_coordinate(da):
     ...     return (da * const.a).climo.to_units('km')  # implicit deg-->rad conversion
+    >>> da = xr.DataArray([0, 30, 60, 90], name='lat', attrs={'units': 'deg'})
+    >>> da.climo.to_variable('y')
+    <xarray.DataArray 'y' (dim_0: 4)>
+    array([    0.        ,  3335.85240701,  6671.70481401, 10007.55722102])
+    Dimensions without coordinates: dim_0
+    Attributes:
+        units:    kilometer
     """
     if not isinstance(src, str):
         raise ValueError(f'Invalid source {src!r}. Must be string.')

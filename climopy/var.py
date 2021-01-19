@@ -123,7 +123,7 @@ def gaussian(z, mean=0, stdev=None, sigma=1):
     return z, pdf
 
 
-def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1):
+def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
     r"""
     Return one or more artificial red noise time series with prescribed mean
     and standard deviation. The time series are generated with the following
@@ -143,12 +143,13 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1):
         Number of timesteps.
     nsamples : int or list of int, optional
         Axis size or list of axis sizes for the "sample" dimension(s). Shape of the
-        `data` array will be ``(ntime,)`` if `nsamples` is not provided,
+        output array will be ``(ntime,)`` if `nsamples` is not provided,
         ``(ntime, nsamples)`` if `nsamples` is scalar, or ``(ntime, *nsamples)``
         if `nsamples` is a list of axis sizes.
     mean, stdev : float, optional
-        The mean and standard deviation for the red noise
-        time series.
+        The mean and standard deviation for the red noise time series.
+    state : `numpy.RandomState`, optional
+        The random state to use for generating the data.
 
     Returns
     -------
@@ -166,11 +167,13 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1):
     b = (1 - a ** 2) ** 0.5  # from OA class
 
     # Nested loop
+    if state is None:
+        state = np.random
     with _ArrayContext(data, push_left=0) as context:
         data = context.data
         data[0, :] = 0.0  # initialize
         for i in range(data.shape[-1]):
-            eps = np.random.normal(loc=0, scale=1, size=ntime)
+            eps = state.normal(loc=0, scale=1, size=ntime)
             for t in range(1, ntime + 1):
                 data[t, i] = a * data[t - 1, i] + b * eps[t - 1]
 
@@ -374,21 +377,27 @@ def eof(
 
     Examples
     --------
-    >>> from climopy.internals.array import logger, logging
-    ... import xarray as xr
-    ... import climopy as climo
-    ... data = xr.DataArray(
-    ...     np.random.rand(10, 6, 100, 40, 20),
-    ...     dims=('member', 'run', 'time', 'plev', 'lat'),
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> import climopy as climo
+    >>> state = np.random.RandomState(51423)
+    >>> data = xr.DataArray(
+    ...     state.rand(10, 6, 100, 40, 20),
+    ...     dims=('member', 'run', 'time', 'lev', 'lat'),
     ...     coords={
     ...         'member': np.arange(1, 11),
     ...         'run': np.arange(1, 7),
     ...         'time': np.arange(100.0),
-    ...         'plev': np.linspace(0.0, 1000.0, 40),
+    ...         'lev': np.linspace(0.0, 1000.0, 40),
     ...         'lat': np.linspace(-90.0, 90.0, 20),
     ...     }
     ... )
-    ... pcs, projs, evals, nstars = climo.eof(data, axis_time=2, axis_space=(3, 4))
+    >>> pcs, projs, evals, nstars = climo.eof(data, axis_time=2, axis_space=(3, 4))
+    >>> print(pcs.sizes, projs.sizes, evals.sizes, nstars.sizes, sep='\n')
+    Frozen({'eof': 5, 'member': 10, 'run': 6, 'time': 100, 'lev': 1, 'lat': 1})
+    Frozen({'eof': 5, 'member': 10, 'run': 6, 'time': 1, 'lev': 40, 'lat': 20})
+    Frozen({'eof': 5, 'member': 10, 'run': 6, 'time': 1, 'lev': 1, 'lat': 1})
+    Frozen({'eof': 1, 'member': 10, 'run': 6, 'time': 1, 'lev': 1, 'lat': 1})
 
     References
     ----------
@@ -538,18 +547,46 @@ def hist(bins, y, /, axis=0):
 
     Examples
     --------
+    >>> import numpy as np
+    >>> import xarray as xr
     >>> import climopy as climo
-    ... import numpy as np
-    ... import xarray as xr
-    ... from climopy import ureg
-    ... data = xr.DataArray(
-    ...     np.random.rand(20, 1000) * ureg.m,
+    >>> from climopy import ureg
+    >>> state = np.random.RandomState(51423)
+    >>> data = xr.DataArray(
+    ...     state.rand(20, 1000) * ureg.m,
     ...     name='distance',
     ...     dims=('x', 'y'),
     ...     coords={'x': np.arange(20), 'y': np.arange(1000) * 0.1}
     ... )
-    ... bins = np.linspace(0, 1, 11) * ureg.m
-    ... hist = climo.hist(bins, data, axis=1)
+    >>> bins = np.linspace(0, 1, 11) * ureg.m
+    >>> hist = climo.hist(bins, data, axis=1)
+    >>> bins
+    <Quantity([0.  0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1. ], 'meter')>
+    >>> hist
+    <xarray.DataArray 'count' (x: 20, distance: 10)>
+    <Quantity([[100. 102. 101. 112.  99.  98.  93.  97.  84. 114.]
+     [ 96.  94. 117.  81.  93. 111.  99.  92. 116. 101.]
+     [116.  92. 101.  93. 100. 100. 101. 106.  95.  96.]
+     [101. 113. 100.  96. 103. 112.  99.  85.  96.  95.]
+     [102.  97.  85. 111.  94. 116. 101.  98.  94. 102.]
+     [ 95. 112.  93. 105. 104.  87. 101. 103.  95. 105.]
+     [103.  86.  98.  89. 110. 100. 101.  81. 132. 100.]
+     [ 90.  98.  99. 130.  97. 106.  86.  97. 101.  96.]
+     [ 95. 110.  96.  92.  88.  87. 118. 101. 112. 101.]
+     [ 97.  85.  77. 102.  97. 119.  90. 106. 108. 119.]
+     [ 87.  96.  95. 105.  91. 118. 109.  97.  99. 103.]
+     [113.  99. 102.  97.  91.  97.  89. 110. 104.  98.]
+     [100. 107. 110.  97.  85. 114. 104.  95.  97.  91.]
+     [110. 102.  87.  98.  84.  99. 119.  92. 109. 100.]
+     [ 95.  96. 101. 118. 103.  93.  89. 102.  90. 113.]
+     [ 94.  87. 119. 102. 106. 100. 110. 108.  83.  91.]
+     [ 98.  85.  96. 101. 101. 122.  85.  95. 111. 106.]
+     [ 93. 111.  87.  95.  93. 103. 107. 111.  92. 108.]
+     [ 86.  95.  89. 109.  90.  98. 119.  90. 116. 108.]
+     [103. 100. 106.  87. 102.  88. 103. 121.  93.  97.]], 'count')>
+    Coordinates:
+      * x         (x) int64 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+      * distance  (distance) float64 0.05 0.15 0.25 0.35 ... 0.65 0.75 0.85 0.95
     """
     if bins.ndim != 1:
         raise ValueError('Bins must be 1-dimensional.')
@@ -598,10 +635,23 @@ def linefit(x, y, /, axis=0):
 
     Examples
     --------
+    >>> import numpy as np
     >>> import climopy as climo
-    ... x = np.arange(500)
-    ... y = np.random.rand(500, 10)
-    ... slope, stderr, fit = climo.linefit(x, y, axis=0)
+    >>> state = np.random.RandomState(51423)
+    >>> x = np.arange(500)
+    >>> y = state.rand(10, 500) + 0.1 * x
+    >>> slope, stderr, fit = climo.linefit(x, y, axis=1)
+    >>> slope
+    array([[0.10000399],
+           [0.09997467],
+           [0.09980544],
+           [0.10004589],
+           [0.10002195],
+           [0.09996018],
+           [0.10009204],
+           [0.09992162],
+           [0.10014288],
+           [0.10011434]])
     """
     if x.ndim != 1 or x.size != y.shape[axis]:
         raise ValueError(
@@ -697,10 +747,15 @@ def rednoisefit(
 
     Examples
     --------
+    >>> import numpy as np
     >>> import climopy as climo
-    ... data = np.random.rand(500, 10).cumsum(axis=0)
-    ... auto = climo.autocorr(1, data, axis=0, maxlag=50)
-    ... taus, sigmas, fit = climo.rednoisefit(auto, axis=0)
+    >>> state = np.random.RandomState(51423)
+    >>> data = climo.rednoise(0.8, 500, 10, state=state)
+    >>> lag, auto = climo.autocorr(1, data, axis=0, maxlag=50)
+    >>> taus, sigmas, fit = climo.rednoisefit(lag, auto, axis=0)
+    >>> taus
+    array([[5.97691453, 4.29275329, 4.91997185, 4.87781027, 3.46404331,
+            4.23444888, 4.91852921, 4.39283164, 4.79466674, 3.81250855]])
 
     See Also
     --------
