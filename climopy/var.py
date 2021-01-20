@@ -13,7 +13,6 @@ import scipy.stats as stats
 
 from .internals import ic  # noqa: F401
 from .internals import docstring, quack
-from .internals.array import _ArrayContext
 
 __all__ = [
     'autocorr',
@@ -169,7 +168,7 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
     # Nested loop
     if state is None:
         state = np.random
-    with _ArrayContext(data, push_left=0) as context:
+    with quack._ArrayContext(data, push_left=0) as context:
         data = context.data
         data[0, :] = 0.0  # initialize
         for i in range(data.shape[-1]):
@@ -192,7 +191,7 @@ def _covar_driver(
     Driver function for getting covariance.
     """
     # Preparation, and stdev/means
-    dt = quack._get_step(dt)
+    dt = quack._as_step(dt)
     auto = z1 is z2
     if z1.shape != z2.shape:
         raise ValueError(f'Incompatible shapes {z1.shape=} and {z2.shape=}.')
@@ -393,11 +392,31 @@ def eof(
     ...     }
     ... )
     >>> pcs, projs, evals, nstars = climo.eof(data, axis_time=2, axis_space=(3, 4))
-    >>> print(pcs.sizes, projs.sizes, evals.sizes, nstars.sizes, sep='\n')
+    >>> pcs.sizes
     Frozen({'eof': 5, 'member': 10, 'run': 6, 'time': 100, 'lev': 1, 'lat': 1})
+    >>> projs.sizes
     Frozen({'eof': 5, 'member': 10, 'run': 6, 'time': 1, 'lev': 40, 'lat': 20})
-    Frozen({'eof': 5, 'member': 10, 'run': 6, 'time': 1, 'lev': 1, 'lat': 1})
-    Frozen({'eof': 1, 'member': 10, 'run': 6, 'time': 1, 'lev': 1, 'lat': 1})
+    >>> pcs.head(time=1, run=1, member=1).T
+    <xarray.DataArray (lat: 1, lev: 1, time: 1, run: 1, member: 1, eof: 5)>
+    array([[[[[[-0.13679781,  1.08751657,  2.52901891,  0.00737416,
+                 0.55085823]]]]]])
+    Coordinates:
+      * member   (member) int64 1
+      * run      (run) int64 1
+      * time     (time) float64 0.0
+      * eof      (eof) int64 1 2 3 4 5
+    Dimensions without coordinates: lat, lev
+    >>> projs.head(lat=1, lev=1, run=1, member=1).T
+    <xarray.DataArray (lat: 1, lev: 1, time: 1, run: 1, member: 1, eof: 5)>
+    array([[[[[[-0.02304145, -0.01572039,  0.02761249, -0.06884522,
+                 0.04163672]]]]]])
+    Coordinates:
+      * member   (member) int64 1
+      * run      (run) int64 1
+      * lev      (lev) float64 0.0
+      * lat      (lat) float64 -90.0
+      * eof      (eof) int64 1 2 3 4 5
+    Dimensions without coordinates: time
 
     References
     ----------
@@ -435,7 +454,7 @@ def eof(
     # Turn matrix in to extra (K) x time (M) x space (N)
     # Requires flatening space axes into one, and flattening extra axes into one
     shape_orig = data.shape
-    with _ArrayContext(
+    with quack._ArrayContext(
         data, dataw,
         push_left=axis_extra,
         push_right=(axis_time, *axis_space),
@@ -591,7 +610,7 @@ def hist(bins, y, /, axis=0):
     if bins.ndim != 1:
         raise ValueError('Bins must be 1-dimensional.')
 
-    with _ArrayContext(y, push_right=axis) as context:
+    with quack._ArrayContext(y, push_right=axis) as context:
         # Get flattened data
         y = context.data
         yhist = np.empty((y.shape[0], bins.size - 1))
@@ -659,7 +678,7 @@ def linefit(x, y, /, axis=0):
             f'of y-shape {y.shape}.'
         )
 
-    with _ArrayContext(y, push_right=axis) as context:
+    with quack._ArrayContext(y, push_right=axis) as context:
         # Get regression coefficients. Flattened data is shape (K, N)
         # where N is regression dimension. Permute to (N, K) then back again.
         # N gets replaced with length-2 dimension (slope, offset).
@@ -762,7 +781,7 @@ def rednoisefit(
     corr, rednoise
     """
     # Initial stuff
-    dt = quack._get_step(dt)
+    dt = quack._as_step(dt)
     curve_func = lambda t, tau: np.exp(-t * dt / tau)  # noqa: E731
 
     # Parse arguments
@@ -777,7 +796,7 @@ def rednoisefit(
     if maxlag_fit is not None:
         imaxlag_fit = np.round(maxlag_fit / dt).astype(int)
 
-    with _ArrayContext(a, push_right=axis) as context:
+    with quack._ArrayContext(a, push_right=axis) as context:
         # Set defaults
         a = context.data
         nlag = a.shape[1] - 1  # not including 0-lag entry

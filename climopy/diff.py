@@ -214,7 +214,7 @@ def deriv1(
     deriv_half, deriv_uneven
     """
     # Simple Euler scheme
-    h = quack._get_step(h)
+    h = quack._as_step(h)
     ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
@@ -309,7 +309,7 @@ def deriv2(
     deriv1, deriv_uneven
     """
     # Simple Euler scheme
-    h = quack._get_step(h)
+    h = quack._as_step(h)
     ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True
@@ -400,7 +400,7 @@ def deriv3(
     deriv1, deriv_uneven
     """
     # Simple Euler scheme
-    h = quack._get_step(h)
+    h = quack._as_step(h)
     ldiff = rdiff = ()
     if keepedges:
         keepleft = keepright = True

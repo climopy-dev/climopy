@@ -13,8 +13,7 @@ In the meantime, feel free to copy and modify it.
 import numpy as np
 
 from . import const
-from .internals import docstring, warnings
-from .internals.array import _ArrayContext
+from .internals import docstring, quack, warnings
 
 __all__ = [
     'eqlat', 'waq', 'waqlocal',
@@ -137,7 +136,7 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
     # TODO: Use C-style time x plev x lat x lon instead as prototypical dimensionality
     mass = sigma is not None
     arrays = (q, sigma) if mass else (q,)
-    with _ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
+    with quack._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
         # Get flattened arrays
         if not mass:
             q = context.data
@@ -217,7 +216,7 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
         arrays.append(omega)
     if has_sigma:
         arrays.append(sigma)
-    with _ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
+    with quack._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
         # Get flattened data
         if has_omega and has_sigma:
             q, omega, sigma = context.data
@@ -356,7 +355,7 @@ def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
         arrays.append(sigma)
 
     # Flatten (eqlat can do this, but not necessary here)
-    with _ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
+    with quack._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
         # Get flattened data
         if has_omega and has_sigma:
             q, omega, sigma = context.data

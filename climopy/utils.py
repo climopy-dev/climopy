@@ -12,7 +12,6 @@ import xarray as xr
 from .diff import deriv_half, deriv_uneven
 from .internals import ic  # noqa: F401
 from .internals import quack, warnings
-from .internals.array import _ArrayContext
 
 __all__ = [
     'calendar',
@@ -438,7 +437,6 @@ def zerofind(
     Dimensions without coordinates: track, y
     Attributes:
         long_name:  x coordinate
-        units:      second
     """
     # Tests
     # TODO: Support tracking across single axis
@@ -455,7 +453,7 @@ def zerofind(
         if ndim == 1:
             y = y[None, ...]
 
-    with _ArrayContext(y, push_right=(axis, axis_track)) as context:
+    with quack._ArrayContext(y, push_right=(axis, axis_track)) as context:
         # Get flattened data and iterate over extra dimensions
         # NOTE: Axes are pushed to right in the specified order. Result: first axis
         # contains flattened extra dimensions, second axis is dimension along which

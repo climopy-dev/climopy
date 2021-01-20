@@ -21,7 +21,7 @@ from . import DERIVATIONS, TRANSFORMATIONS, const, diff, ureg, utils, var
 from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
-from .internals import _first_unique, _is_numeric, _is_scalar, docstring, warnings
+from .internals import _first_unique, docstring, quack, warnings
 from .unit import encode_units, latex_units, parse_units
 
 __all__ = [
@@ -47,7 +47,7 @@ CELL_MEASURE_COORDS = {
     'volume': ('longitude', 'latitude', 'vertical'),
 }
 DEFAULT_CELL_MEASURES = {
-    # default cell measure names added in definitions.py
+    # default cell measure names added in calc.py
     measure: 'cell_' + measure for measure in CELL_MEASURE_COORDS
 }
 COORD_CELL_MEASURE = {
@@ -773,7 +773,7 @@ class _CoordsQuantified(object):
                     'be a longitude, latitude, or vertical pressure dimension.'
                 )
             bounds = bounds.to(coord.climo.units).magnitude
-            if not _is_scalar(coord):
+            if not quack._is_scalar(coord):
                 bounds = bounds[None, :]
 
         # Cell bounds for time coordinates. Unlike spatial cells, time cell coordinates
@@ -787,7 +787,7 @@ class _CoordsQuantified(object):
             bounds = np.hstack((lower[:, None], upper[:, None]))
 
         # Construct default cell bounds
-        elif _is_numeric(coord):
+        elif quack._is_numeric(coord):
             if sharp_cutoff or sharp_cutoff is None:
                 delta1 = delta2 = 0
             else:
@@ -1879,7 +1879,7 @@ class ClimoAccessor(object):
                 raise ValueError('Coordinate data must be array-like.')
             # Build coordinate DataArray
             if not isinstance(coord, xr.DataArray):
-                dims = () if _is_scalar(coord) else (name,)
+                dims = () if quack._is_scalar(coord) else (name,)
                 coord = xr.DataArray(coord, dims=dims, name=name)
             # Fix coordinate units and attributes
             # WARNING: Absolutely *critical* that DataArray unit string exactly
@@ -2694,7 +2694,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     loc = getattr(method, 'magnitude', method)
                     if dim in coordinates.get('time', ()):
                         idata = idata.climo.sel_time({dim: loc})
-                    elif _is_numeric(loc):  # i.e. not datetime, string, etc.
+                    elif quack._is_numeric(loc):  # i.e. not datetime, string, etc.
                         idata = idata.climo.interp({dim: loc})
                     else:
                         try:
@@ -3553,7 +3553,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # NOTE: This won't affect shallow DataArray or Dataset copy parents
         data = self.data
-        if isinstance(data.data, pint.Quantity) or not _is_numeric(data.data):
+        if isinstance(data.data, pint.Quantity) or not quack._is_numeric(data.data):
             pass
         else:
             data.data = data.data * self.units  # may raise error
@@ -3808,9 +3808,9 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
     def __getitem__(self, key):
         """
-        Return a coordinate, variable, or transformed or derived variable registered
-        with `register_transformation` or `register_derivation`. Translates CF axis
-        names, CF coordinate names, CF standard names, and
+        Return a quantified coordinate, variable, or transformed or derived variable
+        registered with `register_transformation` or `register_derivation`. Translates
+        CF axis names, CF coordinate names, CF standard names, and
         `~.cfvariable.CFVariableRegistry` identifiers. Also ensures cell measures are
         attached to the coordinates on the returned `~xarray.DataArray` using
         `~ClimoAccessor.add_cell_measures`.
@@ -4180,15 +4180,18 @@ def register_transformation(src, dest, /):
 
     Examples
     --------
+    In this example, we define a simple derivation to convert pressure to the
+    log-pressure height.
+
     >>> import climopy as climo
     >>> from climopy import const
-    >>> @climo.register_transformation('lat', 'y')
+    >>> @climo.register_transformation('p', 'z_logp')
     ... def meridional_coordinate(da):
-    ...     return (da * const.a).climo.to_units('km')  # implicit deg-->rad conversion
-    >>> da = xr.DataArray([0, 30, 60, 90], name='lat', attrs={'units': 'deg'})
-    >>> da.climo.to_variable('y')
-    <xarray.DataArray 'y' (dim_0: 4)>
-    array([    0.        ,  3335.85240701,  6671.70481401, 10007.55722102])
+    ...     return (const.H * np.log(const.p0 / da)).climo.to_units('km')
+    >>> da = xr.DataArray([1000, 800, 600, 400], name='p', attrs={'units': 'hPa'})
+    >>> da.climo.to_variable('z_logp')
+    <xarray.DataArray 'z_logp' (dim_0: 4)>
+    array([0.        , 1.56200486, 3.57577937, 6.41403512])
     Dimensions without coordinates: dim_0
     Attributes:
         units:    kilometer
@@ -4206,6 +4209,8 @@ def register_transformation(src, dest, /):
         # Wrap function to assign a DataArray name. Also ensure we use the
         # registered name rather than a CF-style alias
         @functools.wraps(func)
+        # @_keep_cell_attrs  # TODO: do this!
+        # @_while_quantified  # TODO: do this!
         def _wrapper(*args, **kwargs):
             data = func(*args, **kwargs)
             if data.name is None:

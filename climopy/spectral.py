@@ -18,7 +18,6 @@ import scipy.signal as signal
 
 from .internals import ic  # noqa: F401
 from .internals import docstring, quack, warnings
-from .internals.array import _ArrayContext
 
 __all__ = [
     'butterworth',
@@ -331,7 +330,7 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     n_half = (max(len(a), len(b)) - 1) // 2
 
     # Apply filter 'n' times to each sample
-    with _ArrayContext(x, push_right=axis) as context:
+    with quack._ArrayContext(x, push_right=axis) as context:
         # Take mean
         y_filtered = context.data.copy()
         y_mean = y_filtered.mean(axis=1, keepdims=True)
@@ -515,13 +514,13 @@ def _power_driver(
     Driver function for 1D spectral estimates.
     """
     # Initial stuff
-    dx = quack._get_step(dx)
+    dx = quack._as_step(dx)
     copower = y1 is not y2
     if y1.shape != y2.shape:
         raise ValueError(f'Got conflicting shapes for y1 {y1.shape} and y2 {y2.shape}.')
 
     # Get copsectrum, quadrature spectrum, and powers for each window
-    with _ArrayContext(y1, y2, push_right=axis) as context:
+    with quack._ArrayContext(y1, y2, push_right=axis) as context:
         # Get window and flattened, trimmed data
         y1, y2 = context.data
         win, winloc, y1, y2 = _window_data(y1, y2, nperseg=nperseg, wintype=wintype)
@@ -606,8 +605,8 @@ def _power2d_driver(
     Driver function for 2D spectral estimates.
     """
     # Checks
-    dx_lon = quack._get_step(dx_lon)
-    dx_time = quack._get_step(dx_time)
+    dx_lon = quack._as_step(dx_lon)
+    dx_time = quack._as_step(dx_time)
     copower = y1 is not y2
     if len(y1.shape) < 2:
         raise ValueError('Need at least rank 2 array.')
@@ -615,7 +614,7 @@ def _power2d_driver(
         raise ValueError(f'Shapes of y1 {y1.shape} and y2 {y2.shape} must match.')
 
     # Permute and flatten
-    with _ArrayContext(y1, y2, push_right=(axis_time, axis_lon)) as context:
+    with quack._ArrayContext(y1, y2, push_right=(axis_time, axis_lon)) as context:
         # Get window and flattened, trimmed data
         y1, y2 = context.data
         win, winloc, y1, y2 = _window_data(y1, y2, nperseg=nperseg, wintype=wintype)

@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
 """
-Wrappers that permit duck-type array input to various functions.
-
-Todo
-----
-Add wrappers for variance functions, spectral functions, and EOF function.
-
-Note
--------
-Cannot do xarray processing inside main functions because it must happen
-outside of pint processing.
+Wrappers that permit duck-type array input to various functions (hence the file name).
 """
 import functools
 import inspect
 import itertools
+import logging
 import numbers
 import re
 
@@ -23,7 +15,18 @@ import pint.util as putil
 import xarray as xr
 
 from ..unit import ureg
+from . import ic  # noqa: F401
 from . import warnings
+
+# Set up logger for ArrayContext
+# See: https://stackoverflow.com/q/43109355/4970632
+formatter = logging.Formatter('%(name)s (%(levelname)s): %(message)s')
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+logger = logging.getLogger('ArrayContext')
+logger.addHandler(handler)
+logger.setLevel(logging.ERROR)
+# logger.setLevel(logging.INFO)
 
 # Regex to find terms surrounded by curly braces that can be filled with str.format()
 REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside brackets
@@ -39,16 +42,9 @@ def _as_array(*args):
     )
 
 
-def _get_default(func, param):
+def _as_step(h):
     """
-    Get the default value from the call signature.
-    """
-    return inspect.signature(func).parameters[param].default
-
-
-def _get_step(h):
-    """
-    Determine scalar step h.
+    Convert coordinate to scalar step h. Ensure spacings are constant.
     """
     h = np.atleast_1d(h)
     if h.size == 1:
@@ -59,6 +55,13 @@ def _get_step(h):
         raise ValueError(f'x coordinate steps must be identical, but got {h}.')
     else:
         return h[1] - h[0]
+
+
+def _default_param(func, param):
+    """
+    Get the default value from the call signature.
+    """
+    return inspect.signature(func).parameters[param].default
 
 
 def _interp_safe(x, xp, yp):
@@ -87,51 +90,23 @@ def _interp_safe(x, xp, yp):
     return y
 
 
-def _pint_parse(units):
+def _is_numeric(data):
     """
-    Parse `DataArray` unit attributes.
+    Test if object is numeric, i.e. not string or datetime-like.
     """
-    if isinstance(units, pint.Unit):
-        return units
-    units = re.sub(r'([a-zA-Z])([-+]?[0-9]+)', r'\1^\2', units or '')  # exponents↘
-    if ' since ' in units:  # hours since, days since, etc.↘
-        units = units.split()[0]
-    num, *denom = units.split('/')
-    return (
-        ureg.parse_units(num)
-        / np.prod((ureg.dimensionless, *map(ureg.parse_units, denom)))
-    )
+    return np.issubdtype(np.asarray(data).dtype, np.number)
 
 
-def _pint_remove(data):
+def _is_scalar(data):
     """
-    Remove units before assigning as coordinate.
+    Test if object is scalar. Returns ``False`` if it is sized singleton object
+    or has more than one entry.
     """
-    if isinstance(data, xr.DataArray) and isinstance(data.data, ureg.Quantity):
-        data = data.copy()
-        data.attrs.setdefault('units', format(data.data.units, '~'))
-        data.data = data.data.magnitude
-    return data
-
-
-def _dataarray_data(data):
-    """
-    Return underlying `DataArray` data. Apply pint units if possible.
-    """
-    if isinstance(data.data, ureg.Quantity):
-        data = data.data
-    else:
-        units = data.attrs.get('units', None)
-        if units is None:
-            data = data.data
-        else:
-            try:
-                units = _pint_parse(units)
-                data = data.data * units
-            except Exception:  # many, many things could go wrong here
-                warnings._warn_climopy(f'Failed to apply units {units!r} with pint.')
-                data = data.data
-    return data
+    # WARNING: np.isscalar of dimensionless data returns False
+    if isinstance(data, pint.Quantity):
+        data = data.magnitude
+    data = np.asarray(data)
+    return data.ndim == 0
 
 
 def _dataarray_from(
@@ -172,7 +147,9 @@ def _dataarray_from(
         dims[dims.index(dim_in)] = dim_out
     for dim, coord in (dim_coords or {}).items():
         if coord is not None:
-            coords[dim] = _pint_remove(coord)
+            if isinstance(coord, xr.DataArray):
+                coord = coord.climo.dequantify()
+            coords[dim] = coord
         elif dim in coords:  # e.g. ('lat', None) is instruction do delete dimension
             del coords[dim]
 
@@ -186,21 +163,22 @@ def _dataarray_from(
             continue
         if not isinstance(coord, xr.DataArray):
             coord = xr.DataArray(coord, dims=dim, name=dim)
-        if isinstance(coord.data, ureg.Quantity):
-            coord.attrs.setdefault('units', format(coord.data.units, '~'))
-            coord.data = coord.data.magnitude
+        if coord.climo._is_quantity:
+            coord = coord.climo.dequantify()
         coords_fixed[dim] = coord
 
-    # Unquantify if DataArray was quantified
-    if (
-        not isinstance(dataarray.data, pint.Quantity)
-        and isinstance(data.data, pint.Quantity)
-    ):
-        attrs['units'] = data.data.units
-        data.data = data.data.magnitude
-
     # Return new dataarray
-    return xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords_fixed)
+    # NOTE: Avoid xarray bug creating data array from scalar quantity
+    if isinstance(data, pint.Quantity):
+        units, data = data.units, data.magnitude
+    else:
+        units = 1
+    data = xr.DataArray(data, name=name, dims=dims, attrs=attrs, coords=coords_fixed)
+    with xr.set_options(keep_attrs=True):
+        data *= units
+    if not dataarray.climo._is_quantity and data.climo._is_quantity:
+        data = data.climo.dequantify()
+    return data
 
 
 def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
@@ -214,9 +192,10 @@ def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
     ys = _as_array(*ys)
     x_dataarray = isinstance(x, xr.DataArray)
     y_dataarray = all(isinstance(y, xr.DataArray) for y in ys)
-    axis_default = _get_default(func, 'axis' + suffix)
+    axis_default = _default_param(func, 'axis' + suffix)
 
     # Ensure all *ys* have identical dimensions, type, and shape
+    # TODO: Permit automatic broadcasting for various functions?
     y_types = {type(y) for y in ys}
     if len(y_types) != 1:
         raise ValueError(f'Expected one type for y inputs, got {y_types=}.')
@@ -247,14 +226,17 @@ def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
             raise ValueError(f'Input {axis=} different from {axis_inferred=}.')
         axis = axis_inferred
 
-    # Apply units and get data
+    # Finally apply units and strip dataarray data
+    args = []
+    for arg in (x, *ys):
+        if isinstance(arg, xr.DataArray):
+            if 'units' in arg.attrs:
+                arg = arg.climo.quantify()
+            arg = arg.data
+        args.append(arg)
     kwargs['axis' + suffix] = axis_default if axis is None else axis
-    if x_dataarray:
-        x = _dataarray_data(x)
-    if y_dataarray:
-        ys = (_dataarray_data(y) for y in ys)
 
-    return (x, *ys, kwargs)
+    return (*args, kwargs)
 
 
 def _xarray_fit_wrapper(func):
@@ -504,8 +486,8 @@ def _xarray_eof_wrapper(func):
     def wrapper(*args, **kwargs):
         # Sanitize input and interpret 'dim' arguments
         data, = data_in, = args
-        axis_time = kwargs.pop('axis_time', _get_default(func, 'axis_time'))
-        axis_space = kwargs.pop('axis_space', _get_default(func, 'axis_space'))
+        axis_time = kwargs.pop('axis_time', _default_param(func, 'axis_time'))
+        axis_space = kwargs.pop('axis_space', _default_param(func, 'axis_space'))
         if isinstance(data, xr.DataArray):
             data_in = data.data
             if 'dim_time' in kwargs:  # no warning for duplicate args, no big deal
@@ -593,7 +575,9 @@ def _xarray_zerofind_wrapper(func):
             attrs = {}
             dim = y.dims[kwargs['axis']]
             if dim in y.coords:
-                attrs = y.coords[dim].attrs
+                attrs = y.coords[dim].attrs.copy()
+            if 'units' in attrs:
+                del attrs['units']  # units should have been applied with pint
             x_out = _dataarray_from(
                 y, x_out, name=dim, attrs=attrs, dim_change={dim: 'track'},
             )
@@ -606,13 +590,134 @@ def _xarray_zerofind_wrapper(func):
     return wrapper
 
 
+def _pint_units_container(arg):
+    """
+    Convert a unit compatible type to a UnitsContainer, checking if it is string field
+    prefixed with an equal (which is considered a reference). Return the unit container
+    and a boolean indicating whether this is an equal string.
+    """
+    if isinstance(arg, str) and '=' in arg:
+        return putil.to_units_container(arg.split('=', 1)[1]), True
+    return putil.to_units_container(arg, ureg), False
+
+
+def _pint_replace_units(original_units, values_by_name):
+    """
+    Convert a unit compatible type to a UnitsContainer.
+    """
+    q = 1
+    with np.errstate(divide='ignore', invalid='ignore'):
+        # NOTE: Multiply quantities successively here just to pull out units
+        # after everything is done. But avoid broadcasting errors as shown.
+        for arg_name, exponent in original_units.items():
+            try:
+                q = q * values_by_name[arg_name] ** exponent
+            except ValueError:  # avoid negative integer powers of integer arrays
+                q = q * values_by_name[arg_name].astype(float) ** exponent
+            m = getattr(q, 'magnitude', q)
+            u = getattr(q, 'units', 1)
+            if not np.isscalar(m):
+                m = m.flat[0]
+            q = m * u
+    return getattr(q, '_units', putil.UnitsContainer({}))
+
+
+def _pint_parse_args(args):
+    """
+    Parse pint wrapper arguments.
+    """
+    # Helper variables
+    defs_args = set()  # arguments which contain definitions
+    defs_args_ndx = set()  # (i.e. names that appear alone and for the first time)
+    dependent_args_ndx = set()  # arguments which depend on others
+    unit_args_ndx = set()  # arguments which have units.
+    args_as_uc = [_pint_units_container(arg) for arg in args]
+
+    # Check for references in args, remove None values
+    for ndx, (arg, is_ref) in enumerate(args_as_uc):
+        if arg is None:
+            continue
+        elif is_ref:
+            if len(arg) == 1:
+                [(key, value)] = arg.items()
+                if value == 1 and key not in defs_args:
+                    # This is the first time that
+                    # a variable is used => it is a definition.
+                    defs_args.add(key)
+                    defs_args_ndx.add(ndx)
+                    args_as_uc[ndx] = (key, True)
+                else:
+                    # The variable was already found elsewhere,
+                    # we consider it a dependent variable.
+                    dependent_args_ndx.add(ndx)
+            else:
+                dependent_args_ndx.add(ndx)
+        else:
+            unit_args_ndx.add(ndx)
+
+    # Check that all valid dependent variables
+    for ndx in dependent_args_ndx:
+        arg, is_ref = args_as_uc[ndx]
+        if not isinstance(arg, dict):
+            continue
+        if not set(arg.keys()) <= defs_args:
+            raise ValueError(
+                'Found a missing token while wrapping a function: '
+                f'Not all variable referenced in {args[ndx]} are defined!'
+            )
+
+    # Generate converter
+    def _converter(args, strict):
+        args_new = list(args)
+        args_by_name = {}
+
+        # First pass: Grab named values
+        for ndx in defs_args_ndx:
+            arg = args[ndx]
+            args_by_name[args_as_uc[ndx][0]] = arg
+            args_new[ndx] = getattr(arg, '_magnitude', arg)
+
+        # Second pass: calculate derived values based on named values
+        for ndx in dependent_args_ndx:
+            arg = args[ndx]
+            assert _pint_replace_units(args_as_uc[ndx][0], args_by_name) is not None
+            args_new[ndx] = ureg._convert(
+                getattr(arg, '_magnitude', arg),
+                getattr(arg, '_units', putil.UnitsContainer({})),
+                _pint_replace_units(args_as_uc[ndx][0], args_by_name),
+            )
+
+        # Third pass: convert other arguments
+        for ndx in unit_args_ndx:
+            if isinstance(args[ndx], ureg.Quantity):
+                args_new[ndx] = ureg._convert(
+                    args[ndx]._magnitude, args[ndx]._units, args_as_uc[ndx][0]
+                )
+            elif strict:
+                if isinstance(args[ndx], str):
+                    # If the value is a string, we try to parse it
+                    tmp_value = ureg.parse_expression(args[ndx])
+                    args_new[ndx] = ureg._convert(
+                        tmp_value._magnitude, tmp_value._units, args_as_uc[ndx][0]
+                    )
+                else:
+                    raise ValueError(
+                        'A wrapped function using strict=True requires '
+                        'quantity or a string for all arguments with not None units. '
+                        f'(error found for {args_as_uc[ndx][0]}, {args_new[ndx]})'
+                    )
+
+        return args_new, args_by_name
+
+    return _converter
+
+
 def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
     """
-    Handle pint units, similar to `~pint.UnitRegistry.wraps`. Put input units
-    as the first argument, set `strict` to ``False`` by default, and if
-    non-quantities are passed into the function, ensure non-quantities are returned
-    by the function rather than a quantity with ``'dimensionless'`` units, and
-    default to ``strict=False``.
+    Handle pint units, similar to `~pint.UnitRegistry.wraps`. Put input units as the
+    first argument, set `strict` to ``False`` by default, and if non-quantities are
+    passed into the function, ensure non-quantities are returned by the function rather
+    than a quantity with ``'dimensionless'`` units.
 
     Parameters
     ----------
@@ -635,15 +740,13 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
     -------
     Here is a simple example for a derivative wrapper.
 
-    >>> import climopy as climo
-    ... from climopy.internals import quack
-    ... ureg = climo.ureg
-    ... @quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
+    >>> from climopy.internals import quack
+    >>> from climopy import ureg
+    >>> @quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
     ... def deriv(x, y, order=1):
     ...     return y / x ** order
-    ... deriv(1 * ureg.m, 1 * ureg.s, order=2)
-    1.0 <Unit('second / meter ** 2')>
-
+    >>> deriv(1 * ureg.m, 1 * ureg.s, order=2)
+    <Quantity(1.0, 'second / meter ** 2')>
     """
     # Handle singleton input or multiple input
     is_container_in = isinstance(units_in, (tuple, list))
@@ -714,7 +817,7 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
                     units_fmt.append(unit)
 
             # Dequantify input
-            converter = _parse_pint_args(units_in_fmt)
+            converter = _pint_parse_args(units_in_fmt)
             args_new, args_by_name = converter(args, strict)
 
             # Call main function and check output
@@ -729,10 +832,10 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
             # Quantify output, but *only* if input was quantities
             if not is_container_out:
                 result = (result,)
-            pairs = tuple(_to_units_container(arg) for arg in units_out_fmt)
+            pairs = tuple(_pint_units_container(arg) for arg in units_out_fmt)
             no_quantities = not any(isinstance(arg, ureg.Quantity) for arg in args)
             units = tuple(
-                _replace_units(unit, args_by_name) if is_ref else unit
+                _pint_replace_units(unit, args_by_name) if is_ref else unit
                 for (unit, is_ref) in pairs
             )
             result = tuple(
@@ -750,123 +853,354 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
     return decorator
 
 
-def _parse_pint_args(args):
+class _ArrayContext(object):
     """
-    Parse pint wrapper arguments.
+    Temporarily reshape the input dataset(s). This is needed so we can do objective
+    analysis tasks "along an axis." Some tasks can be done by just moving axes and using
+    array[..., :] notation but this is not always possible. Should work with arbitrary
+    duck-type arrays, including dask arrays.
     """
-    # Helper variables
-    defs_args = set()  # arguments which contain definitions
-    defs_args_ndx = set()  # (i.e. names that appear alone and for the first time)
-    dependent_args_ndx = set()  # arguments which depend on others
-    unit_args_ndx = set()  # arguments which have units.
-    args_as_uc = [_to_units_container(arg) for arg in args]
+    def __init__(
+        self, *args,
+        push_right=None, push_left=None, nflat_right=None, nflat_left=None,
+    ):
+        """
+        Parameters
+        ----------
+        *datas : numpy.ndarray
+            The arrays to be reshaped
+        push_left, push_right : int or list of int, optional
+            Axis or axes to move to the left or right sides. By default, if neither are
+            provided, `push_right` is set to ``-1``.
+        nflat_left, nflat_right : int, optional
+            Number of dimensions to flatten on the left or right sides. By default, if
+            only `push_left` is provided, `nflat_right` is set to ``data.ndim -
+            len(push_left)``, and if only `push_right` is provided, `nflat_left` is set
+            to ``data.ndim - len(push_right)``.
 
-    # Check for references in args, remove None values
-    for ndx, (arg, is_ref) in enumerate(args_as_uc):
-        if arg is None:
-            continue
-        elif is_ref:
-            if len(arg) == 1:
-                [(key, value)] = arg.items()
-                if value == 1 and key not in defs_args:
-                    # This is the first time that
-                    # a variable is used => it is a definition.
-                    defs_args.add(key)
-                    defs_args_ndx.add(ndx)
-                    args_as_uc[ndx] = (key, True)
-                else:
-                    # The variable was already found elsewhere,
-                    # we consider it a dependent variable.
-                    dependent_args_ndx.add(ndx)
-            else:
-                dependent_args_ndx.add(ndx)
+        Examples
+        --------
+        Here is a worked example used with the EOF algorithm:
+
+        >>> from climopy.internals.quack import logger, logging, _ArrayContext
+        >>> logger.setLevel(logging.INFO)
+        >>> import xarray as xr
+        >>> import numpy as np
+        >>> # Generate neof, member, run, time, plev, lat array
+        >>> dataarray = xr.DataArray(
+        ...     np.random.rand(12, 8, 100, 40, 20),
+        ...     dims=('member', 'run', 'time', 'plev', 'lat'),
+        ... )
+        >>> array = dataarray.data
+        >>> with _ArrayContext(
+        ...     array,
+        ...     push_left=(0, 1), nflat_left=2,
+        ...     push_right=(2, 3, 4), nflat_right=2,
+        ... ) as context:
+        ...     data = context.data
+        ...     nextra, ntime, nspace = data.shape
+        ...     eofs = np.random.rand(nextra, 5, 1, nspace)  # singleton time dimension
+        ...     pcs = np.random.rand(nextra, 5, ntime, 1)  # singleton space dimension
+        ...     context.replace_data(eofs, pcs, insert_left=1)
+        >>> logger.setLevel(logging.ERROR)
+        >>> eofs, pcs = context.data
+        """
+        # Set arrays
+        # NOTE: No array standardization here. Assume duck-type arrays (numpy
+        # arrays, pint quantities, xarray DataArrays, dask arrays).
+        if not args:
+            raise ValueError('Need at least one input argument.')
+        self._arrays = args
+        self._shapes = []
+        self._moves = []
+        ndim = self._arrays[0].ndim
+
+        # Parse axis arguments and ensure they are positive
+        if push_right is None and push_left is None:
+            push_right = -1
+        if push_right is None:
+            push_right = np.array([])
         else:
-            unit_args_ndx.add(ndx)
+            push_right = np.atleast_1d(push_right)
+        if push_left is None:
+            push_left = np.array([])
+        else:
+            push_left = np.atleast_1d(push_left)
+        for push, side in zip((push_left, push_right), ('left', 'right')):
+            push[push < 0] += ndim
+            if any(push < 0) or any(push >= ndim) or np.unique(push).size != push.size:
+                raise ValueError(f'Invalid push_{side}={push} for {ndim}D array.')
+        self._push_left = push_left
+        self._push_right = push_right
 
-    # Check that all valid dependent variables
-    for ndx in dependent_args_ndx:
-        arg, is_ref = args_as_uc[ndx]
-        if not isinstance(arg, dict):
-            continue
-        if not set(arg.keys()) <= defs_args:
+        # Parse nflat arguments. When user requests pushing to right, means we want
+        # to flatten the remaining left dims. Same goes for pushing to left.
+        # NOTE: There is distinction here between 'None' and '0'. The latter means
+        # add a singleton dimension (useful when iterating over 'extra' dimensions)
+        # while the former means add nothing.
+        if nflat_left is None and not push_left.size and push_right.size:
+            nflat_left = ndim - push_right.size
+        if nflat_right is None and not push_right.size and push_left.size:
+            nflat_right = ndim - push_left.size
+        self._nflat_left = nflat_left
+        self._nflat_right = nflat_right
+
+    def replace_data(self, *args, insert_left=None, insert_right=None):
+        """
+        Replace the data attribute with new array(s).
+
+        Parameters
+        ----------
+        *args : array-like, optional
+            The new arrays. The unflattened middle-dimensions can be changed. The
+            flattened leading or trailing dimensions can be reduced to singleton, but
+            otherwise must be identical or it is unclear how they should be re-expanded.
+        insert_left, insert_right : int, optional
+            Number of new dimensions added to the left or right of the array.
+            Dimensions can only be added to the left or the right of the
+            unflattened middle-dimensions of the array. For example, `climopy.eof`
+            adds a new `neof` dimension so that dimensions are transformed
+            from ``(nextra, ntime, nspace)`` to ``(nextra, neof, ntime, nspace)``.
+            Use lists of numbers to transform input arguments differently.
+
+        Examples
+        --------
+        Inserting new dimensions does not mess up the order of values in dimensions
+        that come before or after. This is revealed by playing with a simple example.
+
+        >>> a = np.array(
+        ...     [
+        ...         [[1, 2, 1], [3, 4, 3]],
+        ...         [[5, 6, 5], [7, 8, 7]],
+        ...         [[9, 10, 9], [11, 12, 11]],
+        ...     ]
+        ... )
+        >>> a.shape
+        (3, 2, 3)
+        >>> a[:, 0, 0]
+        array([1, 5, 9])
+        >>> np.reshape(a, (3, 6), order='F')[:, 0]
+        array([1, 5, 9])
+        >>> np.reshape(a, (3, 6), order='C')[:, 0]
+        array([1, 5, 9])
+        """
+        # Parse arguments
+        inserts_left, inserts_right = [], []
+        for inserts, insert in zip((inserts_left, inserts_right), (insert_left, insert_right)):  # noqa: E501
+            insert = np.atleast_1d(insert).tolist()
+            if len(insert) == 1:
+                insert = insert * len(args)
+            elif len(insert) != len(args):
+                raise ValueError(f'Got {len(insert)} inserts but {len(args)} args.')
+            inserts[:] = insert
+
+        # Check input array shapes
+        # WARNING: The *flattened* dimensions of the new data must match the size
+        # of the *flattened* dimensions of the input data. Flattened dimensions should
+        # only be iterated over or reduced to length 1 by climopy functions like `eof`.
+        shape_template = self._shapes[0]
+        if not all(shape == shape_template for shape in self._shapes):
             raise ValueError(
-                'Found a missing token while wrapping a function: '
-                f'Not all variable referenced in {args[ndx]} are defined!'
+                'Cannot reset dimensions when input data shapes '
+                + ', '.join(map(repr, self._shapes)) + ' differ.'
             )
 
-    # Generate converter
-    def _converter(args, strict):
-        args_new = list(args)
-        args_by_name = {}
-
-        # First pass: Grab named values
-        for ndx in defs_args_ndx:
-            arg = args[ndx]
-            args_by_name[args_as_uc[ndx][0]] = arg
-            args_new[ndx] = getattr(arg, '_magnitude', arg)
-
-        # Second pass: calculate derived values based on named values
-        for ndx in dependent_args_ndx:
-            arg = args[ndx]
-            assert _replace_units(args_as_uc[ndx][0], args_by_name) is not None
-            args_new[ndx] = ureg._convert(
-                getattr(arg, '_magnitude', arg),
-                getattr(arg, '_units', putil.UnitsContainer({})),
-                _replace_units(args_as_uc[ndx][0], args_by_name),
-            )
-
-        # Third pass: convert other arguments
-        for ndx in unit_args_ndx:
-            if isinstance(args[ndx], ureg.Quantity):
-                args_new[ndx] = ureg._convert(
-                    args[ndx]._magnitude, args[ndx]._units, args_as_uc[ndx][0]
+        # Loop through arrays
+        nflat_left = self._nflat_left
+        nflat_right = self._nflat_right
+        shape_flat = self._arrays[0].shape
+        shape_unflat_orig = self._shapes[0]
+        self._arrays = []
+        self._shapes = []
+        self._moves = []
+        for array, insert_left, insert_right in zip(args, inserts_left, inserts_right):
+            # Check shape against flattened dimensions
+            logger.info('')
+            logger.info(f'Add new context array: {array.shape}')
+            shape = list(array.shape)
+            insert_left = insert_left or 0  # *number* of dimensions inserted left
+            insert_right = insert_right or 0  # *number* of dimensions inserted right
+            if (
+                len(shape_flat) + insert_left + insert_right != len(shape)
+            ) or (
+                nflat_left is not None
+                and shape[0] != shape_flat[0]
+                and shape[0] > 1  # reduction to singleton is allowed
+            ) or (
+                nflat_right is not None
+                and shape[-1] != shape_flat[-1]
+                and shape[-1] > 1  # reduction to singleton is allowed
+            ):
+                raise ValueError(
+                    f'New flattened array shape {shape!r} incompatible with '
+                    f'existing flattened array shape {shape_flat!r}.'
                 )
-            elif strict:
-                if isinstance(args[ndx], str):
-                    # If the value is a string, we try to parse it
-                    tmp_value = ureg.parse_expression(args[ndx])
-                    args_new[ndx] = ureg._convert(
-                        tmp_value._magnitude, tmp_value._units, args_as_uc[ndx][0]
-                    )
-                else:
-                    raise ValueError(
-                        'A wrapped function using strict=True requires '
-                        'quantity or a string for all arguments with not None units. '
-                        f'(error found for {args_as_uc[ndx][0]}, {args_new[ndx]})'
-                    )
 
-        return args_new, args_by_name
+            # Determine *unflattened* shape from template shape
+            shape_unflat = shape_unflat_orig.copy()
+            if nflat_left is None:
+                ileft_flat = 0
+                nleft_unflat = 0
+            else:
+                ileft_flat = 1
+                nleft_unflat = nflat_left
+                if shape[0] <= 1:
+                    for i in range(nflat_left):
+                        shape_unflat[i] = 1
+            if nflat_right is None:
+                iright_flat = len(shape)
+                nright_unflat = 0
+            else:
+                iright_flat = len(shape) - 1
+                nright_unflat = nflat_right
+                if shape[-1] <= 1:
+                    for i in range(1, nflat_right + 1):
+                        shape_unflat[-i] = 1
 
-    return _converter
+            # Build unflattened shape
+            shape_left = shape_unflat[:nleft_unflat]
+            shape_center = shape[ileft_flat:iright_flat]  # includes inserted
+            shape_right = shape_unflat[len(shape_unflat) - nright_unflat:]
+            shape = (*shape_left, *shape_center, *shape_right)
+            logger.info(f'Change flattened shape {shape_flat} to {array.shape}.')
+            logger.info(f'Number of left-flattened dimensions: {nflat_left}')
+            logger.info(f'Number of right-flattened dimensions: {nflat_right}')
+            logger.info(f'Flattened left dimensions: {shape_left}')
+            logger.info(f'New center dimensions: {shape_center}')
+            logger.info(f'Flattened right dimensions: {shape_right}')
+            logger.info(f'Change unflattened shape {shape_unflat} to {shape}.')
+            self._arrays.append(array)
+            self._shapes.append(shape)
 
+            # Correct the axis moves given new *inserted* dimensions
+            # Example: Original array has shape [A, B, C, D, E] with push_left [1]
+            # and push_right [0, 3]. Want the new array *final* shape (after swapping
+            # axes) will be [X, Y, A, B, C, D, E, Z]. Now pretend this was the
+            # *initial* dimensionality. Input push_left *and* push_right would be
+            # plus 2 (shifted by 2 new axes), and input push_right unchanged.
+            push_left = self._push_left + insert_left
+            push_right = self._push_right + insert_left
+            moves = self._get_axis_moves(
+                push_left,
+                push_right,
+                left_base=insert_left,
+                right_base=(-1 - insert_right),
+            )
+            self._moves.append(moves)
 
-def _replace_units(original_units, values_by_name):
-    """
-    Convert a unit compatible type to a UnitsContainer.
-    """
-    q = 1
-    with np.errstate(divide='ignore', invalid='ignore'):
-        # NOTE: Multiply quantities successively here just to pull out units
-        # after everything is done. But avoid broadcasting errors as shown.
-        for arg_name, exponent in original_units.items():
-            try:
-                q = q * values_by_name[arg_name] ** exponent
-            except ValueError:  # avoid negative integer powers of integer arrays
-                q = q * values_by_name[arg_name].astype(float) ** exponent
-            m = getattr(q, 'magnitude', q)
-            u = getattr(q, 'units', 1)
-            if not np.isscalar(m):
-                m = m.flat[0]
-            q = m * u
-    return getattr(q, '_units', putil.UnitsContainer({}))
+    def __enter__(self):
+        """
+        Reshape the array.
+        """
+        # NOTE: Hard to build intuition for ND reshaping, but think of it as
+        # just changing the *indices* used to refernece elements. For 2 x 3 x ...
+        # array, row-major flattening creates 6 x ... array whose indices
+        # correspond to A[0, 0], A[0, 1], A[0, 2], A[1, 0], A[1, 1], A[1, 2].
+        # For column-major array, indices correspond to A[0, 0], A[1, 0],
+        # A[0, 1], A[1, 1], A[0, 2], A[1, 2]. Other dimensions not affected.
+        arrays = self._arrays
+        nflat_left = self._nflat_left
+        nflat_right = self._nflat_right
+        self._arrays = []
+        self._shapes = []
+        self._moves = []
+        for array in arrays:
+            # Move axes
+            logger.info('')
+            logger.info(f'Flatten array: {array.shape}')
+            push_left = self._push_left.copy()  # *must* be copy or replace_data fails!
+            push_right = self._push_right.copy()
+            moves = self._get_axis_moves(push_left, push_right)
+            array = self._run_axis_moves(array, moves)
 
+            # Get new left shape
+            ndim = array.ndim
+            shape = list(array.shape)
+            reshape = shape[nflat_left or 0:ndim - (nflat_right or 0)]
+            if nflat_left is not None:
+                s = shape[:nflat_left]
+                N = np.prod(s).astype(int)
+                reshape.insert(0, N)
+                logger.info(f'Flatten {nflat_left} left dimensions: {s} to {N}')
 
-def _to_units_container(arg):
-    """
-    Convert a unit compatible type to a UnitsContainer, checking if it is string
-    field prefixed with an equal (which is considered a reference). Return the
-    unit container and a boolean indicating whether this is an equal string.
-    """
-    if isinstance(arg, str) and '=' in arg:
-        return putil.to_units_container(arg.split('=', 1)[1]), True
-    return putil.to_units_container(arg, ureg), False
+            # Get new right shape
+            if nflat_right is not None:
+                s = shape[ndim - nflat_right:]
+                N = np.prod(s).astype(int)
+                reshape.append(N)
+                logger.info(f'Flatten {nflat_right} right dimensions: {s} to {N}')
+
+            # Reshape
+            if shape != reshape:
+                # WARNING: 'order' arg is invalid for dask arrays
+                logger.info(f'Reshape from {array.shape} to {reshape}')
+                array = np.reshape(array, reshape)
+            self._arrays.append(array)
+            self._moves.append(moves)
+            self._shapes.append(shape)
+
+        return self
+
+    def __exit__(self, *args):  # noqa: U100
+        """
+        Restore the array to its original shape.
+        """
+        arrays = self._arrays
+        shapes = self._shapes
+        moves = self._moves
+        self._arrays = []
+        self._shapes = []
+        self._moves = []
+        for array, ishape, imoves in zip(arrays, shapes, moves):
+            logger.info('')
+            logger.info(f'Unflatten array: {array.shape}')
+            if array.shape != ishape:
+                # WARNING: 'order' arg is invalid for dask arrays
+                logger.info(f'Reshape from {array.shape} to {ishape}')
+                array = np.reshape(array, ishape)
+            array = self._run_axis_moves(array, imoves, reverse=True)
+            self._arrays.append(array)
+
+    @staticmethod
+    def _get_axis_moves(push_left, push_right, left_base=0, right_base=-1):
+        """
+        Get the series of axis swaps given the input dimensionality.
+        """
+        logger.info(f'Push axes left: {push_left}')
+        logger.info(f'Push axes right: {push_right}')
+        moves = []
+        left_base = 0
+        right_base = -1
+        for i, axis in enumerate(push_right):
+            moves.append((axis, right_base))
+            for push in (push_left, push_right):
+                push[push > axis] -= 1  # NOTE: some of these changes have no effect
+        for axis in push_left:
+            moves.append((axis, left_base))
+            for push in (push_left, push_right):
+                push[push < axis] += 1  # NOTE: some of these changes have no effect
+        return np.array(moves)
+
+    @staticmethod
+    def _run_axis_moves(array, moves, reverse=False):
+        """
+        Execute the input axis moves.
+        """
+        slice_ = slice(None, None, -1) if reverse else slice(None)
+        for move in moves[slice_]:
+            move = move[slice_]
+            array = np.moveaxis(array, *move)
+            logger.info(f'Move {move[0]} to {move[1]}: {array.shape}')
+        return array
+
+    @property
+    def data(self):
+        """
+        The arrays. Use this to retrieve reshaped arrays within the context block for
+        your computation and outside the context block once they are reshaped back.
+        """
+        arrays = self._arrays
+        if len(arrays) == 1:
+            return arrays[0]
+        else:
+            return tuple(arrays)

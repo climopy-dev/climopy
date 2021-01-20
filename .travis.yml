@@ -32,13 +32,14 @@ before_install:
 install:
   - conda env create -n climopy-dev --file docs/environment.yml
   - source activate climopy-dev
-  - pip install flake8
+  - pip install flake8 pytest
   - conda list
   - which conda
   - which python
 
 script:
   - flake8 climopy --max-line-length=88 --ignore=W503,E402,E741
+  - pytest --doctest-modules climopy
   - pushd docs
   - make html
   - popd
