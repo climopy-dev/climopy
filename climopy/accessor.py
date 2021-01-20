@@ -1773,7 +1773,7 @@ class ClimoAccessor(object):
 
         Examples
         --------
-        >>> ds = xr.tutorial.open_dataset('rasm').load()
+        >>> ds = xr.tutorial.open_dataset('rasm', decode_times=False)
         >>> ds = ds.coarsen(x=25, y=25, boundary='trim').mean()
         >>> ds.Tair.attrs['units'] = 'degC'
         >>> T = ds.Tair.climo.quantify()
