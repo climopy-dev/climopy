@@ -24,7 +24,7 @@ logger = _make_logger('ArrayContext', 'error')  # or 'info'
 REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside brackets
 
 
-def _as_array(*args):
+def _as_arraylike(*args):
     """
     Convert list and tuple input to arrays.
     """
@@ -180,8 +180,8 @@ def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
     The axis suffix can be e.g. ``'_time'`` and we look for the ``dim_time`` keyword.
     """
     # Convert builtin python types to arraylike
-    x, = _as_array(x)
-    ys = _as_array(*ys)
+    x, = _as_arraylike(x)
+    ys = _as_arraylike(*ys)
     x_dataarray = isinstance(x, xr.DataArray)
     y_dataarray = all(isinstance(y, xr.DataArray) for y in ys)
     axis_default = _default_param(func, 'axis' + suffix)

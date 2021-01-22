@@ -98,9 +98,9 @@ def calendar(dt, /):
 
 def match(*args):
     """
-    Return the overlapping points for a group of 1D vectors. Useful e.g. for
-    matching the time dimensions of 3D or 4D variables collected over
-    different years and months.
+    Return the overlapping segment from a series of vectors with common coordinate
+    spacings but different start or end points. Useful e.g. for matching the time
+    dimensions of variables collected over different but overlapping date ranges.
 
     Parameters
     ----------
@@ -110,43 +110,50 @@ def match(*args):
     Returns
     -------
     i1, i2, ..., v : ndarray
-        The indices of matching coordinates for each vector, and the vector
-        consisting of these coordinates. These satsify the following condition:
+        The `slice` objects that index matching coordinate ranges for each vector, and
+        a vector containing these coordinates.
 
-        .. code-block:: python
-
-            v1[i1] == v2[i2] == ... == vmatch
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import climopy as climo
+    >>> v1 = pd.date_range('2000-01-01', '2000-01-10')
+    >>> v2 = pd.date_range('2000-01-05', '2000-01-15')
+    >>> i1, i2, v = climo.match(v1, v2)
+    >>> v
+    DatetimeIndex(['2000-01-05', '2000-01-06', '2000-01-07', '2000-01-08',
+                   '2000-01-09', '2000-01-10'],
+                  dtype='datetime64[ns]', freq='D')
+    >>> np.all(v1[i1] == v2[i2])
+    True
+    >>> np.all(v1[i1] == v)
+    True
     """
-    vs = [np.array(v) for v in args]
+    vs = quack._as_arraylike(*args)
     if not all(np.all(v == np.sort(v)) for v in vs):
         raise ValueError('Vectors must be sorted.')
 
     # Get common minima/maxima
-    min_all, max_all = max(v.min() for v in vs), min(v.max() for v in vs)
+    min_ = max(map(np.min, vs))
+    max_ = min(map(np.max, vs))
     try:
-        min_idxs = [np.where(v == min_all)[0][0] for v in vs]
-        max_idxs = [np.where(v == max_all)[0][0] for v in vs]
+        min_idx = [np.where(v == min_)[0][0] for v in vs]
+        max_idx = [np.where(v == max_)[0][0] for v in vs]
     except IndexError:
         raise ValueError('Vectors do not have matching minima/maxima.')
-    slices = [
-        slice(min_i, max_i + 1) for min_i, max_i in zip(min_idxs, max_idxs)
-    ]
+    slices = [slice(i, j + 1) for i, j in zip(min_idx, max_idx)]
 
     # Checks
     if any(
-        v[slice_i].size != vs[0][slices[0]].size
-        for v, slice_i in zip(vs, slices)
+        v[slice_].size != vs[0][slices[0]].size
+        for v, slice_ in zip(vs, slices)
     ):
-        raise ValueError(
-            'Vectors are not identical between matching minima/maxima.'
-        )
+        raise ValueError('Vectors are not identical between matching minima/maxima.')
     elif any(
-        not np.all(v[slice_i] == vs[0][slices[0]])
-        for v, slice_i in zip(vs, slices)
+        not np.all(v[slice_] == vs[0][slices[0]])
+        for v, slice_ in zip(vs, slices)
     ):
-        raise ValueError(
-            'Vectors are not identical between matching minima/maxima.'
-        )
+        raise ValueError('Vectors are not identical between matching minima/maxima.')
     return slices + [vs[0][slices[0]]]
 
 
