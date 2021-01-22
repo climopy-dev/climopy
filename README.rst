@@ -21,12 +21,18 @@ documentation are incomplete, and undiscovered bugs may exist.
 Installation
 ------------
 
-The latest release can be installed or updated from PyPi as follows:
+ClimoPy is published on `PyPi <https://pypi.org/project/climopy/>`__.
+It can be installed or upgraded with ``pip`` as follows:
 
 .. code-block:: bash
 
    pip install climopy
    pip install --upgrade climopy
+
+To install a development version of ClimoPy, you can use
+``pip install git+https://github.com/lukelbd/climopy.git``
+or clone the repository and run ``pip install -e .`` inside
+the ``climopy`` folder.
 
 
 Documentation
