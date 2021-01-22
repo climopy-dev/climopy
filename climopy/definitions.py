@@ -73,7 +73,7 @@ with warnings.catch_warnings():
         # for datasets with measures already present in coordinates, while preventing
         # recalculation of exact same measures.
         data = const.a * self.coords['cosine_latitude'] * self.coords['longitude_delta']  # noqa: E501
-        data = data.climo.to_units('km')
+        data = data.climo.to_units('km')  # removes 'deg'
         data.name = 'cell_width'  # avoids calculation of other measures
         return data.climo.add_cell_measures(width=data)
 
@@ -82,7 +82,7 @@ with warnings.catch_warnings():
         # NOTE: Depth is interpreted as if looking northward at 3D cell rectangle.
         # Think of depth as 'into the distance' instead of 'into the ground'.
         data = const.a * self.coords['latitude_delta']
-        data = data.climo.to_units('km')
+        data = data.climo.to_units('km')  # removes 'deg'
         data.name = 'cell_depth'
         return data.climo.add_cell_measures(depth=data)
 

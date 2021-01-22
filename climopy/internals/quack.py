@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Wrappers that permit duck-type array input to various functions (hence the file name).
+Wrappers that support duck-type array input to various functions (hence the filename).
 """
 import functools
 import inspect
 import itertools
-import logging
 import numbers
 import re
 
@@ -16,17 +15,10 @@ import xarray as xr
 
 from ..unit import ureg
 from . import ic  # noqa: F401
-from . import warnings
+from . import _make_logger, warnings
 
-# Set up logger for ArrayContext
-# See: https://stackoverflow.com/q/43109355/4970632
-formatter = logging.Formatter('%(name)s (%(levelname)s): %(message)s')
-handler = logging.StreamHandler()
-handler.setFormatter(formatter)
-logger = logging.getLogger('ArrayContext')
-logger.addHandler(handler)
-logger.setLevel(logging.ERROR)
-# logger.setLevel(logging.INFO)
+# Set up ArrayContext logger
+logger = _make_logger('ArrayContext', 'error')  # or 'info'
 
 # Regex to find terms surrounded by curly braces that can be filled with str.format()
 REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside brackets
@@ -882,10 +874,11 @@ class _ArrayContext(object):
         --------
         Here is a worked example used with the EOF algorithm:
 
-        >>> from climopy.internals.quack import logger, logging, _ArrayContext
-        >>> logger.setLevel(logging.INFO)
-        >>> import xarray as xr
+        >>> import logging
         >>> import numpy as np
+        >>> import xarray as xr
+        >>> from climopy.internals.quack import logger, _ArrayContext
+        >>> logger.setLevel(logging.INFO)
         >>> # Generate neof, member, run, time, plev, lat array
         >>> dataarray = xr.DataArray(
         ...     np.random.rand(12, 8, 100, 40, 20),
