@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Abstract implementation of the CF data model. Includes a class for holding physical
-variable metadata and grouping them into related hierarchies, and a registry for
-storing the variables.
+Tools for managing CF-style variable metadata. Includes a class for holding variable
+metadata and grouping variables into related hierarchies, and a registry for storing
+variables.
 """
 import copy
 import numbers
