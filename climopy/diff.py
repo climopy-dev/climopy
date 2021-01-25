@@ -96,8 +96,9 @@ def _fornberg_coeffs(x, x0, order=1):
     order : int, optional
         The order of the derivative.
     """
-    # NOTE: The order of coordinates does not matter (can be descending or
-    # even non-monotonic evidently).
+    # Begin loop
+    # NOTE: The order of coordinates does not matter (can be descending or even
+    # non-monotonic evidently).
     x = np.asarray(x)
     n = x.shape[-1]
     if order >= n:
@@ -116,12 +117,13 @@ def _fornberg_coeffs(x, x0, order=1):
             w_prev = weights[..., ii, idxs - 1]
             # The 'for m := 0 to min(n, M)' part
             h = x[..., i:i + 1] - x[..., ii:ii + 1]
-            # print(w.shape, w_prev.shape, idxs.shape, h0.shape, h.shape)
             weights[..., ii, idxs] = (h0 * w - idxs * w_prev) / h
+
         # The 'for m := 0 to min(n, M)' part
         # Note we use w and w_prev from last loop iteration here
         weights[..., i, idxs] = (idxs * w_prev - h0_prev * w) * (hprod_prev / hprod)
         hprod_prev = hprod
+
     return weights[..., -1]  # weights for order'th derivative (rightmost selection)
 
 
@@ -609,17 +611,18 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
         x = np.moveaxis(x, axis, -1)
     y = np.moveaxis(y, axis, -1)
 
+    # Initial stuff
+    # nblock = 1 + accuracy + 2 * ((order - 1) // 2)
+    nhalf = accuracy // 2 + (order - 1) // 2
+    offset = 0 if keepedges else nhalf
+    n = y.shape[-1]
+
     # Get coefficients for blocks of x-coordinates matching the length of respective
     # centered finite difference methods.
     # NOTE: We figure out edge derivatives with the fornberg algorithm using the same
     # number of points as centered samples, but could also take approach of even finite
     # difference methods and progressively reduce numbers of points used on edge.
-    n = y.shape[-1]
-    nblock = 1 + accuracy + 2 * ((order - 1) // 2)
-    nhalf = (nblock - 1) // 2
-    offset = 0 if keepedges else nhalf
-    with np.errstate(invalid='ignore'):
-        diff = np.empty(y.shape) * np.nan
+    diff = np.full(y.shape, np.nan)
     for i in range(offset, n - offset):
         # Get segment of x to pass to algorithm
         # NOTE: To prevent overfitting we want to try to try to reduce segment length
@@ -644,4 +647,5 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     if not keepedges:
         diff = diff[..., nhalf:-nhalf]
     diff = np.moveaxis(diff, -1, axis)
+
     return diff

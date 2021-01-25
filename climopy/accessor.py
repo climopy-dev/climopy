@@ -594,7 +594,7 @@ class _CoordsQuantified(object):
         tup = self._parse_key(key)
         if not tup:
             raise KeyError(f'Invalid coordinate spec {key!r}.')
-        return self._make_coords(*tup)
+        return self._make_coord(*tup)
 
     def _parse_key(
         self,
@@ -660,7 +660,7 @@ class _CoordsQuantified(object):
                 ):
                     return tup
 
-    def _make_coords(self, transformation, coord, flag, **kwargs):
+    def _make_coord(self, transformation, coord, flag, **kwargs):
         """
         Return the coordinates, accounting for `CF` and `CFVariableRegistry` names.
         """
@@ -701,7 +701,8 @@ class _CoordsQuantified(object):
         )
         dest = dest.climo.quantify()
         if transformation:
-            dest = transformation(dest)  # will also adjust name
+            dest.name = None  # ensure name is modified
+            dest = transformation(dest)  # adjusts name if it is unset
 
         # Return coords with cleaned up attributes. Only long_name and standard_name
         # are kept if math was performed.
@@ -859,7 +860,7 @@ class _CoordsQuantified(object):
         if tup is None:
             return default
         else:
-            return self._make_coords(*tup, sharp_cutoff=sharp_cutoff)
+            return self._make_coord(*tup, sharp_cutoff=sharp_cutoff)
 
 
 class _DataArrayCoordsQuantified(
@@ -2500,16 +2501,22 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         if attr[:1] == '_' or attr == 'cfvariable':
             return super().__getattribute__(attr)  # trigger builtin AttributeError
-        if attr in self.data.attrs:
-            return self.data.attrs[attr]
         try:
-            var = self.cfvariable
-            return getattr(var, attr)
+            return self.data.attrs[attr]
+        except KeyError:
+            pass
+        try:
+            return self.coords[attr]
+        except KeyError:
+            pass
+        try:
+            return getattr(self.cfvariable, attr)
         except AttributeError:
             pass
         raise AttributeError(
-            f'Attribute {attr!r} does not exist and is not a DataArray or CFVariable '
-            f'attribute, or a CFVariable was not found for the name {self.data.name!r}.'
+            f'Attribute {attr!r} does not exist and is not a valid coordinate or '
+            f'DataArray or CFVariable attribute, or a CFVariable was not found for '
+            f'the name {self.data.name!r}.'
         )
 
     @_while_quantified
