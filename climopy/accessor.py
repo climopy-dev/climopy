@@ -2495,6 +2495,17 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         return key in self.coords
 
+    def __dir__(self):
+        """
+        Support name lookup and completion. Derivations and aliases are excluded.
+        """
+        data = self.data
+        try:
+            cfattrs = dir(self.cfvariable)
+        except AttributeError:
+            cfattrs = ()
+        return sorted({*dir(type(self)), *cfattrs, *data.attrs, *data.coords})
+
     def __getattr__(self, attr):
         """
         Retrieve an attribute or cfvariable property.
@@ -3799,6 +3810,12 @@ class ClimoDatasetAccessor(ClimoAccessor):
         Is a dataset variable or derived coordinate.
         """
         return self._get_item_or_func(key) is not None
+
+    def __dir__(self):
+        """
+        Support name lookup and completion. Derivations and aliases are excluded.
+        """
+        return sorted({*dir(type(self)), *self.coords, *self.vars})
 
     def __getattr__(self, attr):
         """
