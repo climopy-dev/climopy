@@ -1984,9 +1984,9 @@ class ClimoAccessor(object):
     def sel_pair(self, key):
         """
         Return selection from a pseudo "parameter" axis. "Parameter" axes are identified
-        as any non-scalar coordinate whose associated `~.cfvariable.CFVariable`
-        includes a specified "reference" value (e.g., a coordinate named ``'forcing'``
-        with a "reference" value of ``0``).
+        as any non-scalar coordinate whose associated
+        `~ClimoDataArrayAccesor.cfvariable` has a "reference" value (e.g., a coordinate
+        named ``'forcing'`` with a "reference" value of ``0``).
 
         Parameters
         ----------
@@ -1999,11 +1999,9 @@ class ClimoAccessor(object):
             To return the difference between keys ``2`` and ``1``, pass ``'anomaly'``.
             To return the ratio of key ``2`` over key ``1``, pass ``'ratio'``.
 
-            The associated `~.cfvariable.CFVariable` names are modified by adding
-            ``long_prefix`` and ``long_suffix`` attributes to the resulting
-            `~xarray.DataArray`. These attributes are passed to
-            `~.cfvariable.CFVariableRegistry` when the
-            `~ClimoDataArrayAccessor.cfvariable` is generated.
+            The associated `~ClimoDataArrayAccessor.cfvariable` names are modified by
+            adding ``long_prefix`` and ``long_suffix`` attributes to the resulting
+            `~xarray.DataArray`.
         """
         key = str(key)
         if key not in ('1', '2', 'anomaly', 'ratio'):
