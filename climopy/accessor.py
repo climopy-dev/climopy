@@ -308,7 +308,7 @@ def _manage_coord_reductions(func):
                 # Replace lost cell measures using unweighted sum. Drop non-cell measure
                 # coordinates; usually makes no sense to get an 'average' coordinate
                 # TODO: Support preserving measures for max, min, etc.
-                if func.__name__ in ('sum', 'integrate'):
+                if func.__name__ in ('sum', 'integral'):
                     method = prev.climo.sum
                 elif func.__name__ in ('mean', 'average'):
                     method = prev.climo.mean
@@ -1246,7 +1246,7 @@ class ClimoAccessor(object):
                 if ignore_scalar:  # used for .sum() and .mean()
                     del indexers[key]
                     continue
-                elif not include_scalar:  # used for .integrate() and .average()
+                elif not include_scalar:  # used for .integral() and .average()
                     raise RuntimeError(f'Coordinate {key!r} is scalar.')
             # Validate indexer
             if (
@@ -1795,7 +1795,7 @@ class ClimoAccessor(object):
         """
         # NOTE: Unweighted mean or sum along scalar coordinate conceptually is an
         # identity operation, so ignore them. This is also important when running
-        # integrate() and _manage_coord_reductions adjusted the cell methods.
+        # integral() and _manage_coord_reductions adjusted the cell methods.
         data = self.truncate(**kwargs)
         dims = data.dims if dim is None else self._parse_dims(
             dim, ignore_scalar=True, include_no_coords=True,
@@ -1985,8 +1985,8 @@ class ClimoAccessor(object):
         """
         Return selection from a pseudo "parameter" axis. "Parameter" axes are identified
         as any non-scalar coordinate whose associated
-        `~ClimoDataArrayAccesor.cfvariable` has a "reference" value (e.g., a coordinate
-        named ``'forcing'`` with a "reference" value of ``0``).
+        `~ClimoDataArrayAccessor.cfvariable` has a "reference" value (e.g., a
+        coordinate named ``'forcing'`` with a "reference" value of ``0``).
 
         Parameters
         ----------
@@ -2619,11 +2619,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             'absargmin', 'absargmax', 'argzero',
         )
         average_names = {
-            'int': ('integrate', {}),
+            'int': ('integral', {}),
             'avg': ('average', {}),
             'anom': ('anomaly', {}),
-            'lcumint': ('cumintegrate', {}),
-            'rcumint': ('cumintegrate', {'reverse': True}),
+            'lcumint': ('cumintegral', {}),
+            'rcumint': ('cumintegral', {'reverse': True}),
             'lcumavg': ('cumaverage', {}),
             'rcumavg': ('cumaverage', {'reverse': True}),
             'lcumanom': ('cumanomaly', {}),
@@ -2753,7 +2753,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_while_quantified
     @_keep_cell_attrs
-    def _integrate_or_average(
+    def _integral_or_average(
         self,
         dims,
         weight=None,
@@ -2772,7 +2772,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data.climo.truncate(**kwargs)
         name = data.name
         cell_measures = data.cf.cell_measures
-        weights_explicit = []  # quantification necessary for integrate()
+        weights_explicit = []  # quantification necessary for integral()
         weights_implicit = []  # quantification not necessary, slows things down a bit
         if weight is not None:
             weight = weight.climo.truncate(**kwargs)
@@ -2936,9 +2936,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @docstring.add_template(
         'avgint', operator='integral', action='integration', notes='weighted'
     )
-    def integrate(self, dim=None, **kwargs):
+    def integral(self, dim=None, **kwargs):
         kwargs.update(integral=True, cumulative=False)
-        return self._integrate_or_average(dim, **kwargs)
+        return self._integral_or_average(dim, **kwargs)
 
     @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
     @docstring.add_template(
@@ -2946,7 +2946,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     )
     def average(self, dim=None, **kwargs):
         kwargs.update(integral=False, cumulative=False)
-        return self._integrate_or_average(dim, **kwargs)
+        return self._integral_or_average(dim, **kwargs)
 
     def anomaly(self, *args, **kwargs):
         """
@@ -2964,16 +2964,16 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @docstring.add_template(
         'cumavgint', operator='integral', action='integration', notes='weighted'
     )
-    def cumintegrate(self, dim, skipna=None, **kwargs):
+    def cumintegral(self, dim, skipna=None, **kwargs):
         kwargs.update(integral=True, cumulative=True)
-        return self._integrate_or_average(dim, **kwargs)
+        return self._integral_or_average(dim, **kwargs)
 
     @docstring.add_template(
         'cumavgint', operator='average', action='averaging', notes=('avgmean', 'weighted')  # noqa: E501
     )
     def cumaverage(self, dim, reverse=False, weight=None, skipna=None, **kwargs):
         kwargs.update(integral=False, cumulative=True)
-        return self._integrate_or_average(dim, **kwargs)
+        return self._integral_or_average(dim, **kwargs)
 
     def cumanomaly(self, *args, **kwargs):
         """
@@ -3458,16 +3458,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         context : str or `pint.Context`, optional
             The `pint context <https://pint.readthedocs.io/en/0.10.1/contexts.html>`_.
             Default is the ClimoPy context ``'climo'`` (see `~.unit.ureg` for details).
-
-            which permits transforming the moist static energy
-            terms temperature, geopotential height, and specific humidity between their
-            native units of Kelvin, meters, and grams per kilogram to the energetic
-            units Joules per kilogram using multiplication by specific heat capacity,
-            gravitational acceleration, and latent heat of vaporization (respectively).
-            It also transforms the time tendency and meridional flux of these terms,
-            and transforms between terms normalized with respect to unit vertical
-            pressure distance and terms normalized per unit mass per unit area by
-            multiplying by the standard gravitational acceleration.
         """
         if not self._is_quantity:
             raise ValueError('Data should be quantified.')
