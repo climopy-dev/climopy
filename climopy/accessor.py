@@ -3173,15 +3173,18 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             data = data.transpose(..., dim)
 
         # Manage zerofind keyword args
+        if dim_track is not None:
+            kwargs['axis_track'] = data.dims.index(dim_track)
         if abs:
-            kwargs.setdefault('track', False)
-        else:
-            if dim_track:
-                kwargs['axis_track'] = data.dims.index(dim_track)
-                kwargs.setdefault('track', True)
-            elif 'axis_track' not in kwargs:
-                warnings._warn_climopy('Tracking dim for local zeros not provided.')
-                kwargs['track'] = False
+            kwargs.setdefault('track', False)  # will not matter in the end
+        elif kwargs.get('axis_track', None) is not None:
+            kwargs.setdefault('track', True)  # implied that user wants tracking
+        elif kwargs.get('track', None):
+            warnings._warn_climopy(
+                'Keyword args axis_track or dim_track required when track=True. '
+                'Setting track=False.'
+            )
+            kwargs['track'] = False
         if which in ('min', 'max'):
             kwargs['diff'] = 1
             if which == 'min':
