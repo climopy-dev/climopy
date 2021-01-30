@@ -9,66 +9,20 @@ from .internals import ic  # noqa: F401
 from .internals import docstring, quack, warnings
 
 __all__ = [
-    'integral',
-    'deriv1', 'deriv2', 'deriv3',
-    'deriv_half', 'deriv_uneven',
+    'integral', 'deriv_even', 'deriv_half', 'deriv_uneven',
 ]
 
-# Used below
-sentinel = object()
-
 # Docstring snippets
-_axis_dim = """
+# NOTE: Includes snippets used in other parts of code
+docstring.snippets['params_axisdim'] = """
 axis : int, optional
-    Axis along which %(action)s.
+    Axis along which %(name)s is taken.
 dim : str, optional
     *For `xarray.DataArray` input only*.
-    Named dimension along which the %(action)s.
+    Named dimension along which %(name)s is taken.
 """
 
-docstring.snippets['hist.axis'] = _axis_dim % {'action': 'histogram is computed'}
-
-docstring.snippets['deriv.axis'] = _axis_dim % {'action': 'derivative is taken'}
-
-docstring.snippets['interp.axis'] = _axis_dim % {'action': 'interpolation is done'}
-
-docstring.snippets['integral.axis'] = _axis_dim % {'action': 'integral is taken'}
-
-docstring.snippets['deriv.args'] = """
-h : float or array-like
-    The step size. If non-singleton, the step size is `h[1] - h[0]`.
-y : array-like
-    The data.
-"""
-
-docstring.snippets['deriv.kwargs'] = """
-accuracy : {{0, 2, 4, 6}}, optional
-    Accuracy of finite difference approximation. ``0`` corresponds
-    to differentiation onto half-levels. ``2``, ``4``, and ``6`` correspond
-    to centered accuracies of :math:`h^2`, :math:`h^4`, and :math:`h^6`,
-    respectively.  See `this wikipedia page \
-<https://en.wikipedia.org/wiki/Finite_difference_coefficient>`__
-    for the table of coefficients for each accuracy.
-keepleft, keepright, keepedges : bool, optional
-    Whether to fill left, right, or both edge positions with progressively
-    lower-`accuracy` finite difference estimates to prevent reducing
-    the dimension size along axis `axis`.
-"""
-
-docstring.snippets['deriv.returns'] = """
-diff : array-like
-    The "derivative". The length of axis `axis` may differ from `y`
-    depending on the `keepleft`, `keepright`, and `keepedges` settings.
-"""
-
-docstring.snippets['basic.params'] = """
-x : array-like
-    A 1-d coordinate vector. Must match the shape of `y` on axis `axis`.
-y : array-like
-    The data.
-"""
-
-docstring.snippets['uneven.params'] = """
+docstring.snippets['params_uneven'] = """
 x : float or array-like
     The step size, a 1-d coordinate vector, or an array of coordinates
     matching the shape of `y`.
@@ -129,7 +83,7 @@ def _fornberg_coeffs(x, x0, order=1):
 
 @quack._xarray_xyy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=x * y')
-@docstring.add_snippets
+@docstring.inject_snippets(name='integral')
 def integral(x, y, /, y0=0, axis=0):
     """
     Return the integral approximation along an arbitrary axis.
@@ -143,7 +97,7 @@ def integral(x, y, /, y0=0, axis=0):
     y0 : float or array-like, optional
         Constant offset added to the integral. Must be scalar or match the
         shape of `y`.
-    %(integral.axis)s
+    %(params_axisdim)s
 
     Returns
     -------
@@ -162,7 +116,7 @@ def integral(x, y, /, y0=0, axis=0):
     return y0 + (y * dx).cumsum(axis=axis)
 
 
-def _accuracy_check(n, accuracy, order=1):
+def _restrict_accuracy(n, accuracy, order=1):
     """
     Restrict the accuracy based on length of dimension.
     """
@@ -193,27 +147,11 @@ def _accuracy_check(n, accuracy, order=1):
 
 @quack._xarray_xyy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=y / x')
-@docstring.add_snippets
-def deriv1(
+def _deriv_first(
     h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
-    Return an estimate of the first derivative along an arbitrary axis using
-    first order centered finite differencing.
-
-    Parameters
-    ----------
-    %(deriv.args)s
-    %(deriv.axis)s
-    %(deriv.kwargs)s
-
-    Returns
-    -------
-    %(deriv.returns)s
-
-    See Also
-    --------
-    deriv_half, deriv_uneven
+    Return the first order centered finite difference.
     """
     # Simple Euler scheme
     h = quack._as_step(h)
@@ -223,7 +161,7 @@ def deriv1(
 
     # Checks
     n = y.shape[axis]
-    accuracy = _accuracy_check(n, accuracy, order=1)
+    accuracy = _restrict_accuracy(n, accuracy, order=1)
 
     # Derivative
     y = np.asarray(y)  # for safety
@@ -233,13 +171,9 @@ def deriv1(
     elif accuracy == 2:
         diff = (1 / 2) * (-y[..., :-2] + y[..., 2:]) / h
         if keepleft:
-            ldiff = (
-                deriv1(h, y[..., :2], axis=-1, keepleft=True, accuracy=0),
-            )  # one-tuple
+            ldiff = _deriv_first(h, y[..., :2], axis=-1, keepleft=True, accuracy=0),
         if keepright:
-            rdiff = (
-                deriv1(h, y[..., -2:], axis=-1, keepright=True, accuracy=0),
-            )
+            rdiff = _deriv_first(h, y[..., -2:], axis=-1, keepright=True, accuracy=0),
     elif accuracy == 4:
         diff = (
             (1 / 12)
@@ -252,13 +186,9 @@ def deriv1(
             / h
         )
         if keepleft:
-            ldiff = (
-                deriv1(h, y[..., :3], axis=-1, keepleft=True, accuracy=2),
-            )  # one-tuple
+            ldiff = _deriv_first(h, y[..., :3], axis=-1, keepleft=True, accuracy=2),
         if keepright:
-            rdiff = (
-                deriv1(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
-            )
+            rdiff = _deriv_first(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
     elif accuracy == 6:
         diff = (
             (1 / 60)
@@ -273,13 +203,9 @@ def deriv1(
             / h
         )
         if keepleft:
-            ldiff = (
-                deriv1(h, y[..., :5], axis=-1, keepleft=True, accuracy=4),
-            )  # one-tuple
+            ldiff = _deriv_first(h, y[..., :5], axis=-1, keepleft=True, accuracy=4),
         if keepright:
-            rdiff = (
-                deriv1(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
-            )
+            rdiff = _deriv_first(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
     else:
         raise ValueError('Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).')
     diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
@@ -288,27 +214,11 @@ def deriv1(
 
 @quack._xarray_xyy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** 2')
-@docstring.add_snippets
-def deriv2(
+def _deriv_second(
     h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
-    Return an estimate of the second derivative along an arbitrary axis using
-    second order centered finite differencing.
-
-    Parameters
-    ----------
-    %(deriv.args)s
-    %(deriv.axis)s
-    %(deriv.kwargs)s
-
-    Returns
-    -------
-    %(deriv.returns)s
-
-    See Also
-    --------
-    deriv1, deriv_uneven
+    Return the second order centered finite difference.
     """
     # Simple Euler scheme
     h = quack._as_step(h)
@@ -318,7 +228,7 @@ def deriv2(
 
     # Checks
     n = y.shape[axis]
-    accuracy = _accuracy_check(n, accuracy, order=2)
+    accuracy = _restrict_accuracy(n, accuracy, order=2)
 
     # Derivative
     y = np.asarray(y)  # for safety
@@ -326,9 +236,9 @@ def deriv2(
     if accuracy == 2:
         diff = (y[..., :-2] - 2 * y[..., 1:-1] + y[..., 2:]) / h ** 2
         if keepleft:  # just append the leftmost 2nd deriv
-            ldiff = (diff[..., :1],)
+            ldiff = diff[..., :1],
         if keepright:  # just append the rightmost 2nd deriv
-            rdiff = (diff[..., -1:],)
+            rdiff = diff[..., -1:],
     elif accuracy == 4:
         diff = (
             (1 / 12)
@@ -342,13 +252,9 @@ def deriv2(
             / h ** 2
         )
         if keepleft:
-            ldiff = (
-                deriv2(h, y[..., :3], axis=-1, keepleft=True, accuracy=2),
-            )
+            ldiff = _deriv_second(h, y[..., :3], axis=-1, keepleft=True, accuracy=2),
         if keepright:
-            rdiff = (
-                deriv2(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
-            )
+            rdiff = _deriv_second(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
     elif accuracy == 6:
         diff = (
             (1 / 180)
@@ -364,13 +270,9 @@ def deriv2(
             / h ** 2
         )
         if keepleft:
-            ldiff = (
-                deriv2(h, y[..., :5], axis=-1, keepleft=True, accuracy=4),
-            )
+            ldiff = _deriv_second(h, y[..., :5], axis=-1, keepleft=True, accuracy=4),
         if keepright:
-            rdiff = (
-                deriv2(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
-            )
+            rdiff = _deriv_second(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
     else:
         raise ValueError('Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).')
     diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
@@ -379,27 +281,11 @@ def deriv2(
 
 @quack._xarray_xyy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** 3')
-@docstring.add_snippets
-def deriv3(
+def _deriv_third(
     h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
 ):
     """
-    Return an estimate of the third derivative along an arbitrary axis using
-    third order centered finite differencing.
-
-    Parameters
-    ----------
-    %(deriv.args)s
-    %(deriv.axis)s
-    %(deriv.kwargs)s
-
-    Returns
-    -------
-    %(deriv.returns)s
-
-    See Also
-    --------
-    deriv1, deriv_uneven
+    Return the third order centered finite difference.
     """
     # Simple Euler scheme
     h = quack._as_step(h)
@@ -409,7 +295,7 @@ def deriv3(
 
     # Checks
     n = y.shape[axis]
-    accuracy = _accuracy_check(n, accuracy, order=3)
+    accuracy = _restrict_accuracy(n, accuracy, order=3)
 
     # Derivative
     y = np.asarray(y)  # for safety
@@ -422,9 +308,9 @@ def deriv3(
             + y[..., 3:]
         ) / h ** 3
         if keepleft:  # just append the leftmost 3rd deriv
-            ldiff = (diff[..., :1],)
+            ldiff = diff[..., :1],
         if keepright:  # just append the rightmost 3rd deriv
-            rdiff = (diff[..., -1:],)
+            rdiff = diff[..., -1:],
     elif accuracy == 2:
         diff = (
             (1 / 2)
@@ -437,13 +323,9 @@ def deriv3(
             / h ** 3
         )
         if keepleft:
-            ldiff = (
-                deriv3(h, y[..., :4], axis=-1, keepleft=True, accuracy=0),
-            )
+            ldiff = _deriv_third(h, y[..., :4], axis=-1, keepleft=True, accuracy=0),
         if keepright:
-            rdiff = (
-                deriv3(h, y[..., -4:], axis=-1, keepright=True, accuracy=0),
-            )
+            rdiff = _deriv_third(h, y[..., -4:], axis=-1, keepright=True, accuracy=0),
     elif accuracy == 4:
         diff = (
             (1 / 8)
@@ -458,13 +340,9 @@ def deriv3(
             / h ** 3
         )
         if keepleft:
-            ldiff = (
-                deriv3(h, y[..., :5], axis=-1, keepleft=True, accuracy=2),
-            )
+            ldiff = _deriv_third(h, y[..., :5], axis=-1, keepleft=True, accuracy=2),
         if keepright:
-            rdiff = (
-                deriv3(h, y[..., -5:], axis=-1, keepright=True, accuracy=2),
-            )
+            rdiff = _deriv_third(h, y[..., -5:], axis=-1, keepright=True, accuracy=2),
     elif accuracy == 6:
         diff = (
             (1 / 240)
@@ -481,20 +359,61 @@ def deriv3(
             / h ** 3
         )
         if keepleft:
-            ldiff = (
-                deriv2(h, y[..., :7], axis=-1, keepleft=True, accuracy=4),
-            )
+            ldiff = _deriv_third(h, y[..., :7], axis=-1, keepleft=True, accuracy=4),
         if keepright:
-            rdiff = (
-                deriv2(h, y[..., -7:], axis=-1, keepright=True, accuracy=4),
-            )
+            rdiff = _deriv_third(h, y[..., -7:], axis=-1, keepright=True, accuracy=4),
     else:
         raise ValueError('Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).')
     diff = np.concatenate((*ldiff, diff, *rdiff), axis=-1)
     return np.moveaxis(diff, -1, axis)
 
 
-def _xy_standardize(x, y, /, axis=0):
+@docstring.inject_snippets(name='derivative')
+def deriv_even(h, y, /, axis=0, order=1, **kwargs):
+    """
+    Return an estimate of the first, second, or third order derivative along an
+    arbitrary axis using centered finite differencing.
+
+    Parameters
+    ----------
+    h : float or array-like
+        The step size. If non-singleton, the step size is ``h[1] - h[0]``. An error
+    y : array-like
+        The data.
+    %(params_axisdim)s
+    accuracy : {0, 2, 4, 6}, optional
+        Accuracy of finite difference approximation. ``0`` corresponds to
+        differentiation onto half-levels. ``2``, ``4``, and ``6`` correspond to
+        centered accuracies of :math:`h^2`, :math:`h^4`, and :math:`h^6`, respectively.
+        See `this wikipedia page \
+<https://en.wikipedia.org/wiki/Finite_difference_coefficient>`__
+        for the table of coefficients for each accuracy.
+    keepleft, keepright, keepedges : bool, optional
+        Whether to fill left, right, or both edge positions with progressively
+        lower-`accuracy` finite difference estimates to prevent reducing
+        the dimension size along axis `axis`.
+
+    Returns
+    -------
+    diff : array-like
+        The "derivative". The length of axis `axis` may differ from `y`
+        depending on the `keepleft`, `keepright`, and `keepedges` settings.
+
+    See Also
+    --------
+    deriv_half, deriv_uneven
+    """
+    if order == 1:
+        return _deriv_first(h, y, axis=axis, **kwargs)
+    elif order == 2:
+        return _deriv_second(h, y, axis=axis, **kwargs)
+    elif order == 3:
+        return _deriv_third(h, y, axis=axis, **kwargs)
+    else:
+        raise ValueError(f'Invalid derivative {order=}. Must fall between 1 and 3.')
+
+
+def _standardize_x_y(x, y, /, axis=0):
     """
     Standardize the coordiantes.
     """
@@ -511,7 +430,7 @@ def _xy_standardize(x, y, /, axis=0):
 
 @quack._xarray_xyxy_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
-@docstring.add_snippets
+@docstring.inject_snippets(name='derivative')
 def deriv_half(x, y, /, order=1, axis=0):
     """
     Return an arbitrary order finite difference approximation by taking successive
@@ -521,8 +440,8 @@ def deriv_half(x, y, /, order=1, axis=0):
 
     Parameters
     ----------
-    %(uneven.params)s
-    %(deriv.axis)s
+    %(params_uneven)s
+    %(params_axisdim)s
 
     Returns
     -------
@@ -533,7 +452,7 @@ def deriv_half(x, y, /, order=1, axis=0):
 
     See also
     --------
-    deriv1, deriv_uneven
+    deriv_even, deriv_uneven
 
     Examples
     --------
@@ -553,7 +472,7 @@ def deriv_half(x, y, /, order=1, axis=0):
     Dimensions without coordinates: p
     """
     # Standardize
-    x, y = _xy_standardize(x, y, axis)
+    x, y = _standardize_x_y(x, y, axis)
     if x.ndim > 1:
         x = np.moveaxis(x, axis, -1)
     y = np.moveaxis(y, axis, -1)
@@ -573,7 +492,7 @@ def deriv_half(x, y, /, order=1, axis=0):
 
 @quack._xarray_xyy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
-@docstring.add_snippets
+@docstring.inject_snippets(name='derivative')
 def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     r"""
     Return an arbitrary order centered finite difference approximation for
@@ -581,8 +500,8 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
 
     Parameters
     ----------
-    %(uneven.params)s
-    %(deriv.axis)s
+    %(params_uneven)s
+    %(params_axisdim)s
     accuracy : {2, 4, 6, ...}, optional
         Accuracy of the finite difference approximation. This determines the
         number of terms that go into the :cite:`1988:fornberg` algorithm.
@@ -603,10 +522,10 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
 
     See Also
     --------
-    deriv1, deriv_half
+    deriv_even, deriv_half
     """
     # Standardize x and y
-    x, y = _xy_standardize(x, y, axis=axis)
+    x, y = _standardize_x_y(x, y, axis=axis)
     if x.ndim > 1:
         x = np.moveaxis(x, axis, -1)
     y = np.moveaxis(y, axis, -1)

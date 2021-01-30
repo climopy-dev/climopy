@@ -36,7 +36,25 @@ __all__ = [
 ]
 
 # Input values
-_power_params = """
+docstring.snippets['params_power1d'] = """
+dx : float or array-like
+    Dimension step size in physical units. Used to scale `fx`.
+%(data)s
+axis : int, optional
+    Location of the "time" axis.
+"""
+docstring.snippets['params_power2d'] = """
+dx_lon : float or array-like
+    Longitude or cyclic dimension step size in physical units. Used to scale `fx_lon`.
+dx_time : float or array-like
+    Time dimension step size in physical units. Used to scale `fx_time`.
+%(data)s
+axis_lon : int, optional
+    Location of the cyclic "space" axis, generally longitude.
+axis_time : int, optional
+    Location of the "time" axis.
+"""
+docstring.snippets['params_power'] = """
 wintype : str or (str, float), optional
     The window specification, passed to `window`. The resulting
     weights are used to window the data before carrying out spectral
@@ -44,7 +62,7 @@ wintype : str or (str, float), optional
 nperseg : int, optional
     The time dimension window or segment length, passed to `window`. If
     ``None``, windowing is not carried out. See notes for details.
-detrend : {{'constant', 'linear'}}, optional
+detrend : {'constant', 'linear'}, optional
     Passed as the `type` argument to `scipy.signal.detrend`. ``'constant'``
     removes the mean and ``'linear'`` removes the linear trend.
 """
@@ -53,57 +71,29 @@ _power_data = """
 y : array-like
     The input data.
 """
-
 _copower_data = """
 y1 : array-like
    First input data.
 y2 : array-like
-    Second input data. Must have same shape as `y1`.
+   Second input data. Must have same shape as `y1`.
 """
 
-_power1d_params = """
-dx : float or array-like
-    Dimension step size in physical units. Used to scale `fx`.
-{}
-""".rstrip() + _power_params
-
-_power2d_params = """
-dx_lon : float or array-like
-    Longitude or cyclic dimension step size in physical units. Used to scale `fx_lon`.
-dx_time : float or array-like
-    Time dimension step size in physical units. Used to scale `fx_time`.
-{}
-axis_lon : int, optional
-    Location of the cyclic "space" axis, generally longitude.
-axis_time : int, optional
-    Location of the "time" axis.
-""".rstrip() + _power_params
-
-docstring.snippets['power.params'] = _power1d_params.format(_power_data.strip())
-docstring.snippets['power2d.params'] = _power2d_params.format(_power_data.strip())
-docstring.snippets['copower.params'] = _power1d_params.format(_copower_data.strip())
-docstring.snippets['copower2d.params'] = _power2d_params.format(_copower_data.strip())
-
-
 # Return values
-_power1d_returns = """
+docstring.snippets['returns_power1d'] = """
 fx : array-like
     Frequencies. Units are the inverse of the `dx` units.
 """
-
-_power2d_returns = """
+docstring.snippets['returns_power2d'] = """
 fx_lon : array-like
     Frequencies for *longitude* or *cyclic* axis. Units are the inverse of `dx_lon`.
 fx_time : array-like
     Frequencies for *time* axis. Units are the inverse of the `dx_time`.
 """
-
-_power_returns = """
+docstring.snippets['returns_power'] = """
 P : array-like
     Power spectrum. Units are the input units squared.
 """
-
-_copower_returns = """
+docstring.snippets['returns_copower'] = """
 C : array-like
     Co-power spectrum.
 Q : array-like
@@ -118,13 +108,8 @@ Phi : array-like, optional
     Phase difference in degrees.
 """
 
-docstring.snippets['power.returns'] = _power1d_returns.strip() + _power_returns.rstrip()  # noqa: E501
-docstring.snippets['power2d.returns'] = _power2d_returns.strip() + _power_returns.rstrip()  # noqa: E501
-docstring.snippets['copower.returns'] = _power1d_returns.strip() + _copower_returns.rstrip()  # noqa: E501
-docstring.snippets['copower2d.returns'] = _power2d_returns.strip() + _copower_returns.rstrip()  # noqa: E501
-
 # Notes
-docstring.snippets['power.notes'] = """
+docstring.snippets['notes_power'] = """
 Notes
 -----
 The Fourier coefficients are scaled so that total variance is equal to one
@@ -689,7 +674,7 @@ def _power2d_driver(
 
 @quack._xarray_power_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=1 / x', '=y ** 2'))
-@docstring.add_snippets
+@docstring.inject_snippets(data=_power_data)
 def power(dx, y1, /, axis=0, **kwargs):
     """
     Return the spectral decomposition of a real-valued array along an
@@ -697,13 +682,15 @@ def power(dx, y1, /, axis=0, **kwargs):
 
     Parameters
     ----------
-    %(power.params)s
+    %(params_power1d)s
+    %(params_power)s
 
     Returns
     -------
-    %(power.returns)s
+    %(returns_power1d)s
+    %(returns_power)s
 
-    %(power.notes)s
+    %(notes_power)s
 
     Examples
     --------
@@ -749,7 +736,7 @@ def power(dx, y1, /, axis=0, **kwargs):
     ('=x', '=y1', '=y2'),
     ('=1 / x', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
-@docstring.add_snippets
+@docstring.inject_snippets(data=_copower_data)
 def copower(dx, y1, y2, /, axis=0, **kwargs):
     """
     Return the co-spectral decomposition and related quantities for two
@@ -757,13 +744,15 @@ def copower(dx, y1, y2, /, axis=0, **kwargs):
 
     Parameters
     ----------
-    %(copower.params)s
+    %(params_power1d)s
+    %(params_power)s
 
     Returns
     -------
-    %(copower.returns)s
+    %(returns_power1d)s
+    %(returns_copower)s
 
-    %(power.notes)s
+    %(notes_power)s
 
     Examples
     --------
@@ -825,7 +814,7 @@ def copower(dx, y1, y2, /, axis=0, **kwargs):
 
 @quack._xarray_power2d_wrapper
 @quack._pint_wrapper(('=x1', '=x2', '=y'), ('=1 / x1', '=1 / x2', '=y ** 2'))
-@docstring.add_snippets
+@docstring.inject_snippets(data=_power_data)
 def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
     """
     Return the spectral decomposition of a real-valued array along an
@@ -833,13 +822,15 @@ def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
 
     Parameters
     ----------
-    %(power2d.params)s
+    %(params_power2d)s
+    %(params_power)s
 
     Returns
     -------
-    %(power2d.returns)s
+    %(returns_power2d)s
+    %(returns_power)s
 
-    %(power.notes)s
+    %(notes_power)s
     """
     return _power2d_driver(
         dx_lon, dx_time, y, axis_lon=axis_lon, axis_time=axis_time, **kwargs
@@ -851,7 +842,7 @@ def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
     ('=x1', '=x2', '=y1', '=y2'),
     ('=1 / x1', '=1 / x2', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
-@docstring.add_snippets
+@docstring.inject_snippets(data=_copower_data)
 def copower2d(dx_lon, dx_time, y1, y2, /, axis_lon=0, axis_time=-1, **kwargs):
     """
     Return the 2D spectral decomposition of two real-valued arrays with
@@ -860,13 +851,15 @@ def copower2d(dx_lon, dx_time, y1, y2, /, axis_lon=0, axis_time=-1, **kwargs):
 
     Parameters
     ----------
-    %(copower2d.params)s
+    %(params_power2d)s
+    %(params_power)s
 
     Returns
     -------
-    %(copower2d.returns)s
+    %(returns_power2d)s
+    %(returns_copower)s
 
-    %(power.notes)s
+    %(notes_power)s
     """
     return _power2d_driver(
         dx_lon, dx_time, y1, y2, axis_lon=axis_lon, axis_time=axis_time, **kwargs

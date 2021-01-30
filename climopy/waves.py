@@ -19,7 +19,7 @@ __all__ = [
     'eqlat', 'waq', 'waqlocal',
 ]
 
-docstring.snippets['eqlat.params'] = """
+docstring.snippets['params_eqlat'] = """
 lon, lat : ndarray
     The longitude and latitude coordinates.
 q : ndarray
@@ -29,7 +29,7 @@ skip : int, optional
     The interval of sorted `q` from which we select output `Q` values.
 """
 
-docstring.snippets['waq.params'] = """
+docstring.snippets['params_waq'] = """
 flip : bool, optional
     Whether to flip the input data along the latitude dimension. Use this
     if your zonal average gradient is negative poleward.
@@ -99,7 +99,7 @@ class _LongitudeLatitude(object):
         self.areas = self.weights * const.a ** 2
 
 
-@docstring.add_snippets
+@docstring.inject_snippets()
 def eqlat(lon, lat, q, skip=10, sigma=None):
     r"""
     Get equivalent latitudes corresponding to PV levels evenly sampled from
@@ -113,7 +113,7 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
 
     Parameters
     ----------
-    %(eqlat.params)s
+    %(params_eqlat)s
 
     Returns
     -------
@@ -124,10 +124,6 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
     Q : ndarray
         The associated Q thresholds for the equivalent latitudes. Same shape
         as `eqlat`.
-
-    Warning
-    -------
-    For now assumed dimensionality is lon x lat x ...
     """
     # Get grid areas, as function of latitude
     areas = _LongitudeLatitude(lon, lat).areas
@@ -184,6 +180,7 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
     return context.data
 
 
+@docstring.inject_snippets()
 def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
     """
     Return the finite-amplitude wave activity. See
@@ -191,8 +188,8 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
 
     Parameters
     ----------
-    %(eqlat.params)s
-    %(waq.params)s
+    %(params_eqlat)s
+    %(params_waq)s
 
     References
     ----------
@@ -315,7 +312,7 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
     return waq
 
 
-@docstring.add_snippets
+@docstring.inject_snippets()
 def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
     """
     Return the local finite-amplitude wave activity. See
@@ -323,8 +320,8 @@ def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
 
     Parameters
     ----------
-    %(eqlat.params)s
-    %(waq.params)s
+    %(params_eqlat)s
+    %(params_waq)s
 
     References
     ----------

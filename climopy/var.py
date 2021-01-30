@@ -31,52 +31,60 @@ __all__ = [
 ]
 
 # Docstring snippets
-_corr_math = r"""
-.. math::
-
-    \dfrac{\sum_{i=0}^{n-k}\left(x_t - \overline{x}\right)\left(y_{t+k} - \overline{y}\right)}{(n - k) s_x s_y}
-
-where :math:`\overline{x}` and :math:`\overline{y}` are the sample means and
-:math:`s_x` and :math:`s_y` are the sample standard deviations.
-"""  # noqa: E501
-
-_covar_math = r"""
-.. math::
-
-    \dfrac{\sum_{i=0}^{n-k}\left(x_t - \overline{x}\right)\left(y_{t+k} - \overline{y}\right)}{n - k}
-
-where :math:`\overline{x}` and :math:`\overline{y}` are the sample means.
-"""  # noqa: E501
-
 _var_data = """
 z : array-like
     The input data.
 """
-
 _covar_data = """
 z1 : array-like
     The input data.
 z2 : array-like, optional
     The second input data. Must be same shape as `z1`.
 """
+_corr_math = r"""
+.. math::
 
-_var_template = """
-Return the {name} spectrum at a single lag or successive lags. Default
-behavior returns the lag-0 {name}.
+    \dfrac{%
+        \sum_{i=0}^{n-k}
+        \left(x_t - \overline{x}\right)
+        \left(y_{t+k} - \overline{y}\right)
+    }{%
+        (n - k) s_x s_y
+    }
+
+where :math:`\overline{x}` and :math:`\overline{y}` are the sample means and
+:math:`s_x` and :math:`s_y` are the sample standard deviations.
+"""  # noqa: E501
+_covar_math = r"""
+.. math::
+
+    \dfrac{%
+        \sum_{i=0}^{n-k}
+        \left(x_t - \overline{x}\right)
+        \left(y_{t+k} - \overline{y}\right)
+    }{%
+        n - k
+    }
+
+where :math:`\overline{x}` and :math:`\overline{y}` are the sample means.
+"""  # noqa: E501
+docstring.snippets['template_var'] = """
+Return the %(name)s spectrum at a single lag or successive lags. Default
+behavior returns the lag-0 %(name)s.
 
 Parameters
 ----------
 dt : float or array-like, optional
     The timestep or time series (from which the timestep is inferred).
-{data}
+%(data)s
 axis : int, optional
-    Axis along which {name} is taken.
+    Axis along which %(name)s is taken.
 lag : float, optional
-    Return {name} for the single lag `lag` (must be divisible by `dt`).
+    Return %(name)s for the single lag `lag` (must be divisible by `dt`).
 ilag : int, optional
     As with `lag` but specifies the index instead of the physical time.
 maxlag : float, optional
-    Return lagged {name} up to the lag `maxlag` (must be divisible by `dt`).
+    Return lagged %(name)s up to the lag `maxlag` (must be divisible by `dt`).
 imaxlag : int, optional
     As with `maxlag` but specifies the index instead of the physical time.
 
@@ -85,26 +93,14 @@ Returns
 lags : array-like
     The lags.
 result : array-like
-    The {name} as a function of lag.
+    The %(name)s as a function of lag.
 
 Notes
 -----
-This function uses the following formula to estimate {name} at lag :math:`k`:
-{math}
-"""
+This function uses the following formula to estimate %(name)s at lag :math:`k`:
 
-docstring.snippets['autocorr'] = _var_template.format(
-    data=_var_data.strip(), name='autocorrelation', math=_corr_math,
-)
-docstring.snippets['autocovar'] = _var_template.format(
-    data=_var_data.strip(), name='autocovariance', math=_covar_math,
-)
-docstring.snippets['corr'] = _var_template.format(
-    data=_covar_data.strip(), name='correlation', math=_corr_math,
-)
-docstring.snippets['covar'] = _var_template.format(
-    data=_covar_data.strip(), name='covariance', math=_covar_math,
-)
+%(math)s
+"""
 
 
 def gaussian(z, mean=0, stdev=None, sigma=1):
@@ -283,10 +279,10 @@ def _covar_driver(
 
 @quack._xarray_covar_wrapper
 @quack._pint_wrapper(('=t', '=z'), ('=t', ''))
-@docstring.add_snippets
+@docstring.inject_snippets(name='autocorrelation', data=_var_data, math=_corr_math)
 def autocorr(dt, z, axis=0, **kwargs):
     """
-    %(autocorr)s
+    %(template_var)s
     """
     # NOTE: covar checks if z1 and z2 are the same to to reduce computational cost
     kwargs.setdefault('standardize', True)
@@ -295,10 +291,10 @@ def autocorr(dt, z, axis=0, **kwargs):
 
 @quack._xarray_covar_wrapper
 @quack._pint_wrapper(('=t', '=z'), ('=t', '=z ** 2'))
-@docstring.add_snippets
+@docstring.inject_snippets(name='autocovariance', data=_var_data, math=_covar_math)
 def autocovar(dt, z, axis=0, **kwargs):
     """
-    %(autocovar)s
+    %(template_var)s
     """
     # NOTE: covar checks if z1 and z2 are the same to reduce computational cost
     return _covar_driver(dt, z, z, axis=axis, **kwargs)
@@ -306,10 +302,10 @@ def autocovar(dt, z, axis=0, **kwargs):
 
 @quack._xarray_covar_wrapper
 @quack._pint_wrapper(('=t', '=z1', '=z2'), ('=t', ''))
-@docstring.add_snippets
+@docstring.inject_snippets(name='correlation', data=_covar_data, math=_corr_math)
 def corr(dt, z1, z2, axis=0, **kwargs):
     """
-    %(corr)s
+    %(template_var)s
     """
     kwargs.setdefault('standardize', True)
     return _covar_driver(dt, z1, z2, axis=axis, **kwargs)
@@ -317,10 +313,10 @@ def corr(dt, z1, z2, axis=0, **kwargs):
 
 @quack._xarray_covar_wrapper
 @quack._pint_wrapper(('=t', '=z1', '=z2'), ('=t', '=z1 * z2'))
-@docstring.add_snippets
+@docstring.inject_snippets(name='covariance', data=_covar_data, math=_covar_math)
 def covar(dt, z1, z2, axis=0, **kwargs):
     """
-    %(covar)s
+    %(template_var)s
     """
     return _covar_driver(dt, z1, z2, axis=axis, **kwargs)
 
@@ -551,7 +547,7 @@ def reof(data, neof=5):  # noqa
 
 @quack._xarray_hist_wrapper
 @quack._pint_wrapper(('=y', '=y'), 'count')
-@docstring.add_snippets
+@docstring.inject_snippets(name='count')
 def hist(bins, y, /, axis=0):
     """
     Get the histogram along axis `axis`.
@@ -562,7 +558,7 @@ def hist(bins, y, /, axis=0):
         The bin location.
     y : array-like
         The data.
-    %(hist.axis)s
+    %(params_axisdim)s
 
     Examples
     --------

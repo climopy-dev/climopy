@@ -4,39 +4,30 @@ Tools for manipulating docstrings.
 """
 import inspect
 
-#: Dictionary of docstring snippets added with `add_snippets`.
+#: The docstring snippets used with `inject_snippets`.
 snippets = {}
 
-#: Dictionary of docstring templates filled with `add_template`.
-templates = {}
 
+def inject_snippets(**kwargs):
+    """
+    Return a decorator that dedents docstrings with `inspect.getdoc` and adds
+    un-indented snippets from the `snippets` dictionary.
 
-def add_snippets(func):
-    """
-    Decorator that dedents docstrings with `inspect.getdoc` and adds
-    un-indented snippets from the global `snippets` dictionary. This function
-    uses ``%(name)s`` substitution rather than `str.format` substitution so
-    that the `snippets` keys can be invalid variable names.
-    """
-    func.__doc__ = inspect.getdoc(func)
-    if func.__doc__:
-        func.__doc__ %= {key: value.strip() for key, value in snippets.items()}
-    func.__doc__ = func.__doc__.strip()
-    return func
+    Parameters
+    ----------
+    **kwargs
+        Additional snippets applied after the global snippets. These can be used to
+        format injected global snippets.
 
-
-def add_template(template, notes=None, **kwargs):
+    Notes
+    -----
+    The oldschool notation ``'%(x)s' % {'x': 'foo'}`` is used rather than
+    ``'{x}'.format(x='foo')`` to permit curly braces in the rest of the docstring.
     """
-    Return a decorator that replaces the docstring with the template. Optionally
-    append notes to the end of the docstring with `notes`.
-    """
-    string = templates[template].format(**kwargs).strip()
-    if notes:
-        if isinstance(notes, str):
-            notes = (notes,)
-        string += '\n\nNotes\n-----\n'
-        string += '\n\n'.join(snippets[s].strip() for s in notes)
-    def _decorator(func):  # noqa: E306
-        func.__doc__ = string
+    def _decorator(func):
+        doc = inspect.getdoc(func) or ''
+        for kw in (snippets, kwargs):
+            doc = doc % {k: s.strip() for k, s in kw.items()}
+        func.__doc__ = doc.strip()
         return func
     return _decorator

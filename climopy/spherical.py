@@ -18,8 +18,8 @@ __all__ = [
 
 def geopad(lon, lat, data, /, nlon=1, nlat=0):
     """
-    Return array padded circularly along longitude and over the poles
-    for finite difference methods.
+    Return array padded circularly along longitude and over the poles for finite
+    difference methods.
     """
     # Pad over longitude seams
     if nlon > 0:
@@ -144,35 +144,35 @@ def geolaplacian(lon, lat, data, /, accuracy=4):
     .. math::
 
         \nabla^2
-        = \frac{\cos^2(\phi)}{a^2} \frac{\partial^2}{\partial^2\theta}
-        + \frac{\cos(\phi)}{a^2} \frac{\partial}{\partial\phi} \frac{\cos\phi\partial}{\partial\phi}
+        = \frac{1}{a^2\cos^2(\phi)} \frac{\partial^2}{\partial^2\theta}
+        + \frac{1}{a^2\cos(\phi)} \frac{\partial}{\partial\phi} \cos\phi \frac{\partial}{\partial\phi}
     """  # noqa
     # Setup
     npad = accuracy // 2  # need +/-1 for O(h^2) approx, +/-2 for O(h^4), etc.
     data = geopad(lon, lat, data, nlon=npad, nlat=npad)[2]  # pad lons/lats
     phi, theta = lat * np.pi / 180, lon * np.pi / 180  # from north pole
 
-    # Execute
+    # Execute with chain rule
+    # TODO: Is chain rule best, or double even first order differentiation?
     h_phi = phi[2] - phi[1]
     h_theta = theta[2] - theta[1]
     phi = phi[None, ...]
     for i in range(2, data.ndim):
         phi = phi[..., None]
-    laplacian = (
-        (1 / (const.a ** 2 * np.cos(phi) ** 2))
-        * diff.deriv2(
-            h_theta, data[:, npad:-npad, ...], axis=0, accuracy=accuracy
+    return (
+        1 / (const.a ** 2 * np.cos(phi) ** 2)
+        * diff.deriv_even(
+            h_theta, data[:, npad:-npad, ...], axis=0, order=2, accuracy=accuracy
         )  # unpad latitudes
-        + (-np.tan(phi) / (const.a ** 2))
-        * diff.deriv1(
-            h_phi, data[npad:-npad, ...], axis=1, accuracy=accuracy
+        - np.tan(phi) / (const.a ** 2)
+        * diff.deriv_even(
+            h_phi, data[npad:-npad, ...], axis=1, order=1, accuracy=accuracy
         )  # unpad longitudes
-        + (1 / (const.a ** 2))
-        * diff.deriv2(
-            h_phi, data[npad:-npad, ...], axis=1, accuracy=accuracy
+        + 1 / (const.a ** 2)
+        * diff.deriv_even(
+            h_phi, data[npad:-npad, ...], axis=1, order=2, accuracy=accuracy
         )  # unpad longitudes
-    )  # no axis rolling required here; the deriv schemes do that
-    return laplacian
+    )
 
 
 def haversine(lon1, lat1, lon2, lat2, /):
