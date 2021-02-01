@@ -40,8 +40,9 @@ cyclic : bool, optional
 keepedges : bool, optional
     Whether to fill the edge positions with progressively lower-`accuracy`
     finite difference estimates to prevent reducing the dimension size
-    along axis `axis`. The edges of first and third order derivatives are
-    filled with half-level differences, and the
+    along axis `axis`. The edges of odd-order derivatives are filled with
+    half-level differences, and the edges of even-order derivatives are
+    padded with adjacent edge derivatives.
 """
 
 
