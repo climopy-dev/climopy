@@ -14,6 +14,13 @@ __all__ = [
 
 # Docstring snippets
 # NOTE: Includes snippets used in other parts of code
+docstring.snippets['params_uneven'] = """
+x : float or array-like
+    The step size, a 1-d coordinate vector, or an array of coordinates
+    matching the shape of `y`.
+y : array-like
+    The data.
+"""
 docstring.snippets['params_axisdim'] = """
 axis : int, optional
     Axis along which %(name)s is taken.
@@ -21,15 +28,20 @@ dim : str, optional
     *For `xarray.DataArray` input only*.
     Named dimension along which %(name)s is taken.
 """
-
-docstring.snippets['params_uneven'] = """
-x : float or array-like
-    The step size, a 1-d coordinate vector, or an array of coordinates
-    matching the shape of `y`.
-y : array-like
-    The data.
+docstring.snippets['params_order'] = """
 order : int, optional
-    The order of the derivative. Default is ``1``.
+    The order of the derivative, i.e. the :math:`n` in :math:`d^ny/dx^n`.
+    Default is ``1``.
+"""
+docstring.snippets['params_edges'] = """
+cyclic : bool, optional
+    Whether to treat the axis cyclically. *Warning: This is not
+    yet implemented.*
+keepedges : bool, optional
+    Whether to fill the edge positions with progressively lower-`accuracy`
+    finite difference estimates to prevent reducing the dimension size
+    along axis `axis`. The edges of first and third order derivatives are
+    filled with half-level differences, and the
 """
 
 
@@ -116,35 +128,6 @@ def integral(x, y, /, y0=0, axis=0):
     return y0 + (y * dx).cumsum(axis=axis)
 
 
-def _restrict_accuracy(n, accuracy, order=1):
-    """
-    Restrict the accuracy based on length of dimension.
-    """
-    absmin = order + 1  # minimum number of points for deriv
-    finitemin = 1 + 2 * ((order + 1) // 2)  # e.g. 1, 2 --> 3; 3, 4 --> 5
-    if n < absmin:  # allows odd-numbered derivs on half-levels
-        raise ValueError('Need at least 2 points on derivative axis.')
-    elif n < finitemin:
-        if accuracy > 0:
-            warnings._warn_climopy(
-                f'Setting accuracy to 0 for derivative on length-{n} axis.'
-            )
-            accuracy = 0
-    elif n < finitemin + 2:
-        if accuracy > 2:
-            warnings._warn_climopy(
-                f'Setting accuracy to 2 for derivative on length-{n} axis.'
-            )
-            accuracy = 2
-    elif n < finitemin + 4:
-        if accuracy > 4:
-            warnings._warn_climopy(
-                f'Setting accuracy to 4 for derivative on length-{n} axis.'
-            )
-            accuracy = 4
-    return accuracy
-
-
 def _deriv_first(h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False):
     """
     Return the first order centered finite difference.
@@ -191,7 +174,7 @@ def _deriv_first(h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False):
         if keepright:
             rdiff = _deriv_first(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
     else:
-        raise ValueError('Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).')
+        raise NotImplementedError(f'Invalid {accuracy=}.')
     return np.concatenate((*ldiff, diff, *rdiff), axis=-1)
 
 
@@ -241,7 +224,7 @@ def _deriv_second(h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False):
         if keepright:
             rdiff = _deriv_second(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
     else:
-        raise ValueError('Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).')
+        raise NotImplementedError(f'Invalid {accuracy=}.')
     return np.concatenate((*ldiff, diff, *rdiff), axis=-1)
 
 
@@ -315,16 +298,14 @@ def _deriv_third(
         if keepright:
             rdiff = _deriv_third(h, y[..., -7:], axis=-1, keepright=True, accuracy=4),
     else:
-        raise ValueError('Invalid accuracy. Choose form O(h^2), O(h^4), or O(h^6).')
+        raise NotImplementedError(f'Invalid {accuracy=}.')
     return np.concatenate((*ldiff, diff, *rdiff), axis=-1)
 
 
 @quack._xarray_xyy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.inject_snippets(name='derivative')
-def deriv_even(
-    h, y, /, axis=0, order=1, accuracy=2, keepleft=False, keepright=False, keepedges=False  # noqa: E501
-):
+def deriv_even(h, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     """
     Return an estimate of the first, second, or third order derivative along an
     arbitrary axis using centered finite differencing.
@@ -336,20 +317,16 @@ def deriv_even(
         error is raised if the coordinates are unevenly spaced.
     y : array-like
         The data.
+    %(params_order)s
     %(params_axisdim)s
-    order : int, optional
-        The order of the derivative. Default is ``1``.
+    %(params_edges)s
     accuracy : {0, 2, 4, 6}, optional
         Accuracy of finite difference approximation. ``0`` corresponds to
         differentiation onto half-levels. ``2``, ``4``, and ``6`` correspond to
         centered accuracies of :math:`h^2`, :math:`h^4`, and :math:`h^6`, respectively.
         See `this wikipedia page \
 <https://en.wikipedia.org/wiki/Finite_difference_coefficient>`__
-        for the table of coefficients for each accuracy.
-    keepleft, keepright, keepedges : bool, optional
-        Whether to fill left, right, or both edge positions with progressively
-        lower-`accuracy` finite difference estimates to prevent reducing
-        the dimension size along axis `axis`.
+        for the table of coefficients associated with each accuracy.
 
     Returns
     -------
@@ -364,12 +341,18 @@ def deriv_even(
     # Checks
     h = quack._as_step(h)
     n = y.shape[axis]
-    accuracy = _restrict_accuracy(n, accuracy, order=1)
+    if n < (min_ := order + 2):
+        raise ValueError(f'Need at least {min_} points for order-{order} derivative.')
+    if accuracy not in (2, 4, 6):
+        raise ValueError(f'Invalid {accuracy=}. Choose from O(h^2), O(h^4), or O(h^6).')
+    min_ = 3 + 2 * ((order - 1) // 2)  # e.g. 1, 2 --> 3; 3, 4 --> 5
+    for a in (2, 4):
+        if n < min_ + a and accuracy > a:
+            warnings._warn_climopy(f'Setting accuracy to {a} for length-{n} axis.')
+            accuracy = a
 
     # Calculate
-    if keepedges:
-        keepleft = keepright = True
-    kwargs = {'accuracy': accuracy, 'keepleft': keepleft, 'keepright': keepright}
+    kwargs = {'accuracy': accuracy, 'keepleft': keepedges, 'keepright': keepedges}
     y = np.asarray(y)  # for safety
     y = np.moveaxis(y, axis, -1)
     if order == 1:
@@ -411,6 +394,7 @@ def deriv_half(x, y, /, order=1, axis=0):
     Parameters
     ----------
     %(params_uneven)s
+    %(params_order)s
     %(params_axisdim)s
 
     Returns
@@ -471,15 +455,13 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     Parameters
     ----------
     %(params_uneven)s
+    %(params_order)s
     %(params_axisdim)s
+    %(params_edges)s
     accuracy : {2, 4, 6, ...}, optional
         Accuracy of the finite difference approximation. This determines the
-        number of terms that go into the :cite:`1988:fornberg` algorithm.
-        Using too many terms can result in overfitting.
-    keepedges : bool, optional
-        Whether to fill left, right, or both edge positions with progressively
-        lower-`accuracy` finite difference estimates to prevent reducing
-        the dimension size along axis `axis`.
+        number of terms sandwiching each point that go into the :cite:`1988:fornberg`
+        algorithm. Using too many terms can result in overfitting.
 
     Returns
     -------
