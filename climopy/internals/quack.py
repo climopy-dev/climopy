@@ -238,14 +238,11 @@ def _xarray_fit_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Sanitize input
         x, y = args  # *both* or *one* of these is dataarray
         x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
-
-        # Call main function
         fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
 
-        # Create output array
+        # Build back the DataArray
         if isinstance(y, xr.DataArray):
             dim_coords = {y.dims[kwargs['axis']]: None}
             fit_val = _dataarray_from(y, fit_val, dim_coords=dim_coords)
@@ -265,13 +262,10 @@ def _xarray_yy_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(y, *args, **kwargs):
-        # Sanitize input
         _, y_in, kwargs = _dataarray_strip(func, 0, y, **kwargs)
-
-        # Call main function
         y_out = func(y_in, *args, **kwargs)
 
-        # Create output array
+        # Build back the DataArray
         if isinstance(y, xr.DataArray):
             axis = kwargs['axis']
             dim = y.dims[axis]
@@ -294,14 +288,11 @@ def _xarray_xyy_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Sanitize input
-        x, y = args  # *both* or *one* of these is dataarray
+        x, y = args
         x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
-
-        # Call main function
         y_out = func(x_in, y_in, **kwargs)
 
-        # Create output array
+        # Build back the DataArray
         # NOTE: Account for symmetrically trimmed coords here
         if isinstance(y, xr.DataArray):
             axis = kwargs['axis']
@@ -330,14 +321,11 @@ def _xarray_xyxy_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Sanitize input
         x, y = args  # *both* or *one* of these is dataarray
         x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
-
-        # Call main function
         x_out, y_out = func(x_in, y_in, **kwargs)
 
-        # Create output array with x coordinates trimmed or interpolated to half-levels
+        # Build back the DataArray. Trim x coordinates or interpolate to half-levels
         # NOTE: Also modify coordinates associated with x array, which may differ
         # from array values themselves (e.g. heights converted from pressure).
         axis = kwargs['axis']
@@ -380,15 +368,12 @@ def _xarray_power_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Sanitize input
         x, *ys = args  # *both* or *one* of these is dataarray
+        y = ys[0]
         x_in, *ys_in, kwargs = _dataarray_strip(func, x, *ys, **kwargs)
-
-        # Call main function
         f, *Ps = func(x_in, *ys_in, **kwargs)
 
-        # Create output array
-        y = ys[0]
+        # Build back the DataArray
         if isinstance(x, xr.DataArray):
             f = _dataarray_from(
                 x, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
@@ -411,16 +396,13 @@ def _xarray_power2d_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Sanitize input
         x1, x2, *ys = args  # *both* or *one* of these is dataarray
+        y = ys[0]
         x1_in, *ys_in, kwargs = _dataarray_strip(func, x1, *ys, suffix='_lon', **kwargs)
         x2_in, *_, kwargs = _dataarray_strip(func, x2, *ys, suffix='_time', **kwargs)
-
-        # Call main function
         k, f, *Ps = func(x1_in, x2_in, *ys_in, **kwargs)
 
-        # Create output array
-        y = ys[0]
+        # Build back the DataArray
         if isinstance(x1, xr.DataArray):
             k = _dataarray_from(
                 x1, dims=('k',), coords={}, attrs={'long_name': 'wavenumber'},
@@ -450,15 +432,12 @@ def _xarray_covar_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Sanitize input
         x, *ys = args  # *both* or *one* of these is dataarray
+        y = ys[0]
         x_in, *ys_in, kwargs = _dataarray_strip(func, x, *ys, **kwargs)
-
-        # Call main function
         lag, C = func(x_in, *ys_in, **kwargs)
 
-        # Create output array
-        y = ys[0]
+        # Build back the DataArray
         if isinstance(x, xr.DataArray):
             lag = _dataarray_from(x, lag, name='lag', dims=('lag',), coords={})
         if isinstance(y, xr.DataArray):
@@ -476,7 +455,6 @@ def _xarray_eof_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Sanitize input and interpret 'dim' arguments
         data, = data_in, = args
         axis_time = kwargs.pop('axis_time', _default_param(func, 'axis_time'))
         axis_space = kwargs.pop('axis_space', _default_param(func, 'axis_space'))
@@ -487,12 +465,11 @@ def _xarray_eof_wrapper(func):
             if 'dim_space' in kwargs:
                 axis_space = data.dims.index(kwargs.pop('dim_space'))
 
-        # Call main function
         pcs, projs, evals, nstars = func(
             data_in, axis_time=axis_time, axis_space=axis_space, **kwargs,
         )
 
-        # Create output arrays
+        # Build back the DataArray
         if isinstance(data, xr.DataArray):
             # Add EOF dimension
             dims = ['eof'] + list(data.dims)  # add 'EOF number' leading dimension
@@ -522,15 +499,12 @@ def _xarray_hist_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Sanitize input
         # NOTE: This time 'x' coordinates are bins so do not infer
         yb, y = args
         yb_in, y_in, kwargs = _dataarray_strip(func, yb, y, infer_axis=False, **kwargs)
-
-        # Call main function
         y_out = func(yb_in, y_in, **kwargs)
 
-        # Add metadata to y_out
+        # Build back the DataArray
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
             name = y.name
@@ -554,14 +528,11 @@ def _xarray_zerofind_wrapper(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Sanitize input
         x, y = args
         x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
-
-        # Call main function
         x_out, y_out = func(x_in, y_in, **kwargs)
 
-        # Add metadata to x_out and y_out
+        # Build back the DataArray
         # NOTE: x_out inherits *shape* from y_out but should inherit *attrs* from x_in.
         if isinstance(y, xr.DataArray):
             attrs = {}
