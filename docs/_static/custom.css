@@ -293,7 +293,8 @@ body,
   background: var(--block-bg-color);
 }
 
-.rst-content .bibtex.label {
+.rst-content .bibtex.label,
+.rst-content .citation.label {
   background: var(--block-bg-color);
   border-left-color: var(--accent-bg-color);
 }
