@@ -332,8 +332,7 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     Returns
     -------
     diff : array-like
-        The "derivative". The length of axis `axis` may differ from `y`
-        depending on the `keepleft`, `keepright`, and `keepedges` settings.
+        The "derivative".
 
     See Also
     --------
