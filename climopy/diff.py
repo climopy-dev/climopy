@@ -35,18 +35,15 @@ order : int, optional
 """
 docstring.snippets['params_cyclic'] = """
 cyclic : bool, optional
-    Whether to treat the axis cyclically. If ``True``, data from the front
-    of `axis` are appended to the end of `axis` before taking the derivative,
-    and the dimension size is not reduced. This is appropriate for derivatives
-    across longitudes and cyclic idealized model domains.
+    Whether to treat the axis cyclically. If ``True``, the dimension size is
+    not reduced. This is appropriate for derivatives across longitudes and
+    cyclic idealized model domains.
 """
 docstring.snippets['params_edges'] = """
 keepedges : bool, optional
     Whether to fill the edge positions with progressively lower-`accuracy`
     finite difference estimates to prevent reducing the dimension size
-    along axis `axis`. The edges of odd-order derivatives are filled with
-    half-level differences, and the edges of even-order derivatives are
-    padded with adjacent edge derivatives.
+    along axis `axis`.
 """
 
 
