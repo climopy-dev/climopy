@@ -33,10 +33,14 @@ order : int, optional
     The order of the derivative, i.e. the :math:`n` in :math:`d^ny/dx^n`.
     Default is ``1``.
 """
-docstring.snippets['params_edges'] = """
+docstring.snippets['params_cyclic'] = """
 cyclic : bool, optional
-    Whether to treat the axis cyclically. *Warning: This is not
-    yet implemented.*
+    Whether to treat the axis cyclically. If ``True``, data from the front
+    of `axis` are appended to the end of `axis` before taking the derivative,
+    and the dimension size is not reduced. This is appropriate for derivatives
+    across longitudes and cyclic idealized model domains.
+"""
+docstring.snippets['params_edges'] = """
 keepedges : bool, optional
     Whether to fill the edge positions with progressively lower-`accuracy`
     finite difference estimates to prevent reducing the dimension size
@@ -92,6 +96,47 @@ def _fornberg_coeffs(x, x0, order=1):
         hprod_prev = hprod
 
     return weights[..., -1]  # weights for order'th derivative (rightmost selection)
+
+
+def _pad_cyclic(x, y, n=1, both=True):
+    """
+    Append cyclic points to the end or beginning of last axis.
+
+    Parameters
+    ----------
+    x, y : array-like
+        The data.
+    n : int
+        The number of points to pad with.
+    """
+    def _do_append(data, monotonic=False):
+        left = data[..., -n:]
+        right = data[..., :n]
+        if monotonic:
+            size = 2 * data[..., -1:] - data[..., -2:-1]
+            left = left - size
+            right = right + size
+        datas = (left, data, right) if both else (data, right)
+        return np.concatenate(datas, axis=-1)
+    y = _do_append(y)
+    if not quack._is_scalar(x):
+        x = _do_append(x, monotonic=True)
+    return x, y
+
+
+def _standardize_x_y(x, y, /, axis=0):
+    """
+    Standardize the coordiantes.
+    """
+    x = np.atleast_1d(x).astype(float)
+    y = np.atleast_1d(y).astype(float)
+    ylen = y.shape[axis]
+    if x.size == 1:  # just used the step size
+        x = np.linspace(0, x[0] * (ylen - 1), ylen)
+    xlen = x.shape[axis] if x.ndim > 1 else x.size
+    if xlen != y.shape[axis] or x.ndim > 1 and x.shape != y.shape:
+        raise ValueError(f'{x.shape=} incompatible with {y.shape=}')
+    return x, y
 
 
 @quack._xarray_xyy_wrapper
@@ -306,7 +351,7 @@ def _deriv_third(
 @quack._xarray_xyy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.inject_snippets(name='derivative')
-def deriv_even(h, y, /, order=1, axis=0, accuracy=2, keepedges=False):
+def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=False):
     """
     Return an estimate of the first, second, or third order derivative along an
     arbitrary axis using centered finite differencing.
@@ -320,6 +365,7 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, keepedges=False):
         The data.
     %(params_order)s
     %(params_axisdim)s
+    %(params_cyclic)s
     %(params_edges)s
     accuracy : {0, 2, 4, 6}, optional
         Accuracy of finite difference approximation. ``0`` corresponds to
@@ -351,10 +397,15 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, keepedges=False):
             warnings._warn_climopy(f'Setting accuracy to {a} for length-{n} axis.')
             accuracy = a
 
-    # Calculate
-    kwargs = {'accuracy': accuracy, 'keepleft': keepedges, 'keepright': keepedges}
+    # Standardize x and y
     y = np.asarray(y)  # for safety
     y = np.moveaxis(y, axis, -1)
+    if cyclic:
+        keepedges = False
+        _, y, = _pad_cyclic(1, y, n=(order + accuracy - 1) // 2)
+
+    # Calculate
+    kwargs = {'accuracy': accuracy, 'keepleft': keepedges, 'keepright': keepedges}
     if order == 1:
         diff = _deriv_first(h, y, axis=axis, **kwargs)
     elif order == 2:
@@ -366,88 +417,10 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     return np.moveaxis(diff, -1, axis)
 
 
-def _standardize_x_y(x, y, /, axis=0):
-    """
-    Standardize the coordiantes.
-    """
-    x = np.atleast_1d(x).astype(float)
-    y = np.atleast_1d(y).astype(float)
-    ylen = y.shape[axis]
-    if x.size == 1:  # just used the step size
-        x = np.linspace(0, x[0] * (ylen - 1), ylen)
-    xlen = x.shape[axis] if x.ndim > 1 else x.size
-    if xlen != y.shape[axis] or x.ndim > 1 and x.shape != y.shape:
-        raise ValueError(f'{x.shape=} incompatible with {y.shape=}')
-    return x, y
-
-
-@quack._xarray_xyxy_wrapper
-@quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
-@docstring.inject_snippets(name='derivative')
-def deriv_half(x, y, /, order=1, axis=0):
-    """
-    Return an arbitrary order finite difference approximation by taking successive
-    half-level differences. This will change both the length of the data and
-    the *x* coordinates of the data. While this is not always practical, it
-    retains data resolution better than the centered methods.
-
-    Parameters
-    ----------
-    %(params_uneven)s
-    %(params_order)s
-    %(params_axisdim)s
-
-    Returns
-    -------
-    x : array-like
-        The new *x* coordinates.
-    diff : array-like
-        The "derivative".
-
-    See also
-    --------
-    deriv_even, deriv_uneven
-
-    Examples
-    --------
-    >>> import xarray as xr
-    >>> import climopy as climo
-    >>> x = xr.DataArray([0, 2, 4], name='x', dims='p', coords={'p': [1000, 800, 600]})
-    >>> y = xr.DataArray([0, 4, 16], name='y', dims='p')
-    >>> dx, dy = climo.deriv_half(x, y)
-    >>> dx
-    <xarray.DataArray 'x' (p: 2)>
-    array([1., 3.])
-    Coordinates:
-      * p        (p) float64 900.0 700.0
-    >>> dy
-    <xarray.DataArray 'y' (p: 2)>
-    array([2., 6.])
-    Dimensions without coordinates: p
-    """
-    # Standardize
-    x, y = _standardize_x_y(x, y, axis)
-    if x.ndim > 1:
-        x = np.moveaxis(x, axis, -1)
-    y = np.moveaxis(y, axis, -1)
-
-    # Take derivatives on half levels
-    diff = y
-    for i in range(order):
-        diff = (diff[..., 1:] - diff[..., :-1]) / (x[..., 1:] - x[..., :-1])
-        x = 0.5 * (x[..., 1:] + x[..., :-1])
-
-    # Return derivative
-    if x.ndim > 1:
-        x = np.moveaxis(x, -1, axis)
-    diff = np.moveaxis(diff, -1, axis)
-    return x, diff
-
-
 @quack._xarray_xyy_wrapper
 @quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.inject_snippets(name='derivative')
-def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
+def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=False):
     r"""
     Return an arbitrary order centered finite difference approximation for
     arbitrarily spaced coordinates using the :cite:`1988:fornberg` method.
@@ -457,6 +430,7 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     %(params_uneven)s
     %(params_order)s
     %(params_axisdim)s
+    %(params_cyclic)s
     %(params_edges)s
     accuracy : {2, 4, 6, ...}, optional
         Accuracy of the finite difference approximation. This determines the
@@ -481,6 +455,9 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     if x.ndim > 1:
         x = np.moveaxis(x, axis, -1)
     y = np.moveaxis(y, axis, -1)
+    if cyclic:
+        keepedges = False
+        x, y = _pad_cyclic(x, y, n=(order + accuracy - 1) // 2)
 
     # Initial stuff
     # nblock = 1 + accuracy + 2 * ((order - 1) // 2)
@@ -520,3 +497,69 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, keepedges=False):
     diff = np.moveaxis(diff, -1, axis)
 
     return diff
+
+
+@quack._xarray_xyxy_wrapper
+@quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
+@docstring.inject_snippets(name='derivative')
+def deriv_half(x, y, /, order=1, axis=0, cyclic=False):
+    """
+    Return an arbitrary order finite difference approximation by taking successive
+    half-level differences. This will change both the length of the data and
+    the *x* coordinates of the data. While this is not always practical, it
+    retains data resolution better than the centered methods.
+
+    Parameters
+    ----------
+    %(params_uneven)s
+    %(params_order)s
+    %(params_axisdim)s
+    %(params_cyclic)s
+
+    Returns
+    -------
+    x : array-like
+        The new *x* coordinates.
+    diff : array-like
+        The "derivative".
+
+    See also
+    --------
+    deriv_even, deriv_uneven
+
+    Examples
+    --------
+    >>> import xarray as xr
+    >>> import climopy as climo
+    >>> x = xr.DataArray([0, 2, 4], name='x', dims='p', coords={'p': [1000, 800, 600]})
+    >>> y = xr.DataArray([0, 4, 16], name='y', dims='p')
+    >>> dx, dy = climo.deriv_half(x, y)
+    >>> dx
+    <xarray.DataArray 'x' (p: 2)>
+    array([1., 3.])
+    Coordinates:
+      * p        (p) float64 900.0 700.0
+    >>> dy
+    <xarray.DataArray 'y' (p: 2)>
+    array([2., 6.])
+    Dimensions without coordinates: p
+    """
+    # Standardize
+    x, y = _standardize_x_y(x, y, axis)
+    if x.ndim > 1:
+        x = np.moveaxis(x, axis, -1)
+    y = np.moveaxis(y, axis, -1)
+    if cyclic:
+        x, y = _pad_cyclic(x, y, n=order, both=False)
+
+    # Take derivatives on half levels
+    diff = y
+    for i in range(order):
+        diff = (diff[..., 1:] - diff[..., :-1]) / (x[..., 1:] - x[..., :-1])
+        x = 0.5 * (x[..., 1:] + x[..., :-1])
+
+    # Return derivative
+    if x.ndim > 1:
+        x = np.moveaxis(x, -1, axis)
+    diff = np.moveaxis(diff, -1, axis)
+    return x, diff
