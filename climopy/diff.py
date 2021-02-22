@@ -6,7 +6,7 @@ Various finite difference schemes.
 import numpy as np
 
 from .internals import ic  # noqa: F401
-from .internals import docstring, quack, warnings
+from .internals import docstring, quack
 
 __all__ = [
     'integral', 'deriv_even', 'deriv_half', 'deriv_uneven',
@@ -356,19 +356,18 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=Fal
     Parameters
     ----------
     h : float or array-like
-        The step size. If non-singleton, the step size is ``h[1] - h[0]``, and an
-        error is raised if the coordinates are unevenly spaced.
+        The scalar step size or the coordinate array. If the latter and the
+        coordinates are unevenly spaced, an error is raised.
     y : array-like
         The data.
     %(params_order)s
     %(params_axisdim)s
     %(params_cyclic)s
     %(params_edges)s
-    accuracy : {0, 2, 4, 6}, optional
-        Accuracy of finite difference approximation. ``0`` corresponds to
-        differentiation onto half-levels. ``2``, ``4``, and ``6`` correspond to
-        centered accuracies of :math:`h^2`, :math:`h^4`, and :math:`h^6`, respectively.
-        See `this wikipedia page \
+    accuracy : {2, 4, 6}, optional
+        Accuracy of finite difference method. Options are ``2``, ``4``, and ``6``,
+        corresponding to centered accuracies of :math:`h^2`, :math:`h^4`, and
+        :math:`h^6`, respectively. See `this wikipedia page \
 <https://en.wikipedia.org/wiki/Finite_difference_coefficient>`__
         for the table of coefficients associated with each accuracy.
 
@@ -383,23 +382,21 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=Fal
     """
     # Checks
     h = quack._as_step(h)
+    y = np.asarray(y)  # for safety
     n = y.shape[axis]
-    if n < (min_ := order + 2):
-        raise ValueError(f'Need at least {min_} points for order-{order} derivative.')
     if accuracy not in (2, 4, 6):
         raise ValueError(f'Invalid {accuracy=}. Choose from O(h^2), O(h^4), or O(h^6).')
-    min_ = 3 + 2 * ((order - 1) // 2)  # e.g. 1, 2 --> 3; 3, 4 --> 5
-    for a in (2, 4):
-        if n < min_ + a and accuracy > a:
-            warnings._warn_climopy(f'Setting accuracy to {a} for length-{n} axis.')
-            accuracy = a
+    minlen = 1 + 2 * ((order + accuracy - 1) // 2)  # e.g. 1, 2 --> 3; 3, 4 --> 5
+    if n < (minlen := order + 2):
+        raise ValueError(
+            f'Need at least {minlen} points for {order=} {accuracy=} derivative.'
+        )
 
-    # Standardize x and y
-    y = np.asarray(y)  # for safety
+    # Standardize y
     y = np.moveaxis(y, axis, -1)
     if cyclic:
         keepedges = False
-        _, y, = _pad_cyclic(1, y, n=(order + accuracy - 1) // 2)
+        _, y = _pad_cyclic(1, y, n=(minlen - 1) // 2)
 
     # Calculate
     kwargs = {'accuracy': accuracy, 'keepleft': keepedges, 'keepright': keepedges}
