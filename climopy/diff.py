@@ -42,8 +42,7 @@ cyclic : bool, optional
 docstring.snippets['params_edges'] = """
 keepedges : bool, optional
     Whether to fill the edge positions with progressively lower-`accuracy`
-    finite difference estimates to prevent reducing the dimension size
-    along axis `axis`.
+    finite difference estimates to prevent reducing the dimension size.
 """
 
 
@@ -110,9 +109,9 @@ def _pad_cyclic(x, y, n=1, both=True):
         left = data[..., -n:]
         right = data[..., :n]
         if monotonic:
-            size = 2 * data[..., -1:] - data[..., -2:-1]
-            left = left - size
-            right = right + size
+            width = 2 * data[..., -1:] - data[..., -2:-1] - data[..., :1]
+            left = left - width  # e.g. 356, 358 --> -4, -2
+            right = right + width  # e.g. 0, 2 --> 360, 362
         datas = (left, data, right) if both else (data, right)
         return np.concatenate(datas, axis=-1)
     y = _do_append(y)
