@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Climate-related `phnt.Context` objects.
+Climate-related `pint.Context` objects.
 """
 import functools
 import itertools

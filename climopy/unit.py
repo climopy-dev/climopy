@@ -18,22 +18,31 @@ __all__ = [
 
 
 #: The default `pint.UnitRegistry` used throughout climopy. Includes flexible aliases
-#: for temperature, pressure, vorticity, and various dimensionless quantities with
-#: support for nice short-form ``'~'`` formatting as follows:
+#: for temperature, pressure, vorticity, dimensionless quantities, and units with
+#: constants, with support for nice short-form ``'~'`` formatting as follows:
 #:
-#: .. code-block:: txt
-#:
-#:     percent = 0.01 * count = % = per_cent
-#:     permille = 0.001 * count = %% = per_mille
+#: .. include:: unit.txt
+#:     none = 1
+#:     level = 1
+#:     layer = 1
+#:     sigma_level = 1
+#:     _10km = 10 * km = 10km
+#:     _100km = 100 * km = 100km
+#:     _1000km = 1000 * km = 1000km
+#:     _100hPa = 100 * hPa = 100hPa
 #:     bar = 10^5 Pa = b
-#:     inch_mercury = 3386.389 Pa = inch_Hg = in_mercury = in_Hg = ...
-#:     vorticity_unit = 10^-5 s^-1 = VU
-#:     potential_vorticity_unit = 10^-6 K m^2 kg^-1 s^-1 = PVU
-#:     degree =  π / 180 * radian = ° = deg = arcdeg = arcdegree = angular_degree
+#:     inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = in_Hg = inch_Hg = ...
+#:     potential_vorticity_unit = 10^-6 K m^2 s^-1 kg^-1 = PVU
+#:     vorticity_unit = 10^-5 s^-1 = 10^-5 s^-1 = VU
+#:     degree = π / 180 * radian = ° = deg = arcdeg = arcdegree = angular_degree
 #:     arcminute = degree / 60 = ′ = arcmin = arc_minute = angular_minute
 #:     arcsecond = arcminute / 60 = ″ = arcsec = arc_second = angular_second
-#:     degree_North = degree = °N = degree_north = degN = deg_N = ...
-#:     degree_East = degree = °E = degree_east = degE = deg_E = ...
+#:     degree_North = degree = °N = degree_north = degrees_North = degrees_north = ...
+#:     degree_East = degree = °E = degree_east = degrees_East = degrees_east = ...
+#:     @alias kelvin = Kelvin = K = k = degree_kelvin = degree_Kelvin = ...
+#:     @alias degree_Celsius = degree_celsius = degrees_Celsius = degrees_celsius = ...
+#:     @alias degree_Fahrenheit = degree_fahrenheit = degrees_Fahrenheit = ...
+#:     @alias meter = metre = geopotential_meter = geopotential_metre = gpm
 #:
 #: This also registers a `pint.Context` manager named ``'climo'`` for converting
 #: static energy components, their rates of change (:math:`s^{-1}`), and their fluxes
@@ -62,50 +71,35 @@ ureg = pint.UnitRegistry(
 units = ureg
 
 # Dimensionless definitions (see https://github.com/hgrecco/pint/issues/185)
-ureg.define(
-    pint.unit.UnitDefinition(
-        'permille', '%%', (), pint.converters.ScaleConverter(0.001),
-    )
-)
-ureg.define(
-    pint.unit.UnitDefinition(
-        'percent', '%', (), pint.converters.ScaleConverter(0.01),
-    )
-)
+ureg.define('permille = 0.001 = %%')
+ureg.define('percent = 0.01 = %')
+ureg.define('none = 1')
 
-# Ohter dimensionless definitions
-ureg.define('none = 1')  # cannot add alias for 'dimensionless', this is best way
-ureg.define('level = 1')  # specialized CF units for 'model level'
-ureg.define('layer = 1')  # specialized CF units for 'vertical layer'
-ureg.define('sigma_level = 1')  # specialized CF units for 'sigma coordinate'
+# CF definitions for vertical coordinates with dummy 'units' attributes
+ureg.define('level = 1')
+ureg.define('layer = 1')
+ureg.define('sigma_level = 1')
+
+# Common unit constants
+ureg.define('_10km = 10 * km = 10km')
+ureg.define('_100km = 100 * km = 100km')
+ureg.define('_1000km = 1000 * km = 1000km')
+ureg.define('_100hPa = 100 * hPa = 100hPa')
 
 # Pressure definitions (replace 'barn' with 'bar' as default 'b' unit)
-ureg.define(  # automatically adds milli, hecta, etc.
-    'bar = 10^5 Pa = b'
-)
-ureg.define(
-    'inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = '
-    'in_Hg = inch_Hg = inches_Hg = inches_mercury'
-)
+ureg.define('bar = 10^5 Pa = b')
+ureg.define('inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = in_Hg = inch_Hg = inches_Hg = inches_mercury')  # noqa: E501
 
 # Vorticity definitions
-ureg.define(
-    'potential_vorticity_unit = 10^-6 K m^2 s^-1 kg^-1 = PVU'
-)
-ureg.define(
-    'vorticity_unit = 10^-5 s^-1 = 10^-5 s^-1 = VU'
-)
+ureg.define('potential_vorticity_unit = 10^-6 K m^2 s^-1 kg^-1 = PVU')
+ureg.define('vorticity_unit = 10^-5 s^-1 = 10^-5 s^-1 = VU')
 
-# Flexible degree definitions with unicode short repr
-ureg.define(
-    'degree = π / 180 * radian = ° = deg = arcdeg = arcdegree = angular_degree'
-)
-ureg.define(
-    'arcminute = degree / 60 = ′ = arcmin = arc_minute = angular_minute'
-)
-ureg.define(
-    'arcsecond = arcminute / 60 = ″ = arcsec = arc_second = angular_second'
-)
+# Degree definitions with unicode short repr
+ureg.define('degree = π / 180 * radian = ° = deg = arcdeg = arcdegree = angular_degree')
+ureg.define('arcminute = degree / 60 = ′ = arcmin = arc_minute = angular_minute')
+ureg.define('arcsecond = arcminute / 60 = ″ = arcsec = arc_second = angular_second')
+
+# Coordinate degree definitions
 ureg.define(
     'degree_North = degree = °N = degree_north = degrees_North = degrees_north = '
     'degree_N = degrees_N = deg_North = deg_north = deg_N = '
@@ -138,24 +132,8 @@ ureg.define(
     'deg_F = deg_f = degF = degf'
 )
 
-# Length aliases relatd to geopotential height
-ureg.define(
-    '@alias meter = metre = geopotential_meter = geopotential_metre = gpm'
-)
-
-# Common unit constants
-ureg.define(
-    '_10km = 10 * km = 10km'
-)
-ureg.define(
-    '_100km = 100 * km = 100km'
-)
-ureg.define(
-    '_1000km = 1000 * km = 1000km'
-)
-ureg.define(
-    '_100hPa = 100 * hPa = 100hPa'
-)
+# Geopotential meter aliases
+ureg.define('@alias meter = metre = geopotential_meter = geopotential_metre = gpm')
 
 # Set up for use with matplotlib
 ureg.setup_matplotlib()
