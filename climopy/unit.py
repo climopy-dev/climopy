@@ -21,7 +21,8 @@ __all__ = [
 #: for temperature, pressure, vorticity, dimensionless quantities, and units with
 #: constants, with support for nice short-form ``'~'`` formatting as follows:
 #:
-#: .. include:: unit.txt
+#: .. code-block:: txt
+#:
 #:     none = 1
 #:     level = 1
 #:     layer = 1
