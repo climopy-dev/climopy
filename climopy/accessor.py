@@ -4080,7 +4080,11 @@ class ClimoDatasetAccessor(ClimoAccessor):
             raise TypeError(f'Expected one positional argument, got {len(keys)}.')
         regex = r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|_ratio)?\Z'
         abs, key, reduce, pair = re.match(regex, *keys).groups()
-        data = self._get_item(key, add_cell_measures=add_cell_measures)
+        data = self._get_item(
+            key,
+            add_cell_measures=add_cell_measures,
+            search_coords=False,
+        )
 
         # Automatically determine 'reduce' kwargs for energy and momentum budget
         # NOTE: For tendency 'strength' terms we integrate over lons and lats
