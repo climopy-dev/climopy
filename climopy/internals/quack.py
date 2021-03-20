@@ -819,7 +819,7 @@ def _pint_wrapper(units_in, units_out, strict=False, **fmt_defaults):
 class _ArrayContext(object):
     """
     Temporarily reshape the input dataset(s). This is needed so we can do objective
-    analysis tasks "along an axis." Some tasks can be done by just moving axes and using
+    analysis tasks "along an axis". Some tasks can be done by just moving axes and using
     array[..., :] notation but this is not always possible. Should work with arbitrary
     duck-type arrays, including dask arrays.
     """
@@ -833,8 +833,8 @@ class _ArrayContext(object):
         *datas : numpy.ndarray
             The arrays to be reshaped
         push_left, push_right : int or list of int, optional
-            Axis or axes to move to the left or right sides. By default, if neither are
-            provided, `push_right` is set to ``-1``.
+            Axis or axes to move to the left or right sides. Axes are moved in the input
+            order. By default, if neither are provided, `push_right` is set to ``-1``.
         nflat_left, nflat_right : int, optional
             Number of dimensions to flatten on the left or right sides. By default, if
             only `push_left` is provided, `nflat_right` is set to ``data.ndim -

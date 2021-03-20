@@ -455,12 +455,13 @@ def zerofind(
         which = 'negpos' if which == 'posneg' else 'posneg' if which == 'negpos' else which  # noqa: E501
     ndim = y.ndim
     if ndim <= 2:
-        axis, axis_track = -1, -2
+        axis = -1
+        axis_track = -2
         y = y[None, ...]
         if ndim == 1:
             y = y[None, ...]
 
-    with quack._ArrayContext(y, push_right=(axis, axis_track)) as context:
+    with quack._ArrayContext(y, push_right=(axis_track, axis)) as context:
         # Get flattened data and iterate over extra dimensions
         # NOTE: Axes are pushed to right in the specified order. Result: first axis
         # contains flattened extra dimensions, second axis is dimension along which
@@ -468,7 +469,7 @@ def zerofind(
         ys = context.data
         zxs = []
         zys = []
-        nextra, nalong, nacross = ys.shape
+        nextra, ntrack, nreduce = ys.shape
         for i in range(nextra):
             # Optionally take derivatives onto half-levels and interpolate to points
             # on those half-levels.
@@ -483,14 +484,14 @@ def zerofind(
                     # More accurate differencing onto half levels
                     dx, dy = deriv_half(x, y, axis=-1, order=diff)
                     yi = dy.copy()
-                    for i in range(nalong):
+                    for i in range(ntrack):
                         yi[i, :] = np.interp(dx, x, y[i, :])
                     x, y = dx, yi
 
             # Find where sign switches from +ve to -ve and vice versa
             zxs_along = []
             zys_along = []
-            for k in range(nalong):
+            for k in range(ntrack):
                 # Get indices where vals go positive [to zero] to negative or vice versa
                 # NOTE: Always have False where NaNs present
                 posneg = negpos = ()
