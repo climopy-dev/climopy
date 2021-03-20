@@ -212,13 +212,17 @@ dim : str
 """
 
 # Variable derivations
-docstring.snippets['params_dest'] = r"""
+docstring.snippets['params_register'] = r"""
+dest : str, tuple, or re.Pattern
     The destination variable name, a tuple of valid destination names, or an
     `re.compile`'d pattern matching a set of valid destination names. In the
     latter two cases, the function must accept a `name` keyword argument. This is
     useful if you want to register a single function capable of deriving multiple
     related variables (e.g., registering the regex ``r'\Ad.*dy\Z'`` to return the
     meridional gradient of an arbitrary variable).
+assign_name : bool, optional
+    Whether to assign the user-input string as the output `xarray.DataArray.name`.
+    Default is ``True``.
 """
 
 
@@ -3247,7 +3251,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         # Get global extrema. If none were found (e.g. there are only extrema on edges)
         # revert to native min max functions.
-        # TODO: Incorporate this into zerofind, and rename to 'extrema()'?
         if abs and locs.sizes['track'] == 0:
             # Get both locations and values
             locs = getattr(data, 'arg' + which)(dim)
@@ -3968,20 +3971,21 @@ class ClimoDatasetAccessor(ClimoAccessor):
         # Return a variable, removing special suffixes from variable names
         # NOTE: This lets us implement a quick __contains__ that works on derived vars
         # TODO: Add robust method for automatically removing dimension reduction
-        # suffixes from variable names and adding them as cell methods
+        # suffixes from var names and adding them as cell methods (currently do this in
+        # Experiment.load()), or excluding suffixes when looking up in CFRegistry.
         if search_vars and (da := self.vars.get(key, **kwargs)) is not None:
             regex = r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z'
             da.name = re.sub(regex, r'\1', da.name)
             return 'var', da
 
         # Return a coord, transformation, or derivation
-        # NOTE: Coordinate searce rules out coordinate transformations
+        # NOTE: Coordinate search rules out coordinate transformations
         if search_coords and (coord := self.coords.get(key, **kwargs)) is not None:
             return 'coord', coord
         if search_derivations and (func := self._find_derivation(key)):
-            return 'derivation', functools.partial(_keep_cell_attrs(func), self)
+            return 'derivation', functools.partial(func, self)
         if search_transformations and (tup := self._find_any_transformation(self.data.values(), key)):  # noqa: E501
-            return 'transformation', functools.partial(_keep_cell_attrs(tup[0]), tup[1])  # noqa: E501
+            return 'transformation', functools.partial(tup[0], tup[1])  # noqa: E501
 
         # Recursively check if any aliases are valid
         if search_registry:
@@ -4213,16 +4217,14 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
 
 @docstring.inject_snippets()
-def register_derivation(spec, /):
+def register_derivation(dest, /, *, assign_name=True):
     """
     Register a function that derives one variable from one or more others, for use
-    with `ClimoDatasetAccessor.get_variable`. All derivations are carried out with
-    data arrays quantified by `pint`.
+    with `ClimoDatasetAccessor.get_variable`.
 
     Parameters
     ----------
-    spec : str, tuple, or re.Pattern
-        %(params_dest)s
+    %(params_register)s
 
     Examples
     --------
@@ -4241,43 +4243,40 @@ def register_derivation(spec, /):
     <xarray.DataArray 'pot_temp' ()>
     <Quantity(527.08048, 'kelvin')>
     """
-    if not isinstance(spec, (str, tuple, re.Pattern)):
-        raise TypeError(f'Invalid name or regex {spec!r}.')
+    if not isinstance(dest, (str, tuple, re.Pattern)):
+        raise TypeError(f'Invalid name or regex {dest!r}.')
+    if dest in DERIVATIONS:
+        warnings._warn_climopy(f'Overriding existing derivation {dest!r}.')
 
-    def _decorator(func):  # noqa: E306
-        # Warning
-        if spec in DERIVATIONS:
-            warnings._warn_climopy(f'Overriding existing derivation {spec!r}.')
-
-        # Wrap function to assign a DataArray name. Also ensure we use the
-        # registered name rather than a CF-style alias
+    def _decorator(func):
+        @_keep_cell_attrs
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
             data = func(*args, **kwargs)
-            if data.name is None:
-                data.name = spec if isinstance(spec, str) else kwargs.get('name', None)
+            if not isinstance(data, xr.DataArray):
+                raise TypeError('Derivation must return a DataArray.')
+            if assign_name:
+                data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
             return data
 
-        DERIVATIONS[spec] = _wrapper
+        DERIVATIONS[dest] = _wrapper
         return _wrapper
 
     return _decorator
 
 
 @docstring.inject_snippets()
-def register_transformation(src, dest, /):
+def register_transformation(src, dest, /, *, assign_name=True):
     """
     Register a function that transforms one variable to another, for use with
     `ClimoDataArrayAccessor.to_variable`. Transformations should depend only on the
-    initial variable and (optionally) the coordinates. All transformations are
-    carried out with data arrays quantified by `pint`.
+    initial variable and (optionally) the coordinates.
 
     Parameters
     ----------
     src : str
         The source variable name.
-    dest : str, tuple, or re.Pattern
-        %(params_dest)s
+    %(params_register)s
 
     Examples
     --------
@@ -4301,20 +4300,17 @@ def register_transformation(src, dest, /):
         raise ValueError(f'Invalid source {src!r}. Must be string.')
     if not isinstance(dest, (str, tuple, re.Pattern)):
         raise ValueError(f'Invalid destination {dest!r}. Must be string, tuple, regex.')
+    if (src, dest) in TRANSFORMATIONS:
+        warnings._warn_climopy(f'Overriding existing {src!r}->{dest!r} transformation.')  # noqa: E501
 
     def _decorator(func):
-        # Warning
-        if (src, dest) in TRANSFORMATIONS:
-            warnings._warn_climopy(f'Overriding existing {src!r}->{dest!r} transformation.')  # noqa: E501
-
-        # Wrap function to assign a DataArray name. Also ensure we use the
-        # registered name rather than a CF-style alias
+        @_keep_cell_attrs
         @functools.wraps(func)
-        # @_keep_cell_attrs  # TODO: do this!
-        # @_while_quantified  # TODO: do this!
         def _wrapper(*args, **kwargs):
             data = func(*args, **kwargs)
-            if data.name is None:
+            if not isinstance(data, xr.DataArray):
+                raise TypeError('Derivation must return a DataArray.')
+            if assign_name:
                 data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
             return data
 
