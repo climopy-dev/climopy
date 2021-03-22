@@ -576,7 +576,7 @@ class _CoordsQuantified(object):
         # NOTE: xarray currently uses _data for xarray object. We assign to _data
         # here *and* call super().__init__() in case API changes.
         self._data = data
-        self._registry = registry
+        self._variable_registry = registry
 
     def __contains__(self, key):
         return self._parse_key(key) is not None
@@ -650,7 +650,7 @@ class _CoordsQuantified(object):
 
         # Recursively check if any aliases are valid
         if search_registry:
-            var = self._registry.get(key)
+            var = self._variable_registry.get(key)
             flag = flag and '_' + flag  # '' if empty, '_flag' if non-empty
             identifiers = var.identifiers if var else ()
             for name in identifiers:
@@ -894,7 +894,7 @@ class _VarsQuantified(object):
             The variable registry.
         """
         self._data = dataset
-        self._registry = registry
+        self._variable_registry = registry
 
     def __contains__(self, key):
         return self._get_item(key) is not None
@@ -950,7 +950,7 @@ class _VarsQuantified(object):
 
         # Locate using identifier synonyms
         if search_registry:
-            var = self._registry.get(key)
+            var = self._variable_registry.get(key)
             identifiers = var.identifiers if var else ()
             for name in identifiers:
                 da = self._get_item(
@@ -1097,7 +1097,7 @@ class ClimoAccessor(object):
                 identifiers.append(src.attrs['standard_name'])
         else:
             raise ValueError(f'Unknown source type {type(src)!r}.')
-        if var := self.registry.get(identifiers[0]):
+        if var := self.variable_registry.get(identifiers[0]):
             identifiers.extend(var.identifiers)
 
         # Next find the transformation
@@ -1420,7 +1420,7 @@ class ClimoAccessor(object):
                 if da is not None:
                     return da.name
         if search_registry:
-            var = self.registry.get(key)
+            var = self.variable_registry.get(key)
             identifiers = var.identifiers if var else ()
             for name in identifiers:
                 if name in data.coords or isinstance(data, xr.Dataset) and name in data:
@@ -2406,7 +2406,7 @@ class ClimoAccessor(object):
         """
         # NOTE: Creating class instance is O(100 microseconds). Very fast.
         # NOTE: Quantifying in-place: https://github.com/pydata/xarray/issues/525
-        return self._cls_coords(self.data, self.registry)
+        return self._cls_coords(self.data, self.variable_registry)
 
     @property
     def data(self):
@@ -2441,18 +2441,18 @@ class ClimoAccessor(object):
         raise RuntimeError('No parameter dimensions found.')
 
     @property
-    def registry(self):
+    def variable_registry(self):
         """
         The active `~.cfvariable.CFVariableRegistry` used to look up variables
         with `~ClimoDataArrayAccessor.cfvariable`.
         """
-        return self._registry
+        return self._variable_registry
 
-    @registry.setter
-    def registry(self, reg):
+    @variable_registry.setter
+    def variable_registry(self, reg):
         if not isinstance(reg, CFVariableRegistry):
             raise ValueError('Input must be a CFVariableRegistry instance.')
-        self._registry = reg
+        self._variable_registry = reg
 
     @property
     def vertical_kind(self):
@@ -2484,7 +2484,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     interface for transforming one physical variable to another. Registered under the
     name ``climo`` (i.e, usage is ``data_array.climo``). The string representation of
     this accessor displays its `~ClimoDataArrayAccessor.cfvariable` information (if the
-    data array name is found in the variable registry `~ClimoAccessor.registry`).
+    data array name is found in the `~ClimoAccessor.variable_registry`).
     """
     _cls_groupby = _DataArrayGroupByQuantified
     _cls_coords = _DataArrayCoordsQuantified
@@ -2504,7 +2504,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             `~ClimoDataArrayAccessor.cfvariable`.
         """
         self._data = data_array
-        self._registry = registry
+        self._variable_registry = registry
 
     def __contains__(self, key):
         """
@@ -3086,7 +3086,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 kwargs.setdefault('keepedges', True)
                 data = diff.deriv_uneven(coords, data, order=order, **kwargs)
             data.climo.update_cell_methods({dim: 'derivative'})
-
         return data
 
     @docstring.inject_snippets(operator='convergence')
@@ -3112,12 +3111,12 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs['order'] = 1
         if half:
             cos2 = 0.5 * (cos.data[1:] + cos.data[:-1])
-            y, div = diff.deriv_half(y, data * cos ** cos_power, **kwargs)
-            div /= cos2 ** cos_power
+            y, result = diff.deriv_half(y, data * cos ** cos_power, **kwargs)
+            result /= cos2 ** cos_power
         else:
             kwargs.setdefault('keepedges', True)
             cos **= cos_power
-            div = diff.deriv_uneven(y, data * cos, **kwargs) / cos
+            result = diff.deriv_uneven(y, data * cos, **kwargs) / cos
 
         # If numerator vanishes, divergence at poles is precisely 2 * dflux / dy.
         # See Hantel 1974, Journal of Applied Meteorology, or just work it out
@@ -3125,13 +3124,13 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         lat = self.coords['latitude']
         for lat, isel in ((lat[0], slice(None, 2)), (lat[-1], slice(-2, None))):
             if abs(lat) == 90 * ureg.deg:
-                div.climo.loc[{'lat': lat}] = (
+                result.climo.loc[{'lat': lat}] = (
                     2 * data.isel(lat=isel).diff(dim='lat').isel(lat=0).data
                     / (y.data[isel][1] - y.data[isel][0])
                 )
 
-        div.climo.update_cell_methods({'area': 'divergence'})
-        return div
+        result.climo.update_cell_methods({'area': 'divergence'})
+        return result
 
     @_while_quantified
     @_keep_cell_attrs
@@ -3205,6 +3204,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         circum = 2 * np.pi * const.a * np.cos(np.pi * lat / 180)
         data = 0.25 * (circum / data)  # from dimensionless to meters
         data.climo.update_cell_methods({('lat', 'k'): 'centroid'})
+
         return data
 
     @_while_dequantified
@@ -3295,8 +3295,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         else:
             values.coords[coord.name] = locs
             data = values
-        data.climo.update_cell_methods({dim: 'arg' + which if arg else which})
 
+        data.climo.update_cell_methods({dim: 'arg' + which if arg else which})
         return data
 
     # @_manage_coord_reductions
@@ -3744,7 +3744,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         for identifier in (name, kwargs.pop('standard_name', None)):
             if identifier is not None:
                 try:
-                    return self.registry(identifier, accessor=self, **kwargs)
+                    return self.variable_registry(identifier, accessor=self, **kwargs)
                 except KeyError:
                     pass
         raise AttributeError(f'CFVariable not found for name {name!r}.')
@@ -3837,7 +3837,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
     physical variable from other variables in the dataset. Registered under the name
     ``climo`` (i.e, usage is ``data_array.climo``). The string representation of this
     accessor displays `~ClimoDataArrayAccessor.cfvariable` information for every
-    variable whose name is found in the variable registry `~ClimoAccessor.registry`.
+    variable whose name is found in the `~ClimoAccessor.variable_registry`.
     """
     _cls_groupby = _DatasetGroupByQuantified
     _cls_coords = _DatasetCoordsQuantified
@@ -3879,7 +3879,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
             `~ClimoDataArrayAccessor.cfvariable`.
         """
         self._data = dataset
-        self._registry = registry
+        self._variable_registry = registry
 
     def __contains__(self, key):
         """
@@ -3989,7 +3989,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
         # Recursively check if any aliases are valid
         if search_registry:
-            var = self._registry.get(key)
+            var = self._variable_registry.get(key)
             identifiers = var.identifiers if var else ()
             for name in identifiers:
                 if tup := self._get_item_or_func(
@@ -4199,7 +4199,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         variables based on their actual names, standard name attributes, or
         `~.cfvariable.CFVariableRegistry` identifiers.
         """
-        return _VarsQuantified(self.data, self.registry)
+        return _VarsQuantified(self.data, self.variable_registry)
 
     def _is_bounds(self, da):
         """
