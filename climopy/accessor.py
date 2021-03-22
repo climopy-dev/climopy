@@ -225,6 +225,14 @@ assign_name : bool, optional
     Default is ``True``.
 """
 
+# Messages
+docstring.snippets['warning_inplace'] = """
+Warning
+-------
+Unlike most other public methods, this modifies the data in-place rather
+than returning a copy.
+"""
+
 
 def _expand_variable_args(func):
     """
@@ -333,38 +341,16 @@ def _manage_coord_reductions(func):
 
 def _keep_cell_attrs(func):
     """
-    Preserve special tracked attributes for duration of function call.
+    Preserve attributes for duration of function call with `update_cell_attrs`.
     """
     @functools.wraps(func)
     def _wrapper(self, *args, no_keep_attrs=False, **kwargs):
-        # Initial stuff
-        # NOTE: No longer track CFVARIABLE_ARGS attributes. Too complicated, and
-        # yields weird behavior like adding back long_name='zonal wind' after 'argmax'
-        # TODO: Stop defining cell measures for whole dataset, just like cell methods,
-        # to accomodate situation with multiple grids.
-        # WARNING: For datasets, we use data array with longest cell_methods, to try to
-        # accomodate variable derivations from source variables with identical methods
-        # and ignore variables like 'bounds' with only partial cell_methods. But this
-        # is ugly kludge with side effects... should be refined.
-        data = self.data if isinstance(self, ClimoAccessor) else self
-        data_methods = data_measures = data
-        if isinstance(data, xr.Dataset):  # get longest cell_methods
-            data_methods = max(
-                data.values(),
-                key=lambda _: len(_.attrs.get('cell_methods') or ''),
-                default=data,  # no attributes found anyway
-            )
-
-        # Call wrapped function
-        result = func(self, *args, **kwargs)
+        result = func(self, *args, **kwargs)  # must return a DataArray
         if no_keep_attrs:
             return result
-
-        # Build back attributes
-        for data, attr in zip((data_methods, data_measures), ('cell_methods', 'cell_measures')):  # noqa: E501
-            value = data.climo._build_cf_attr(data.attrs.get(attr), result.attrs.get(attr))  # noqa: E501
-            if value:
-                result.attrs[attr] = value
+        if not isinstance(result, xr.DataArray):
+            raise TypeError('Wrapped function must return a DataArray.')
+        result.climo.update_cell_attrs(self)
         return result
 
     return _wrapper
@@ -2358,6 +2344,43 @@ class ClimoAccessor(object):
 
         return data
 
+    @docstring.inject_snippets()
+    def update_cell_attrs(self, other):
+        """
+        Update `cell_methods` and `cell_measures` attributes from another object onto
+        the `xarray.DataArray` or every array in the `xarray.Dataset`. Used internally
+        throughout `climopy`.
+
+        %(warning_inplace)s
+        """
+        # NOTE: No longer track CFVARIABLE_ARGS attributes. Too complicated, and
+        # yields weird behavior like adding back long_name='zonal wind' after 'argmax'
+        # TODO: Stop defining cell measures for whole dataset, just like cell methods,
+        # to accomodate situation with multiple grids.
+        # WARNING: For datasets, we use data array with longest cell_methods, to try to
+        # accomodate variable derivations from source variables with identical methods
+        # and ignore variables like 'bounds' with only partial cell_methods. But this
+        # is ugly kludge with side effects... should be refined.
+        if isinstance(other, (xr.DataArray, xr.Dataset)):
+            pass
+        elif isinstance(other, ClimoAccessor):
+            other = other.data
+        else:
+            raise TypeError('Other must be a DataArray, Dataset, or ClimoAccessor.')
+        other_methods = other_measures = other
+        if isinstance(other, xr.Dataset):  # get longest cell_methods
+            other_methods = max(
+                other.values(),
+                key=lambda _: len(_.attrs.get('cell_methods') or ''),
+                default=other,  # no attributes found anyway
+            )
+        for da in self._iter_data_vars():
+            for other, attr in zip((other_methods, other_measures), ('cell_methods', 'cell_measures')):  # noqa: E501
+                value = other.climo._build_cf_attr(other.attrs.get(attr), da.attrs.get(attr))  # noqa: E501
+                if value:
+                    da.attrs[attr] = value
+
+    @docstring.inject_snippets()
     def update_cell_methods(self, methods=None, **kwargs):
         """
         Update the `cell_methods` attribute on the `xarray.DataArray` or on every array
@@ -2372,10 +2395,7 @@ class ClimoAccessor(object):
         **kwargs
             Cell methods passed as keyword args.
 
-        Warning
-        -------
-        Unlike most other public methods, this modifies the data in-place rather
-        than returning a copy.
+        %(warning_inplace)s
         """
         methods = methods or {}
         methods.update(kwargs)
@@ -3244,7 +3264,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         # Get precise local values using linear interpolation
         # NOTE: The zerofind function applies pint units
-        coord = data.coords[dim]
+        coord = data.climo.coords[dim]  # return modifiable copy of coords
+        coord = coord.climo.dequantify()  # units not necessary
         locs, values = utils.zerofind(coord, data, **kwargs)
         locs = locs.climo.dequantify()
         values = values.climo.dequantify()
