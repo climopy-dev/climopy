@@ -770,7 +770,7 @@ class _CoordsQuantified(object):
                 bounds = [-180.0, 180.0] * ureg.deg
             elif coord.name in coordinates.get('latitude', ()):
                 bounds = [-90.0, 90.0] * ureg.deg
-            elif coord.name in coordinates.get('vertical', ()) and data.climo.vertical_type == 'pressure':  # noqa: E501
+            elif coord.name in coordinates.get('vertical', ()) and data.climo.vertical_kind == 'pressure':  # noqa: E501
                 bounds = [0.0, 1013.25] * ureg.hPa
             else:
                 raise RuntimeError(
@@ -2455,7 +2455,7 @@ class ClimoAccessor(object):
         self._registry = reg
 
     @property
-    def vertical_type(self):
+    def vertical_kind(self):
         """
         The type of the CF-recognized ``'vertical'`` axis, i.e. one of
         ``'temperature'``, ``'pressure'``, ``'height'``, or ``'unknown'``.
