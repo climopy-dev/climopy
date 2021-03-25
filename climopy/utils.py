@@ -15,10 +15,10 @@ from .internals import quack, warnings
 
 __all__ = [
     'calendar',
+    'find',
     'intersection',
     'linetrack',
     'match',
-    'zerofind',
 ]
 
 
@@ -374,14 +374,14 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
         return xs_sorted
 
 
-@quack._xarray_zerofind_wrapper
+@quack._xarray_find_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y'))
-def zerofind(
+def find(
     x, y, /, axis=-1, axis_track=-2, track=True, diff=None, centered=True, which='both',
     **kwargs,
 ):
     """
-    Find the location of the zero value for a given data array.
+    Find the location of zero values or extrema for a given data array.
 
     Parameters
     ----------
@@ -434,7 +434,7 @@ def zerofind(
     ...     y * ureg.m, name='variable',
     ...     dims=('x', 'y'), coords={'x': xarr.climo.dequantify()}
     ... )
-    >>> zx, zy = climo.zerofind(xarr, yarr, axis=0, ntrack=2)
+    >>> zx, zy = climo.find(xarr, yarr, axis=0, ntrack=2)
     >>> zx
     <xarray.DataArray 'x' (track: 2, y: 10)>
     <Quantity([[25.56712412 17.1468964  25.94590963 24.43748793 25.96456694 23.50805224
@@ -469,7 +469,7 @@ def zerofind(
         ys = context.data
         zxs = []
         zys = []
-        nextra, ntrack, nreduce = ys.shape
+        nextra, nalong, nreduce = ys.shape
         for i in range(nextra):
             # Optionally take derivatives onto half-levels and interpolate to points
             # on those half-levels.
@@ -484,39 +484,39 @@ def zerofind(
                     # More accurate differencing onto half levels
                     dx, dy = deriv_half(x, y, axis=-1, order=diff)
                     yi = dy.copy()
-                    for i in range(ntrack):
+                    for i in range(nalong):
                         yi[i, :] = np.interp(dx, x, y[i, :])
                     x, y = dx, yi
 
             # Find where sign switches from +ve to -ve and vice versa
-            zxs_along = []
-            zys_along = []
-            for k in range(ntrack):
+            zxs_track = []
+            zys_track = []
+            for k in range(nalong):
                 # Get indices where vals go positive [to zero] to negative or vice versa
                 # NOTE: Always have False where NaNs present
                 posneg = negpos = ()
                 with np.errstate(invalid='ignore'):
                     ddy = np.diff(np.sign(dy[k, :]))
-                mask = np.zeros((ddy.size - 1,), dtype=bool)
+                exact = np.zeros((ddy.size - 1,), dtype=bool)
                 if which in ('negpos', 'both'):
-                    mask = mask | (ddy[:-1] == 1) & (ddy[1:] == 1)  # *exact* zeros
+                    exact = exact | (ddy[:-1] == 1) & (ddy[1:] == 1)  # *exact* zeros
                     negpos = ddy == 2
                 if which in ('posneg', 'both'):
-                    mask = mask | (ddy[:-1] == -1) & (ddy[1:] == -1)
+                    exact = exact | (ddy[:-1] == -1) & (ddy[1:] == -1)
                     posneg = ddy == -2
 
                 # Record exact zero locations and values
-                idxs, = np.where(mask)
+                idxs, = np.where(exact)
                 idxs += 1
-                zxs_across = []
-                zys_across = []
+                zxs_reduce = []
+                zys_reduce = []
                 for idx in idxs:
-                    zxs_across.append(x[idx])
-                    zys_across.append(y[k, idx])
+                    zxs_reduce.append(x[idx])
+                    zys_reduce.append(y[k, idx])
 
                 # Interpolate to inexact zero locations and values at those locations
-                for j, mask in enumerate((negpos, posneg)):
-                    idxs, = np.where(mask)  # NOTE: for empty array, yields nothing
+                for j, inexact in enumerate((negpos, posneg)):
+                    idxs, = np.where(inexact)  # NOTE: for empty array, yields nothing
                     for idx in idxs:
                         # Need dy to be *increasing* for numpy.interp to work
                         if j == 0:
@@ -533,29 +533,29 @@ def zerofind(
                             continue
                         slice_ = slice(None) if ix[1] > ix[0] else slice(None, None, -1)
                         zy = np.interp(zx, ix[slice_], iy[slice_])
-                        zxs_across.append(zx)
-                        zys_across.append(zy)  # record
+                        zxs_reduce.append(zx)
+                        zys_reduce.append(zy)  # record
 
                 # Add to list
                 # NOTE: Must use lists because number of zeros varies
-                zxs_along.append(zxs_across)
-                zys_along.append(zys_across)
+                zxs_track.append(zxs_reduce)
+                zys_track.append(zys_reduce)
 
             # Optionally track values along particular axis
             if track:
-                zxs_along, zys_along = linetrack(zxs_along, zys_along, **kwargs)
+                zxs_track, zys_track = linetrack(zxs_track, zys_track, **kwargs)
             else:
-                ntrack = max(map(len, zxs_along))
-                pad = lambda x: x + [np.nan] * (ntrack - len(x))  # noqa: E731
-                zxs_along = np.vstack(list(map(pad, zxs_along)))
-                zys_along = np.vstack(list(map(pad, zys_along)))
-            zxs.append(zxs_along)
-            zys.append(zys_along)
+                ntracks = max(map(len, zxs_track))
+                pad = lambda x: x + [np.nan] * (ntracks - len(x))  # noqa: E731
+                zxs_track = np.vstack(list(map(pad, zxs_track)))
+                zys_track = np.vstack(list(map(pad, zys_track)))
+            zxs.append(zxs_track)
+            zys.append(zys_track)
 
         # Concatenate arrays
         # NOTE: Last dimension is the track dimension so pad them first
-        ntrack = max(_.shape[1] for _ in zxs)
-        pad = lambda x: np.pad(x, ((0, 0), (0, ntrack - x.shape[1])), constant_values=np.nan)  # noqa: E501, E731
+        ntracks = max(_.shape[1] for _ in zxs)
+        pad = lambda x: np.pad(x, ((0, 0), (0, ntracks - x.shape[1])), constant_values=np.nan)  # noqa: E501, E731
         zxs = np.vstack([_[None, ...] for _ in map(pad, zxs)])
         zys = np.vstack([_[None, ...] for _ in map(pad, zys)])
 

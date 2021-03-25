@@ -522,9 +522,9 @@ def _xarray_hist_wrapper(func):
     return wrapper
 
 
-def _xarray_zerofind_wrapper(func):
+def _xarray_find_wrapper(func):
     """
-    Support `xarray.DataArray` for zerofind function.
+    Support `xarray.DataArray` for find function.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):

@@ -151,7 +151,7 @@ dim_track : str, optional
     The dimension along which %(extrema)s are grouped into lines and tracked with
     `~.utils.linetrack`.
 **kwargs
-    Passed to `~.utils.zerofind` or `~ClimoAccessor.truncate`.
+    Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
 """
 docstring.snippets['template_absminmax'] = """
 Return the %(prefix)s global %(extrema)s along the dimension.
@@ -161,7 +161,7 @@ Parameters
 dim : str, optional
     The dimension.
 **kwargs
-    Passed to `~.utils.zerofind` or `~ClimoAccessor.truncate`.
+    Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
 """
 docstring.snippets['template_argloc'] = """
 Return the coordinate(s) of a given value along the dimension.
@@ -176,7 +176,7 @@ dim_track : str, optional
     The dimension along which coordinates are grouped into lines and tracked with
     `~.utils.linetrack`.
 **kwargs
-    Passed to `~.utils.zerofind` or `~ClimoAccessor.truncate`.
+    Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
 """
 
 # Differentiation
@@ -1331,7 +1331,7 @@ class ClimoAccessor(object):
         startstops = xr.broadcast(*startstops)  # match dimensionality!
 
         # Create bounds dictionary
-        # NOTE: The zerofind 'track' dims have no coordinates
+        # NOTE: The find 'track' dims have no coordinates
         # NOTE: Xarray concat() does automatic dimension broadcasting so we
         # just need to get 'outer' combination of all possible start/stop tracks
         # NOTE: Remove coordinates from bounds specifications to prevent weird
@@ -2638,7 +2638,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             resulting reduction will be concatenated along a `track` dimension.
         **kwargs
             Remaining keyword arguments are passed to relevant functions
-            like `zerofind` and `rednoisefit`.
+            like `find` and `rednoisefit`.
 
         Returns
         -------
@@ -3242,7 +3242,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         if dim == 'lat':  # TODO: remove kludge! error is with uweight lat=absmax
             data = data.transpose(..., dim)
 
-        # Manage zerofind keyword args
+        # Manage find keyword args
         if dim_track is not None:
             kwargs['axis_track'] = data.dims.index(dim_track)
         if abs:
@@ -3263,10 +3263,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 kwargs['which'] = 'posneg'
 
         # Get precise local values using linear interpolation
-        # NOTE: The zerofind function applies pint units
+        # NOTE: The find function applies pint units
         coord = data.climo.coords[dim]  # return modifiable copy of coords
         coord = coord.climo.dequantify()  # units not necessary
-        locs, values = utils.zerofind(coord, data, **kwargs)
+        locs, values = utils.find(coord, data, **kwargs)
         locs = locs.climo.dequantify()
         values = values.climo.dequantify()
 
@@ -3279,7 +3279,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             values = getattr(data, which)(dim).drop_vars(dim)
 
         # Otherwise select from the identified 'sandwiched' extrema and possible
-        # extrema on the array edges. We merge zerofind values with array edges
+        # extrema on the array edges. We merge find values with array edges
         elif abs:
             # Get array edges
             locs = [locs]
