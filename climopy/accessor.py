@@ -568,12 +568,12 @@ class _CoordsQuantified(object):
         return self._parse_key(key) is not None
 
     def __getattr__(self, attr):
-        if attr[:1] == '_':
+        if attr in super().__dir__():  # can happen if @property triggers error
             return super().__getattribute__(attr)
         if attr in self:
             return self.__getitem__(attr)
         raise AttributeError(
-            f'Attribute {attr!r} does not exist and is not a coordinate or'
+            f'Attribute {attr!r} does not exist and is not a coordinate or '
             'transformed coordinate.'
         )
 
@@ -889,7 +889,7 @@ class _VarsQuantified(object):
         return self._data.data_vars.__iter__()
 
     def __getattr__(self, attr):
-        if attr[:1] == '_':
+        if attr in super().__dir__():  # can happen if @property triggers error
             return super().__getattribute__(attr)
         if attr in self:
             return self.__getitem__(attr)
@@ -2550,7 +2550,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Retrieve an attribute or cfvariable property.
         """
-        if attr[:1] == '_' or attr == 'cfvariable':
+        if attr in super().__dir__():  # can happen if @property triggers error
             return super().__getattribute__(attr)  # trigger builtin AttributeError
         try:
             return self.data.attrs[attr]
@@ -3921,7 +3921,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         """
         Try to return a variable with `~ClimoDatasetAccessor.__getitem__`.
         """
-        if attr[:1] == '_':
+        if attr in super().__dir__():  # can happen if @property triggers error
             return super().__getattribute__(attr)  # trigger builtin AttributeError
         if attr in self:
             return self[attr]
