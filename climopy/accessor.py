@@ -885,6 +885,9 @@ class _VarsQuantified(object):
     def __contains__(self, key):
         return self._get_item(key) is not None
 
+    def __iter__(self):
+        return self._data.data_vars.__iter__()
+
     def __getattr__(self, attr):
         if attr[:1] == '_':
             return super().__getattribute__(attr)
