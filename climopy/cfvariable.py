@@ -838,7 +838,7 @@ class CFVariableRegistry(object):
         """
         try:
             return self._get_item(key)
-        except KeyError:
+        except (KeyError, TypeError):  # allow e.g. vreg.get(None, default)
             return default
 
 

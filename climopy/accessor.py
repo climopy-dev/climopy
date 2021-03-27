@@ -1073,25 +1073,15 @@ class ClimoAccessor(object):
         Find possibly nested series of transformations that get from variable A --> C.
         Account for `CF` and `CFVariableRegistry` names.
         """
-        # WARNING: This can be *huge* bottleneck if not careful about instantiating
-        # accessors and invoking CF too many times (e.g. using .cfvariable)
         # First get list of *source* identifiers
         if isinstance(src, str):
-            identifiers = [src]
-        elif isinstance(src, xr.DataArray):
-            identifiers = [src.name]
-            if not src.name:
-                return
-            if 'standard_name' in src.attrs:  # CF compatibility (see vars.__getitem__)
-                identifiers.append(src.attrs['standard_name'])
-        else:
-            raise ValueError(f'Unknown source type {type(src)!r}.')
-        if var := self.variable_registry.get(identifiers[0]):
-            identifiers.extend(var.identifiers)
-
-        # Next find the transformation
+            src = xr.DataArray(name=src)
+        elif not isinstance(src, xr.DataArray):
+            raise TypeError('Invalid input. Must be string or DataArray.')
+        identifiers = src.climo.identifiers
         if dest in identifiers:
             return lambda da: da.copy()
+        # Next find the transformation
         for (isrc, idest), transformation in TRANSFORMATIONS.items():
             if isrc not in identifiers:
                 continue
@@ -3790,17 +3780,50 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @property
     def cfvariable(self):
         """
-        Return a `~.cfvariable.CFVariable` based on the DataArray name, the scalar
-        coordinates, and the coordinate reductions referenced in `cell_methods`. As
-        a shorthand, you can access ``data_array.climo.cfvariable`` properties
+        Return a `~.cfvariable.CFVariable` based on the `~xarray.DataArray` name, the
+        scalar coordinates, and the coordinate reductions referenced in `cell_methods`.
+        As a shorthand, you can access ``data_array.climo.cfvariable`` properties
         directly using ``data_array.climo.property``.
         """
         return self._cf_variable()
 
     @property
+    def identifiers(self):
+        """
+        Return a tuple of valid CF identifiers associated with this `~xarray.DataArray`.
+        """
+        # WARNING: CF accessor has no native method, only keys() to show all keys,
+        # since it is meant to help search for things. To keep leveraging CF accessor
+        # algorithm, tried making copy with all coordinate dropped except coordinates
+        # matching this name. But invoking .cf here is *huge* bottleneck when searching
+        # for transformations, so instead manually infer valid identifiers.
+        # self.data.drop_vars(self.data.coords.keys() - {self.data.name}).cf.keys()
+        data = self.data
+        name = data.name
+        attrs = data.attrs
+        units = data.climo.units if 'units' in attrs else None
+        identifiers = []
+        if isinstance(name, str):
+            identifiers.append(name)
+        if standard_name := attrs.get('standard_name'):  # see vars._getitem
+            identifiers.append(standard_name)  # includes lat lon coord identification
+        if units == ureg.degrees_east:
+            identifiers.append('longitude')
+        if units == ureg.degrees_north:
+            identifiers.append('latitude')
+        if attrs.get('positive') in ('up', 'down') or units and units.is_compatible_with('Pa'):  # noqa: E501
+            identifiers.append('vertical')
+        if (axis := attrs.get('axis')) in ('X', 'Y', 'Z', 'T'):
+            identifiers.append(axis)
+        if var := self.variable_registry.get(identifiers[0]):  # this is fast!
+            identifiers.extend(var.identifiers)
+        return tuple(identifiers)
+
+    @property
     def magnitude(self):
         """
-        The magnitude of the data values of this DataArray (i.e., without units).
+        The magnitude of the data values of this `~xarray.DataArray`
+        (i.e., without units).
         """
         if isinstance(self.data.data, pint.Quantity):
             return self.data.data.magnitude
