@@ -100,7 +100,7 @@ with warnings.catch_warnings():
     @register_derivation('cell_height')
     def cell_height(self):
         # WARNING: Must use _get_item with add_cell_measures=False to avoid recursion
-        vertical = self.vertical_kind
+        vertical = self.vertical_type
         if vertical == 'temperature':
             data = self.vars['pseudo_density'] * self.coords['vertical_delta']
         elif vertical == 'pressure':
