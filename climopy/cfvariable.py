@@ -196,7 +196,7 @@ class CFVariable(object):
         self,
         long_name=None, standard_units=None, short_name=None, standard_name=None, *,
         prefix_long=None, suffix_long=None, prefix_both=None, suffix_both=None,
-        symbol=None, sigfig=1, reference=None, colormap=None,
+        symbol=None, sigfig=None, reference=None, colormap=None,
         axis_scale=None, axis_reverse=None, axis_formatter=None,
     ):
         """
