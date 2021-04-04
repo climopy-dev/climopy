@@ -501,17 +501,27 @@ class _CFAccessor(object):
         )
         return attr.strip()
 
-    def _encode_name(self, key, *attrs):
+    def _encode_name(self, key, *attrs, search_registry=True):
         """
-        Translate input variable name into standard CF name. Check only the
-        specified attributes.
+        Translate a dataset variable name or registry variable name or alias
+        into a standard CF name. Check only the specified attributes.
         """
         if not isinstance(key, str):
             raise KeyError('Key must be string.')
-        try:
-            key = self._decode_name(key, *attrs)
-        except KeyError:
-            pass
+        # Check if already valid CF name
+        if any(
+            key == name for attr in ('_AXIS_NAMES', '_COORD_NAMES', '_CELL_MEASURES')
+            for name in getattr(_cf_accessor, attr, ())
+        ):
+            return key
+        # Decode variable aliases into native dataset names used by CF accessor
+        if search_registry:
+            var = self._variable_registry.get(key, None)
+            for name in getattr(var, 'identifiers', ()):
+                if name in self._src:
+                    key = name
+                    break
+        # Check if key is present in CF accessor properties
         attrs = attrs or ('axes', 'coordinates', 'cell_measures', 'standard_names')
         for attr in attrs:
             mapping = getattr(self, attr)
@@ -545,15 +555,17 @@ class _CFAccessor(object):
             parts.append((dims, value))
         return parts
 
-    def _decode_name(self, key, *attrs, search_registry=True):
+    def _decode_name(self, key, *attrs, search_registry=True, return_if_missing=False):
         """
-        Translate input CF or registry name into variable name. Check only the
-        specified attributes.
+        Translate a standard CF name or registry variable alias into dataset variable
+        name or registry variable name. Check only the specified attributes.
         """
         if not isinstance(key, str):
             raise KeyError('Key must be string.')
+        # Check if already valid variable name
         if key in self._src:
             return key
+        # Check if key matches CF standard name
         attrs = attrs or ('axes', 'coordinates', 'cell_measures', 'standard_names')
         for attr in attrs:
             names = getattr(self, attr).get(key, None)
@@ -561,13 +573,18 @@ class _CFAccessor(object):
                 pass
             elif len(names) > 1:
                 raise KeyError(f'Too many options for CF key {key!r}: {names!r}')
-            elif names[0] in self._src:  # e.g. cell_measures var might be missing
+            elif names[0] in self._src:
                 return names[0]
+            elif return_if_missing:
+                return names[0]  # e.g. missing cell_measures variable
+        # Check if key matches registry variable alias
         if search_registry:
             var = self._variable_registry.get(key, None)
             for name in getattr(var, 'identifiers', ()):
                 if name in self._src:
                     return name
+            if var and return_if_missing:
+                return var.name  # e.g. missing variable
         raise KeyError(f'Invalid variable {key!r}.')
 
     def _get_attr(self, attr):
@@ -582,12 +599,13 @@ class _CFAccessor(object):
             setattr(self, cache, value)
         return value
 
-    def _get_item(self, key, *attrs):
+    def _get_item(self, key, *attrs, **kwargs):
         """
-        Try to get item using its CF name. Search only the input attributes.
+        Try to get item using its CF name, otherwise reutrn nothing. Search only the
+        input attributes.
         """
         try:
-            name = self._decode_name(key, *attrs)
+            name = self._decode_name(key, *attrs, **kwargs)
         except KeyError:
             return
         if name in self._src:
@@ -1213,13 +1231,13 @@ class ClimoAccessor(object):
         Find possibly nested series of transformations that get from variable A --> C.
         Account for `CF` and `CFVariableRegistry` names.
         """
-        # Translate names
+        # Translate names to dataset variable names or registry variable names
         try:
-            src = self.cf._decode_name(src)
+            src = self.cf._decode_name(src, return_if_missing=True)
         except KeyError:
             return  # source not available!
         try:
-            dest = self.cf._decode_name(dest)
+            dest = self.cf._decode_name(dest, return_if_missing=True)
         except KeyError:
             pass
         if src == dest:
@@ -2697,11 +2715,13 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             # Get methods dictionary by reading cell_methods and scalar coordinates
             # NOTE: Include *this* array in case it is coordinate, e.g. lat='argmax'
             # Also, in that case, disable the 'point selection' mode.
-            methods = self.cf._decode_attr(data.attrs.get('cell_methods', ''))
-            mapping = {name: data, **data.coords}
-            for coord, da in mapping.items():
+            meta = data.copy(deep=False)
+            meta.coords[meta.name] = meta  # whoa dude... this is so CF searches self
+            methods = meta.climo.cf._decode_attr(meta.attrs.get('cell_methods', ''))
+            for coord, da in meta.coords.items():
+                coordinate = None
                 try:
-                    coordinate = self.cf._encode_name(coord, 'coordinates')
+                    coordinate = meta.climo.cf._encode_name(coord, 'coordinates')
                 except KeyError:
                     continue
                 method = []
@@ -2712,14 +2732,12 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     method.extend(m for dims, m in methods if coord in dims)
                 kwargs[coordinate] = method
 
-            # Find if data values refer to *actual* variable and the DataArray name
-            # is a coordinate. This happens e.g. with 'argmax'. Also try to
-            # avoid e.g. name='ehf' combined with long_name='latitude'.
+            # Find if DataArray corresponds to a variable but its values and name
+            # corresond to a coordinate. This happens e.g. with 'argmax'. Also try
+            # to avoid e.g. name='ehf' combined with long_name='latitude'.
+            # NOTE: Last 'coordinate' is translation of data array name itself
+            # due to dictionary insertion order.
             parent_name = data.attrs.get('parent_name', None)
-            try:
-                coordinate = self.cf._encode_name(name, 'coordinates')
-            except KeyError:
-                coordinate = None
             if name not in data.coords and coordinate in kwargs:
                 if parent_name is None:
                     raise RuntimeError(f'Unknown parent name for coordinate {name!r}.')
@@ -3070,9 +3088,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 coordinates = (coordinate,)
             weight = self.cf._get_item(measure, 'cell_measures')
             if weight is None:
-                raise ValueError(
-                    f'Cell measure {measure!r} for dim {dim!r} not found.'
-                )
+                raise ValueError(f'Cell measure {measure!r} for dim {dim!r} not found.')
             dims.extend(self.cf._decode_name(name, 'coordinates') for name in coordinates)  # noqa: E501
             measures.add(measure)
             weights_explicit.append(weight.climo.quantify())
