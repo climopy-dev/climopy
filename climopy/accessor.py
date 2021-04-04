@@ -407,7 +407,7 @@ def _while_quantified(func):
             data = data.copy(deep=False)
             dequantify = set()
             for da in data.values():
-                if not da.climo._is_quantity and not self._is_bounds(da):
+                if not da.climo._is_quantity and not da.climo._is_bounds:
                     da.climo._quantify()
                     dequantify.add(da.name)
         elif not self._is_quantity:
@@ -1615,6 +1615,7 @@ class ClimoAccessor(object):
                         measures[measure] = weight
 
         # Add measures as dequantified coordinate variables
+        # TODO: Stop adding cell measures attribute to whole dataset
         # NOTE: This approach is used as an example in cf_xarray docs:
         # https://cf-xarray.readthedocs.io/en/latest/examples/introduction.html#Feature:-Weight-by-Cell-Measures
         for measure, da in measures.items():
@@ -1624,7 +1625,7 @@ class ClimoAccessor(object):
                 raise ValueError('Input cell measures must have names.')
             data.coords[da.name] = da.climo.dequantify()
             for obj in data.climo._iter_data_vars(dataset=True):
-                if isinstance(self.data, xr.Dataset) and self._is_bounds(obj):
+                if isinstance(obj, xr.DataArray) and obj.climo._is_bounds:
                     continue
                 obj.attrs['cell_measures'] = self.cf._encode_attr(
                     obj.attrs.get('cell_measures'), ((measure, da.name),)
@@ -2526,7 +2527,7 @@ class ClimoAccessor(object):
         if not methods:
             return
         for da in self._iter_data_vars():
-            if isinstance(self.data, xr.Dataset) and self._is_bounds(da):
+            if da.climo._is_bounds:
                 continue
             da.attrs['cell_methods'] = self.cf._encode_attr(
                 da.attrs.get('cell_methods', None), methods.items()
@@ -2738,7 +2739,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             # NOTE: Last 'coordinate' is translation of data array name itself
             # due to dictionary insertion order.
             parent_name = data.attrs.get('parent_name', None)
-            if name not in data.coords and coordinate in kwargs:
+            if coordinate in kwargs and name not in data.coords and not data.climo._is_bounds:  # noqa: E501
                 if parent_name is None:
                     raise RuntimeError(f'Unknown parent name for coordinate {name!r}.')
                 if parent_name not in data.coords:
@@ -4002,6 +4003,16 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         return isinstance(self.data.data, pint.Quantity)
 
+    @property
+    def _is_bounds(self):
+        """
+        Return whether data is a coordinate bounds.
+        """
+        key = self.data.name
+        coords = self.data.coords
+        sentinel = object()
+        return any(key == da.attrs.get('bounds', sentinel) for da in coords.values())
+
 
 @xr.register_dataset_accessor('climo')
 class ClimoDatasetAccessor(ClimoAccessor):
@@ -4107,7 +4118,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         if 'k' in data.dims:
             dims = ('lev', 'k', 'lat', 'c')
         else:
-            dims = _first_unique(dim for da in self.data.values() for dim in da.dims if not self._is_bounds(da))  # noqa: E501
+            dims = _first_unique(dim for da in self.data.values() for dim in da.dims if not da.climo._is_bounds)  # noqa: E501
         data = data.transpose(..., *(dim for dim in dims if dim in data.dims))
 
         return data
@@ -4344,7 +4355,7 @@ suffix_both : str, optional
         converted to `pint.Quantity` using the ``'units'`` attributes. Coordinate bounds
         variables are excluded. Already-quantified data is left alone.
         """
-        return self.data.map(lambda d: d if self._is_bounds(d) else d.climo.quantify())
+        return self.data.map(lambda d: d if d.climo._is_bounds else d.climo.quantify())
 
     def dequantify(self):
         """
@@ -4362,20 +4373,6 @@ suffix_both : str, optional
         `~.cfvariable.CFVariableRegistry` identifiers.
         """
         return _VarsQuantified(self.data, self.variable_registry)
-
-    def _is_bounds(self, da):
-        """
-        Return whether object (string name or `DataArray`) is a coordinate bounds.
-        """
-        if isinstance(da, str):
-            key = da
-        elif isinstance(da, xr.DataArray):
-            key = da.name
-        else:
-            return False
-        coords = self.data.coords
-        sentinel = object()
-        return any(key == da.attrs.get('bounds', sentinel) for da in coords.values())
 
 
 @docstring.inject_snippets()
