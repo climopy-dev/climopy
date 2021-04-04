@@ -240,23 +240,6 @@ than returning a copy.
 """
 
 
-def _clear_cf_cache(func):
-    """
-    Clear CF attribute cache before running. Call this before every top-level public
-    method where names are translated. Must come before `_manage_coord_reductions`.
-    """
-    @functools.wraps(func)
-    def _wrapper(self, *args, **kwargs):
-        cf = self._data.climo.cf  # permit use on .loc and .coord class funcs
-        for attr in ('axes', 'coordinates', 'cell_measures', 'standard_names'):
-            cache = '_' + attr + '_cache'
-            if hasattr(cf, cache):
-                setattr(cf, cache, None)
-        return func(self, *args, **kwargs)
-
-    return _wrapper
-
-
 def _expand_variable_args(func):
     """
     Expand single positional argument into multiple positional arguments with optional
@@ -486,6 +469,22 @@ class _CFAccessor(object):
         self._src = data.coords if isinstance(data, xr.DataArray) else data
         self._variable_registry = vreg
 
+    @staticmethod
+    def _clear_cache(func):
+        """
+        Clear CF attribute cache before running. Call this before every top-level public
+        method where names are translated. Must come before `_manage_coord_reductions`.
+        """
+        @functools.wraps(func)
+        def _wrapper(self, *args, **kwargs):
+            cf = self._data.climo.cf  # permit use on .loc and .coord class funcs
+            for attr in ('axes', 'coordinates', 'cell_measures', 'standard_names'):
+                cache = '_' + attr + '_cache'
+                if hasattr(cf, cache):
+                    setattr(cf, cache, None)
+            return func(self, *args, **kwargs)
+        return _wrapper
+
     def _encode_attr(self, *parts):
         """
         Merge and encode parts into CF `cell_methods`-like attribute.
@@ -696,7 +695,7 @@ class _DataArrayLocIndexerQuantified(object):
             key = dict(zip(self._data.dims, labels))
         return key
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def __getitem__(self, key):
         """
         Request slices optionally with pint quantity indexers.
@@ -706,7 +705,7 @@ class _DataArrayLocIndexerQuantified(object):
         key = data.climo._dequantify_indexers(key)
         return data.loc[key]
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def __setitem__(self, key, value):
         """
         Request and set slices optionally with pint quantity indexers and
@@ -790,7 +789,7 @@ class _CoordsQuantified(object):
             raise KeyError(f'Invalid coordinate spec {key!r}.')
         return self._make_coord(*tup)
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def _parse_key(
         self,
         key,
@@ -1100,7 +1099,7 @@ class _VarsQuantified(object):
             raise KeyError(f'Invalid variable name {key!r}.')
         return da.climo.quantify()
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def _get_item(self, key, search_cf=True, search_registry=True):
         """
         Return a function that generates the variable, accounting for CF and
@@ -1531,7 +1530,7 @@ class ClimoAccessor(object):
         }
         return bounds, kwargs
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def add_cell_measures(
         self, measures=None, *, dataset=None, override=False, verbose=False, **kwargs
     ):
@@ -1633,7 +1632,7 @@ class ClimoAccessor(object):
 
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def add_scalar_coords(self, verbose=False):
         """
         Add dummy scalar coordinates for missing longitude, latitude, and vertical
@@ -1693,7 +1692,7 @@ class ClimoAccessor(object):
 
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def enforce_global(self, longitude=True, latitude=True, vertical=False, zero=None):
         """
         Add a circularly overlapping longitude coordinate, latitude coordinates for
@@ -1833,7 +1832,7 @@ class ClimoAccessor(object):
 
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def groupby(self, group, *args, **kwargs):
         """
         A unit-friendly `~xarray.DataArray.groupby` indexer. Dequantifies the "group"
@@ -1878,7 +1877,7 @@ class ClimoAccessor(object):
         data.climo.update_cell_methods({dims: method})
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     @_manage_coord_reductions
     @docstring.inject_snippets(operator='mean')
     def mean(self, dim=None, skipna=None, weight=None, **kwargs):
@@ -1891,7 +1890,7 @@ class ClimoAccessor(object):
         """
         return self._mean_or_sum('mean', dim, **kwargs)
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     @_manage_coord_reductions
     @docstring.inject_snippets(operator='sum')
     def sum(self, dim=None, skipna=None, weight=None, **kwargs):
@@ -1900,8 +1899,8 @@ class ClimoAccessor(object):
         """
         return self._mean_or_sum('sum', dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     @_while_dequantified
-    @_clear_cf_cache
     def interp(
         self,
         indexers=None,
@@ -1938,7 +1937,7 @@ class ClimoAccessor(object):
             drop_cell_measures=drop_cell_measures,
         )
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def isel(
         self,
         indexers=None,
@@ -1963,7 +1962,7 @@ class ClimoAccessor(object):
             'isel', indexers, drop=drop, drop_cell_measures=drop or drop_cell_measures,
         )
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def replace_coords(self, indexers=None, **kwargs):
         """
         Return a copy with coordinate values added or replaced (if they already exist).
@@ -2002,7 +2001,7 @@ class ClimoAccessor(object):
             indexers_new[name] = coord.climo.dequantify()
         return self.data.assign_coords(indexers_new)
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def sel(
         self,
         indexers=None,
@@ -2035,7 +2034,7 @@ class ClimoAccessor(object):
             drop_cell_measures=drop or drop_cell_measures,
         )
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def sel_hemisphere(self, which, invert=None):
         """
         Select a hemisphere or average of hemispheres. A single negative latitude
@@ -2098,7 +2097,7 @@ class ClimoAccessor(object):
         data.attrs.update(attrs)
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def sel_pair(self, key):
         """
         Return selection from a pseudo "parameter" axis. "Parameter" axes are identified
@@ -2191,7 +2190,7 @@ class ClimoAccessor(object):
 
         return result
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def sel_time(self, date=None, **kwargs):
         """
         Return an `~xarray.DataArray` or `~xarray.Dataset` with the time coordinate
@@ -2220,7 +2219,7 @@ class ClimoAccessor(object):
             data = data.sel({time: data[f'{time}.{key}'] == value})
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def standardize_coords(self, verbose=False):
         """
         Infer and standardize coordinates to satisfy CF conventions with the help of
@@ -2357,7 +2356,7 @@ class ClimoAccessor(object):
 
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def truncate(self, bounds=None, *, ignore_extra=False, **kwargs):
         """
         Restrict the coordinate range using `ClimoAccessor.interp`. The corresponding
@@ -2582,7 +2581,7 @@ class ClimoAccessor(object):
         return self._cls_loc(self.data)
 
     @property
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def parameter(self):
         """
         The coordinate `~xarray.DataArray` for the "parameter sweep" axis. Detected as
@@ -2650,7 +2649,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     _cls_coords = _DataArrayCoordsQuantified
     _cls_loc = _DataArrayLocIndexerQuantified
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def __repr__(self):
         return f'<climopy.ClimoDataArrayAccessor>({self._cf_repr(brackets=False)})'
 
@@ -2787,8 +2786,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         return repr_
 
+    @_CFAccessor._clear_cache
     @_while_quantified
-    @_clear_cf_cache
     def reduce(
         self, indexers=None, dataset=None, centroid=False, weight=None, mask=None,
         **kwargs
@@ -3186,7 +3185,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         res = res.where(res != 0.0)  # 0.0 --> NaN; works with pint.Quantity data
         return res
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
     @docstring.inject_snippets(operator='integral', action='integration',)
     def integral(self, dim=None, **kwargs):
@@ -3200,7 +3199,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(integral=True, cumulative=False)
         return self._integral_or_average(dim, **kwargs)
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
     @docstring.inject_snippets(operator='average', action='averaging')
     def average(self, dim=None, **kwargs):
@@ -3229,7 +3228,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         with xr.set_options(keep_attrs=True):
             return self.data - self.average(*args, **kwargs)
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     @docstring.inject_snippets(operator='integral', action='integration')
     def cumintegral(self, dim, skipna=None, **kwargs):
         """
@@ -3242,7 +3241,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(integral=True, cumulative=True)
         return self._integral_or_average(dim, **kwargs)
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     @docstring.inject_snippets(operator='average', action='averaging')
     def cumaverage(self, dim, reverse=False, weight=None, skipna=None, **kwargs):
         """
@@ -3270,7 +3269,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         with xr.set_options(keep_attrs=True):
             return self.data - self.cumaverage(*args, **kwargs)
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     @_keep_cell_attrs
     def runmean(self, indexers=None, **kwargs):
         """
@@ -3298,8 +3297,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             data = var.runmean(data, window, dim=dim)
         return data
 
+    @_CFAccessor._clear_cache
     @_while_quantified
-    @_clear_cf_cache
     @_keep_cell_attrs
     def derivative(self, indexers=None, half=False, **kwargs):
         """
@@ -3343,8 +3342,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         with xr.set_options(keep_attrs=True):
             return -1 * result
 
+    @_CFAccessor._clear_cache
     @_while_quantified
-    @_clear_cf_cache
     @_keep_cell_attrs
     @docstring.inject_snippets(operator='divergence')
     def divergence(self, half=False, cos_power=1, **kwargs):
@@ -3379,8 +3378,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         result.climo.update_cell_methods({'area': 'divergence'})
         return result
 
+    @_CFAccessor._clear_cache
     @_while_quantified
-    @_clear_cf_cache
     @_keep_cell_attrs
     @docstring.inject_snippets(operator='correlation', func='corr')
     def autocorr(self, dim, **kwargs):
@@ -3395,8 +3394,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.update_cell_methods({dim: 'correlation'})
         return data
 
+    @_CFAccessor._clear_cache
     @_while_quantified
-    @_clear_cf_cache
     @_keep_cell_attrs
     @docstring.inject_snippets(operator='covariance', func='covar')
     def autocovar(self, dim, **kwargs):
@@ -3411,7 +3410,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.update_cell_methods({dim: 'covariance'})
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     @_keep_cell_attrs
     def centroid(self, dataset=None, **kwargs):
         """
@@ -3550,7 +3549,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.update_cell_methods({dim: 'arg' + which if arg else which})
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     # @_manage_coord_reductions
     @docstring.inject_snippets(extrema='mimima', prefix='')
     def min(self, dim=None, **kwargs):
@@ -3632,8 +3631,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(which='zero', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     @_keep_cell_attrs
-    @_clear_cf_cache
     def hist(self, dim, bins=None):
         """
         Return the histogram along the given dimension.
@@ -3697,9 +3696,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             data[~mask] = np.nan * getattr(data.data, 'units', 1)
         return data
 
-    @_keep_cell_attrs
+    @_CFAccessor._clear_cache
     @_while_dequantified
-    @_clear_cf_cache
+    @_keep_cell_attrs
     def normalize(self):
         """
         Return a copy of the data normalized with respect to time.
@@ -3711,9 +3710,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.update_cell_methods({time: 'normalized'})
         return data
 
+    @_CFAccessor._clear_cache
     @_while_quantified
     @_keep_cell_attrs
-    @_clear_cf_cache
     def slope(self, dim):
         """
         Return the best-fit slope with respect to some dimension.
@@ -3731,9 +3730,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.update_cell_methods({dim: 'slope'})
         return data
 
+    @_CFAccessor._clear_cache
     @_while_quantified
     @_keep_cell_attrs
-    @_clear_cf_cache
     def timescale(self, dim, maxlag=None, imaxlag=None, **kwargs):
         """
         Return a best-fit estimate of the autocorrelation timescale.
@@ -3756,8 +3755,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo.update_cell_methods({dim: 'timescale'})
         return data
 
+    @_CFAccessor._clear_cache
     @_while_quantified
-    @_clear_cf_cache
     def to_variable(self, dest, standardize=False, **kwargs):
         """
         Transform this variable to another variable using two-way transformations
@@ -3923,7 +3922,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.attrs['units'] = encode_units(units)
 
     @property
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def cfvariable(self):
         """
         Return a `~.cfvariable.CFVariable` based on the `~xarray.DataArray` name, the
@@ -4029,7 +4028,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
     _cls_groupby = _DatasetGroupByQuantified
     _cls_loc = _DatasetLocIndexerQuantified
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def __repr__(self):
         pad = 4
         data = self.data
@@ -4123,7 +4122,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
         return data
 
-    @_clear_cf_cache
+    @_CFAccessor._clear_cache
     def _get_item_or_func(
         self,
         key,
