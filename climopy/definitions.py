@@ -105,16 +105,24 @@ with warnings.catch_warnings():
             data = self.vars['pseudo_density'] * self.coords['vertical_delta']
         elif type_ == 'pressure':
             ps = None
-            data = self.coords['vertical_bnds']
+            data = bnds = self.coords['vertical_bnds']
             for candidate in ('surface_air_pressure', 'air_pressure_at_mean_sea_level'):
                 if candidate not in self.vars:
                     continue
-                ps = 0 * data + self.vars[candidate]  # conform shape
-                data = data + 0 * ps  # conform shape
+                # Conform dimensionality
+                ps = 0 * data + self.vars[candidate]
+                data = data + 0 * ps
                 data = data.transpose(*ps.dims)
+                # Set hard minimum vertical bounds (possibly for multiple levels)
                 mask = data.data > ps.data
                 data.data[mask] = ps.data[mask]
-                # data[{}]
+                # Expand near-surface vertical bounds to actual surface
+                idx = {
+                    'bnds': bnds.cf.isel(vertical=0).data.argmax(),
+                    'vertical': bnds.isel(bnds=0).data.argmax(),
+                }
+                mask = data.climo[idx].data < ps.climo[idx].data
+                data.climo[idx].data[mask] = ps.climo[idx].data[mask]
             if ps is None:
                 _warn_climopy(
                     'Surface pressure not found. '

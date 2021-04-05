@@ -2751,7 +2751,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         if isinstance(key, str):
             return self.coords[key]
         else:  # see also .loc.__getitem__
-            key, _ = self._parse_indexers(self._expand_ellipsis(key))
+            key, _ = self._parse_indexers(self._expand_ellipsis(key), include_no_coords=True)  # noqa: E501
             return self.data[key]
 
     @_CFAccessor._clear_cache
@@ -2759,7 +2759,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Set values along dimensions with translated dictionary indexing.
         """
-        key, _ = self._parse_indexers(self._expand_ellipsis(key))  # see also .loc
+        key, _ = self._parse_indexers(self._expand_ellipsis(key), include_no_coords=True)  # noqa: E501
         self.data[key].climo._assign_value(value)
 
     def _assign_value(self, value):
