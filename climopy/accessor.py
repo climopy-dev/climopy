@@ -1308,7 +1308,7 @@ class ClimoAccessor(object):
         # Find the transformation
         for (isrc, idest), transformation in TRANSFORMATIONS.items():
             try:
-                isrc = self.cf._decode_name(isrc)
+                isrc = self.cf._decode_name(isrc, return_if_missing=True)
             except KeyError:
                 continue  # source not available!
             if isrc != src:
