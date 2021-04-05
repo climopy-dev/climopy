@@ -100,20 +100,21 @@ with warnings.catch_warnings():
     @register_derivation('cell_height')
     def cell_height(self):
         # WARNING: Must use _get_item with add_cell_measures=False to avoid recursion
-        vertical = self.vertical_type
-        if vertical == 'temperature':
+        type_ = self.cf.vertical_type
+        if type_ == 'temperature':
             data = self.vars['pseudo_density'] * self.coords['vertical_delta']
-        elif vertical == 'pressure':
+        elif type_ == 'pressure':
             ps = None
             data = self.coords['vertical_bnds']
             for candidate in ('surface_air_pressure', 'air_pressure_at_mean_sea_level'):
                 if candidate not in self.vars:
                     continue
-                ps = 0 * data + self.vars[candidate]
+                ps = 0 * data + self.vars[candidate]  # conform shape
                 data = data + 0 * ps  # conform shape
                 data = data.transpose(*ps.dims)
                 mask = data.data > ps.data
                 data.data[mask] = ps.data[mask]
+                # data[{}]
             if ps is None:
                 _warn_climopy(
                     'Surface pressure not found. '
@@ -121,13 +122,13 @@ with warnings.catch_warnings():
                 )
             data = data.diff('bnds').isel(bnds=0)
             data = data / const.g
-        elif vertical == 'hybrid':
+        elif type_ == 'hybrid':
             raise NotImplementedError(
                 'Cell height for hybrid coordinates not yet implemented.'
             )
         else:
             raise NotImplementedError(
-                f'Unknown cell height for vertical type {vertical!r}.'
+                f'Unknown cell height for vertical type {type_!r}.'
             )
         data = data.climo.to_units('kg m^-2')
         data.data[data.data < 0] = ureg.Quantity(0, 'kg m^-2')

@@ -195,7 +195,7 @@ class CFVariable(object):
     def update(
         self,
         long_name=None, standard_units=None, short_name=None, standard_name=None, *,
-        prefix_long=None, suffix_long=None, prefix_both=None, suffix_both=None,
+        long_prefix=None, long_suffix=None, short_prefix=None, short_suffix=None,
         symbol=None, sigfig=None, reference=None, colormap=None,
         axis_scale=None, axis_reverse=None, axis_formatter=None,
     ):
@@ -226,12 +226,12 @@ class CFVariable(object):
             the non-alphanumeric characters in `long_name` with underscores. Since
             the `standard_name` is supposed to be a *unique* variable identifier,
             it is never inherited from parent variables.
-        prefix_long, suffix_long : str, optional
-            Prefix and suffix to be added to the long name. So far this is just used
-            with `~.accessor.ClimoAccessor.sel_pair`.
-        prefix_both, suffix_both : str, optional
-            Prefix and suffix to be added to both the long name and the short name.
-            So far this is not used internally.
+        long_prefix, long_suffix : str, optional
+            Prefix and suffix to be added to the long name. Defaults to `short_prefix`
+            and `short_suffix`.
+        short_prefix, short_suffix : str, optional
+            Prefix and suffix to be added to the short name. Also sets `long_prefix`
+            and `long_suffix` if they were not specified.
         symbol : str, optional
             The TeX-style symbol used to represent the variable, e.g. ``R_o`` for the
             Rossby number or ``\\lambda`` for the climate sensitivity parameter.
@@ -258,12 +258,12 @@ class CFVariable(object):
         # Parse input names and apply prefixes and suffixes
         # NOTE: Important to add prefixes and suffixes to long_name *after* using
         # as default short_name. Common use case is to create "child" variables with
-        # identical short_name using e.g. vreg.define('var', prefix_long='prefix')
+        # identical short_name using e.g. vreg.define('var', long_prefix='prefix')
         standard_units = self._inherit('standard_units', standard_units)
         long_name = self._inherit('long_name', long_name)
         short_name = self._inherit('short_name', short_name, default=long_name)
-        long_name = self._mod_name(long_name, prefix_long or prefix_both, suffix_long or suffix_both)  # noqa: E501
-        short_name = self._mod_name(short_name, prefix_both, suffix_both)
+        long_name = self._mod_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
+        short_name = self._mod_name(short_name, short_prefix, short_suffix)
         standard_name = self._inherit('standard_name', standard_name)
         if standard_name is None and long_name is not None:
             standard_name = re.sub(r'\W', '_', long_name).strip('_').lower()
@@ -301,7 +301,8 @@ class CFVariable(object):
         names = (self.name,)
         if self.standard_name:
             names += (self.standard_name,)
-        return names + self.aliases
+        names += self.aliases
+        return names
 
     @property
     def aliases(self):
@@ -613,7 +614,7 @@ class CFVariableRegistry(object):
         # Apply basic overrides
         kwmod = {
             key: kwargs.pop(key) for key in tuple(kwargs)
-            if key in ('prefix_long', 'suffix_long', 'prefix_both', 'suffix_both')
+            if key in ('long_prefix', 'long_suffix', 'short_prefix', 'short_suffix')
         }
         var.update(**kwargs)
 
@@ -668,14 +669,14 @@ class CFVariableRegistry(object):
                 standard_units='deg_north',
                 symbol=fr'\phi_{{{var.symbol}}}',
                 axis_formatter='deg',
-                suffix_long=f'{args.pop()[3:]} latitude',  # use the first one
-                # suffix_long='latitude',
+                long_suffix=f'{args.pop()[3:]} latitude',  # use the first one
+                # long_suffix='latitude',
             )
 
         # Centroid reduction
         if 'centroid' in latitude:
             var.update(
-                suffix_long='centroid',
+                long_suffix='centroid',
                 short_name='centroid',
                 standard_units='km',
                 axis_formatter=False,
@@ -684,7 +685,7 @@ class CFVariableRegistry(object):
         # Time dimension reductions of variable in question
         if 'timescale' in time:
             var.update(  # modify existing
-                suffix_long='e-folding timescale',
+                long_suffix='e-folding timescale',
                 short_name='timesale',
                 standard_units='day',
                 symbol=fr'T_e({var.symbol})',
@@ -692,7 +693,7 @@ class CFVariableRegistry(object):
             )
         elif 'autocorr' in time:
             var.update(  # modify existing
-                suffix_long='autocorrelation',
+                long_suffix='autocorrelation',
                 short_name='autocorrelation',
                 standard_units='',
                 symbol=fr'\rho({var.symbol})',
@@ -700,7 +701,7 @@ class CFVariableRegistry(object):
             )
         elif 'hist' in time:
             var.update(
-                suffix_long='histogram',
+                long_suffix='histogram',
                 short_name='count',
                 standard_units='',
                 axis_formatter=False,
@@ -714,7 +715,7 @@ class CFVariableRegistry(object):
             if isinstance(method, (pint.Quantity, numbers.Number))
         ]
         if coords:
-            var.update(suffix_long='at ' + ', '.join(coords))
+            var.update(long_suffix='at ' + ', '.join(coords))
         if any('normalized' in dim for dim in (longitude, latitude, vertical, time)):
             var.update(standard_units='')
 
@@ -816,7 +817,7 @@ class CFVariableRegistry(object):
 
         # Delete old variables and children, ensuring zero conflict between sets
         # of unique identifiers and forbidding deletion of parent variables.
-        for identifier in var.identifiers:
+        for identifier in set(var.identifiers):
             try:
                 prev = self._get_item(identifier)
             except KeyError:
