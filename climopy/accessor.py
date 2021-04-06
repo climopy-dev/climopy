@@ -2424,13 +2424,11 @@ class ClimoAccessor(object):
         return data
 
     @_CFAccessor._clear_cache
-    def truncate(self, bounds=None, *, ignore_extra=False, **kwargs):
+    def truncate(self, bounds=None, *, ignore_extra=False, dataset=None, **kwargs):
         """
         Restrict the coordinate range using `ClimoAccessor.interp`. Conceptually,
         inserts conincident centers and boundaries that mark the new edges of the
-        coordinate range. If new edges are outside the current range, we use the old
-        edges. The cell measures found in `~xarray.DataArray.coords` are reduced near
-        the new edges to improve accuracy of subsequent weighted averages.
+        coordinate range. The cell measure weights are redistributed accordingly.
 
         Parameters
         ----------
@@ -2438,6 +2436,8 @@ class ClimoAccessor(object):
             The bounds specifications. For e.g. latitude dimension `lat`, the entries
             should look like ``lat_min=min_value``, ``lat_max=max_value``,
             ``lat_lim=(min, max)``, or the shorthand ``lat=(min, max)``.
+        dataset : xarray.Dataset, optional
+            The associated dataset. Used to retrieve coordinate bounds if available.
         **kwargs
             The bounds specifications passed as keyword args.
 
@@ -2454,9 +2454,10 @@ class ClimoAccessor(object):
         # NOTE: This uses the unit-friendly accessor sel method. Range is limited
         # *exactly* by interpolating onto requested bounds.
         data = self.data
+        src = dataset or data
         bounds = bounds or {}
         bounds.update(kwargs)
-        bounds, kwargs = self._parse_truncate_args(**bounds)
+        bounds, kwargs = src.climo._parse_truncate_args(**bounds)
         if kwargs and not ignore_extra:
             raise ValueError(f'truncate() got unexpected keyword args {kwargs}.')
         if any(_.size > 2 for _ in bounds.values()):
@@ -2467,9 +2468,9 @@ class ClimoAccessor(object):
         for dim, bound in bounds.items():
             dim = re.sub(r'_lim\Z', '', dim)
             data_orig = data
-            coord_orig = coord = data.coords[dim]  # must be unquantified
-            attrs_orig = coord.attrs.copy()
-            bnds_orig = data.climo.coords._get_bounds(coord_orig, sharp_cutoff=True)
+            coord_orig = data.coords[dim]  # must be unquantified
+            bnds_orig = src.climo.coords._get_bounds(coord_orig, sharp_cutoff=True)
+            attrs = coord_orig.attrs.copy()
 
             # Interpolate to new edges. When 'truncating' outside the coordinate range,
             # simply replace edge coordinates but keep everything else the same.
@@ -2479,10 +2480,13 @@ class ClimoAccessor(object):
             if center.sizes[dim] == 0:
                 raise ValueError(f'Invalid bounds {dim}=({lo!r}, {hi!r}).')
             for idx, val in enumerate((lo, hi)):
-                if val is None or val in coord:
+                if val is None or val in coord_orig:
                     continue
-                if coord.min() < val < coord.max():
+                if coord_orig.min() < val < coord_orig.max():
                     edges[idx] = data.climo.interp({dim: val}, drop_cell_measures=False)
+                else:
+                    sel = coord_orig.min() if val < coord_orig.min() else coord_orig.max()  # noqa: E501
+                    edges[idx] = data.climo.sel({dim: sel}).climo.replace_coords({dim: val})  # noqa: E501
 
             # Concatenate efficiently
             parts = tuple(_ for _ in (edges[0], center, edges[1]) if _ is not None)
@@ -2494,10 +2498,10 @@ class ClimoAccessor(object):
                 combine_attrs='no_conflicts'
             )
             if isinstance(data, xr.Dataset):
-                concatenate = functools.partial(data_vars='minimal')
+                concatenate = functools.partial(concatenate, data_vars='minimal')
             data = concatenate(parts)
             coord = data.coords[dim]
-            coord.attrs.update(attrs_orig)
+            coord.attrs.update(attrs)
 
             # Delete old bounds variables
             # TODO: Also preserve bounds like we preserve cell measures
@@ -2514,20 +2518,37 @@ class ClimoAccessor(object):
             for idx, offset in ((0, 1), (-1, -1)):
                 if np.any(coord_orig == coord[idx]):
                     continue  # we did nothing
-                loc, = np.where(coord_orig == coord[idx + offset])  # always inside
+                loc, = np.where(coord_orig == coord[idx + offset])
                 if loc.size != 1:
                     continue  # found double coordinates, unclear how to proceed
-                loc, = loc
-                factor = (
-                    np.abs(bnds_orig[loc - offset, idx + 1] - coord[idx])
-                    / np.abs(bnds_orig[loc - offset, 1] - bnds_orig[loc - offset, 0])
-                )
+                loc, = loc - offset
+
+                # Get scale factors
+                factor_edge = None
+                if 0 <= loc < bnds_orig.shape[0]:
+                    bnds = bnds_orig[loc, :]
+                    bound = bnds[idx + 1]  # the "inner" bound
+                    if bnds.min() < coord[idx] < bnds.max():
+                        factor_edge = np.abs((bound - coord[idx]) / (bnds[1] - bnds[0]))
+                bnds = bnds_orig[loc + offset, :]
+                bound = 0.5 * (coord[idx] + coord[idx + offset])
+                factor_offset = np.abs((bound - bnds[idx]) / (bnds[1] - bnds[0]))
+
+                # Adjust cell measures
+                # NOTE: This strictly prevents adding mass. "Truncating" to points
+                # outside of coordinate range only re-distributes edge weights.
                 for measure, (name,) in self.cf.cell_measures.items():
                     if coordinate not in CELL_MEASURE_COORDS[measure]:
                         continue
                     weight = data.coords[name]
                     weight_orig = data_orig.coords[name]
-                    weight[{dim: idx}] = factor * weight_orig[{dim: loc - offset}]
+                    weight[{dim: idx}] = (
+                        factor_offset * weight_orig[{dim: loc + offset}]
+                        + (factor_edge * weight_orig[{dim: loc}] if factor_edge else 0)
+                    )
+                    weight[{dim: idx + offset}] = (
+                        (1 - factor_offset) * weight_orig[{dim: loc + offset}]
+                    )
 
         return data
 
@@ -2965,6 +2986,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # Initial stuff
         data = self.data
         name = data.name
+        dims = data.dims
+        src = dataset or data
         find_names = (
             'min', 'max', 'absmin', 'absmax', 'argmin', 'argmin',
             'absargmin', 'absargmax', 'argzero',
@@ -3004,8 +3027,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             weight = dataset.climo[weight]
 
         # Parse truncation args
-        dims = data.dims
-        kw_trunc, kwargs = (dataset or data).climo._parse_truncate_args(**kwargs)
+        kw_trunc, kwargs = src.climo._parse_truncate_args(**kwargs)
         if kw_trunc:
             sample = tuple(kw_trunc.values())[0]
             dims_sample = sample.dims[1:]  # exclude 'startstop'
@@ -3028,11 +3050,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             isel_trunc = dict(zip(dims_sample, idx))
             isel_data = {dim: i for dim, i in zip(dims_sample, idx) if dim != 'track'}
             ikw_trunc = {k: tuple(v.isel(isel_trunc).data) for k, v in kw_trunc.items()}
-            idata = data.isel(isel_data).climo.truncate(**ikw_trunc)
-            if weight is None:
-                iweight = None
-            else:
-                iweight = data.isel(isel_data).climo.truncate(**ikw_trunc)
+            idata = data.isel(isel_data).climo.truncate(dataset=dataset, **ikw_trunc)
+            iweight = weight
+            if iweight is not None:
+                iweight = data.isel(isel_data).climo.truncate(dataset=dataset, **ikw_trunc)  # noqa: E501
 
             # Single dimension reductions
             # WARNING: Need to include *coords* so we can 'reduce' singleton lon
