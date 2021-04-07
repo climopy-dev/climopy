@@ -2234,7 +2234,7 @@ class ClimoAccessor(object):
             prefix = 'forced'
             result = data.sel(sels[1])
         else:
-            suffix = 'response'
+            suffix = 'anomaly'
             with xr.set_options(keep_attrs=True):
                 name = data.attrs.get('parent_name', None)
                 if key == 'anomaly':
@@ -4405,7 +4405,6 @@ short_suffix : str, optional
         data = self._get_item(key, **kw)
 
         # Automatically determine 'reduce' kwargs for energy and momentum budget
-        # NOTE: For tendency 'strength' terms we integrate over lons and lats
         # WARNING: Flux convergence terms are subgroups of flux terms, not tendency
         if reduce:
             reduce = reduce.strip('_')
@@ -4415,12 +4414,9 @@ short_suffix : str, optional
             if not content and not transport and not tendency:
                 raise ValueError(f'Invalid parameter {key!r}.')
             if data.climo.cf.sizes.get('vertical', 1) > 1:
-                kwargs['vertical'] = 'int'
-            if tendency and reduce == 'strength':
-                kwargs['area'] = 'int'
-            else:
-                kwargs['longitude'] = 'int' if transport else 'avg'
-                kwargs['latitude'] = 'absmax' if reduce == 'strength' else 'argzero' if tendency else 'absargmax'  # noqa: E501
+                kwargs['vertical'] = 'int'  # NOTE: order of reduction is important
+            kwargs['longitude'] = 'avg' if content or tendency else 'int'
+            kwargs['latitude'] = 'absmax' if reduce == 'strength' else 'absargmax'
 
         # Reduce dimensionality using keyword args
         # WARNING: For timescale variables take inverse before and after possible

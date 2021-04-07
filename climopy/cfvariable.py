@@ -134,7 +134,7 @@ class CFVariable(object):
         suffix = suffix or ''
         name = ' '.join((prefix, name, suffix)).strip()
         name = re.sub(r'\s\+', ' ', name)  # squeeze consecutive spaces
-        for modifier in ('strength', 'intensity', 'transport'):
+        for modifier in ('strength', 'intensity'):
             for ending in ('latitude', 'anomaly', 'response'):
                 name = name.replace(f'{modifier} {ending}', ending)
         return name
