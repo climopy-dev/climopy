@@ -2847,9 +2847,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             # Find if DataArray corresponds to a variable but its values and name
             # corresond to a coordinate. This happens e.g. with 'argmax'. Also try
             # to avoid e.g. name='ehf' combined with long_name='latitude'.
-            # NOTE: Last 'coordinate' is translation of data array name itself
-            # due to dictionary insertion order.
             parent_name = data.attrs.get('parent_name', None)
+            try:
+                coordinate = meta.climo.cf._encode_name(meta.name, 'coordinates')
+            except KeyError:
+                coordinate = None
             if coordinate in kwargs and name not in data.coords and not data.climo._is_bounds:  # noqa: E501
                 if parent_name is None:
                     raise RuntimeError(f'Unknown parent name for coordinate {name!r}.')
