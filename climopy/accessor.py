@@ -1495,6 +1495,9 @@ class ClimoAccessor(object):
             elif not allow_kwargs:
                 raise ValueError(f'Invalid argument or unknown dimension {key!r}.')
 
+        # Warn if empty
+        if not indexers_filtered:
+            warnings._warn_climopy('No indexers found in {indexers!r}.')
         return indexers_filtered, indexers
 
     def _parse_truncate_args(self, **kwargs):
@@ -3602,12 +3605,16 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 'Setting track=False.'
             )
             kwargs['track'] = False
-        if which in ('min', 'max'):
+        if which in ('negpos', 'posneg', 'both'):  # super users
+            kwargs['which'] = which
+        elif which in ('min', 'max'):
             kwargs['diff'] = 1
             if which == 'min':
                 kwargs['which'] = 'negpos'
             if which == 'max':
                 kwargs['which'] = 'posneg'
+        elif which:
+            raise ValueError(f'Unknown argument {which=}.')
 
         # Get precise local values using linear interpolation
         # NOTE: The find function applies pint units
@@ -3746,7 +3753,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         %(template_argloc)s
         """
-        kwargs.update(which='zero', abs=False, arg=True)
+        kwargs.update(abs=False, arg=True)
+        kwargs.setdefault('which', 'both')
         return self._find_extrema(dim, **kwargs)
 
     @_CFAccessor._clear_cache
