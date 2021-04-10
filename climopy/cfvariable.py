@@ -411,14 +411,16 @@ class CFVariable(object):
     @property
     def colormap_line(self):
         """
-        The colormap associated with the variable.
+        The truncated colormap associated with the variable.
         """
+        # WARNING: Kludge for truncating blacks from stellar map
         cmap = self.colormap
-        offset = 0.2
-        if np.mean(cmap(0)[:3]) <= 0.5:
-            return cmap.truncate(right=1 - offset)
-        else:
-            return cmap.truncate(left=offset)
+        trunc = 0.1  # truncation
+        offset = 0.05  # offset from white or black
+        for i, (side, coord) in enumerate(zip(('right', 'left'), (1 - trunc, trunc))):
+            if np.mean(cmap(i)[:3]) >= 1 - offset or np.mean(cmap(i)[:3]) <= offset:
+                cmap = cmap.truncate(**{side: coord})
+        return cmap
 
     # Label properties
     @property
