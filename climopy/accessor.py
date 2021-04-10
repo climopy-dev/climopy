@@ -1497,7 +1497,7 @@ class ClimoAccessor(object):
 
         # Warn if empty
         if not indexers_filtered:
-            warnings._warn_climopy('No indexers found in {indexers!r}.')
+            warnings._warn_climopy(f'No indexers found in {indexers!r}.')
         return indexers_filtered, indexers
 
     def _parse_truncate_args(self, **kwargs):
