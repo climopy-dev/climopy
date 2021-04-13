@@ -3442,18 +3442,22 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             Passed to `~.diff.deriv_uneven`. The `order` keyword arg is ignored.
         """
         data = self.data
+        coords = data.coords
         indexers, kwargs = self._parse_indexers(
             indexers, search_transformations=True, **kwargs
         )
         kwargs.pop('order', None)
         for dim, order in indexers.items():
-            coords = data.climo.coords[dim]
+            coord = data.climo.coords[dim]
             if half:
-                _, data = diff.deriv_half(coords, data, order=order, **kwargs)
+                _, data = diff.deriv_half(coord, data, order=order, **kwargs)
             else:
                 kwargs.setdefault('keepedges', True)
-                data = diff.deriv_uneven(coords, data, order=order, **kwargs)
+                data = diff.deriv_uneven(coord, data, order=order, **kwargs)
             data.climo.update_cell_methods({dim: 'derivative'})
+        data.coords.update(
+            {key: da for key, da in coords.items() if not half or key not in da.dims}
+        )
         return data
 
     @docstring.inject_snippets(operator='convergence')
@@ -3477,15 +3481,16 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         y = self.coords['meridional_coordinate']
         cos = self.coords['cosine_latitude']
         data = self.data
+        coords = data.coords
         kwargs['order'] = 1
         if half:
             cos2 = 0.5 * (cos.data[1:] + cos.data[:-1])
-            y, result = diff.deriv_half(y, data * cos ** cos_power, **kwargs)
-            result /= cos2 ** cos_power
+            y, res = diff.deriv_half(y, data * cos ** cos_power, **kwargs)
+            res /= cos2 ** cos_power
         else:
             kwargs.setdefault('keepedges', True)
             cos **= cos_power
-            result = diff.deriv_uneven(y, data * cos, **kwargs) / cos
+            res = diff.deriv_uneven(y, data * cos, **kwargs) / cos
 
         # If numerator vanishes, divergence at poles is precisely 2 * dflux / dy.
         # See Hantel 1974, Journal of Applied Meteorology, or just work it out
@@ -3493,13 +3498,15 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         lat = self.coords['latitude']
         for lat, isel in ((lat[0], slice(None, 2)), (lat[-1], slice(-2, None))):
             if abs(lat) == 90 * ureg.deg:
-                result.climo.loc[{'lat': lat}] = (
+                res.climo.loc[{'lat': lat}] = (
                     2 * data.isel(lat=isel).diff(dim='lat').isel(lat=0).data
                     / (y.data[isel][1] - y.data[isel][0])
                 )
-
-        result.climo.update_cell_methods({'area': 'divergence'})
-        return result
+        res.climo.update_cell_methods({'area': 'divergence'})
+        res.coords.update(
+            {key: da for key, da in coords.items() if not half or key not in da.dims}
+        )
+        return res
 
     @_CFAccessor._clear_cache
     @_while_quantified
