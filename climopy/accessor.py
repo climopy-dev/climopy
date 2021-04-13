@@ -384,8 +384,8 @@ def _keep_cell_attrs(func):
         result = func(self, *args, **kwargs)  # must return a DataArray
         if no_keep_attrs:
             return result
-        if not isinstance(result, xr.DataArray):
-            raise TypeError('Wrapped function must return a DataArray.')
+        if not isinstance(result, (xr.DataArray, xr.Dataset)):
+            raise TypeError('Wrapped function must return a DataArray or Dataset.')
         result.climo.update_cell_attrs(self)
         return result
 
