@@ -3220,12 +3220,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # of the dimensions we are already integrating over (e.g. 'depth' is added
         # for an areal integral to account for differing cell thickness)
         for measure, (varname,) in self.cf.cell_measures.items():
-            if measure in measures:
+            if measure in measures:  # explicit weight
                 continue
-            if varname not in data.coords:
-                warnings._warn_climopy(
-                    f'Cell measure {measure!r} with name {varname!r} not found.'
-                )
+            if varname not in data.coords:  # already reduced or accidentally missing
                 continue
             weight = data.coords[varname]
             if set(dims) & set(weight.dims):
