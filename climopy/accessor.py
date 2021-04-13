@@ -3520,7 +3520,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
             kwargs['ilag'] = 1
-        _, data = var.autocorr(data.coords[dim], data, dim=dim, **kwargs)
+        _, data = var.autocorr(data.climo.coords[dim], data, dim=dim, **kwargs)
         data.climo.update_cell_methods({dim: 'correlation'})
         return data
 
@@ -3536,7 +3536,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
             kwargs['ilag'] = 1
-        _, data = var.autocovar(data.coords[dim], data, dim=dim, **kwargs)
+        _, data = var.autocovar(data.climo.coords[dim], data, dim=dim, **kwargs)
         data.climo.update_cell_methods({dim: 'covariance'})
         return data
 
@@ -3861,7 +3861,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         dim = self.cf._decode_name(dim, 'axes', 'coordinates')
         data = self.data
-        data, _, _ = var.linefit(data.coords[dim], data)
+        data, _, _ = var.linefit(data.climo.coords[dim], data)
         data.climo.update_cell_methods({dim: 'slope'})
         return data
 
@@ -3881,7 +3881,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         dim = self.cf._decode_name(dim, 'axes', 'coordinates')
         data = self.data
-        time = data.coords[dim]
+        time = data.climo.coords[dim]
         if maxlag is None and imaxlag is None:
             maxlag = 50.0  # default value is 50 days
         if dim != 'lag':
