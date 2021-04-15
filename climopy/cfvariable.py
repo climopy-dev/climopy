@@ -614,7 +614,7 @@ class CFVariableRegistry(object):
         var._accessor = accessor
 
         # Apply basic overrides
-        kwmod = {
+        kwmod = {  # update later!
             key: kwargs.pop(key) for key in tuple(kwargs)
             if key in ('long_prefix', 'long_suffix', 'short_prefix', 'short_suffix')
         }

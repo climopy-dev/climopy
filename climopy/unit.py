@@ -188,15 +188,16 @@ def latex_units(units, /, *, long_form=None):
     Fussily format unit string or `pint.Unit` object into TeX-compatible form
     suitable for (e.g.) matplotlib figure text. Includes the following features:
 
-    * Use short form for all but a list of units. By default this is ``days``.
-    * Use negative exponents instead of fractions.
-    * Separate all component unit substrings with the 3-mu ``\,`` seperator.
-    * Parse units on either side of the first slash independently. For example,
-      this formats the sensitivity parameter ``K / (W m^-2)`` as ``K / W m^-2``.
+    * Raises component units to negative exponents instead of using fractions.
+    * Separates component units with the 3-mu ``\,`` seperator.
+    * Uses short form for most units and long form for the units listed in `long_form`
+      (default is ``('day', 'month', 'year')``.
+    * Parses units on either side of the first slash independently. For example,
+      the sensitivity parameter ``K / (W m^-2)`` is formatted as ``K / W m^-2``.
     """
     # Format the accessor "active units" by default. Use the string descriptor
     # representation of the standard units are active, to apply fussy formatting.
-    long_form = long_form or ('day',)
+    long_form = long_form or ('day', 'month', 'year')
     if isinstance(units, str):
         units_parts = list(map(parse_units, units.split('/')))
     elif not isinstance(units, pint.Unit):
@@ -209,16 +210,24 @@ def latex_units(units, /, *, long_form=None):
     # Apply units sorting and name standardization. Put 'constant units' like 100hPa
     # and 1000km at the end of the unit string.
     # WARNING: 'sort' options requires development version of pint.
+    # WARNING: using 'L' results in failure to look up and format babel unit since
+    # unit key is surrounded by \\mathrm{} by that point. Format manually intead
     string = r' \, / \, '.join(
-        units.format_babel(
-            'L' if units in long_form else '~L',
-            sort=False,
+        pint.formatting.formatter(
+            [
+                (
+                    (key if key in long_form else ureg._get_symbol(key))
+                    + ('s' if key in long_form and i == 0 and exp > 0 else ''),
+                    exp
+                )
+                for key, exp in units._units.items()
+            ],
             as_ratio=False,
-            product_fmt=r' \, '
+            power_fmt='{}^{{{}}}',
+            product_fmt=r' \, ',
         )
-        for units in units_parts
+        for i, units in enumerate(units_parts)
     )
-    string = string.replace(r'\mathrm', '')  # need curly braces for exponent grouping
     if '\N{DEGREE SIGN}' in string:
         string = ''
     elif string:
