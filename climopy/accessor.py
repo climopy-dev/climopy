@@ -4110,6 +4110,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         `~ClimoDataArrayAccessor.cfvariable` is not available (see also the
         `units_label` `~.cfvariable.CFVariable` property).
         """
+        # NOTE: When pint parses units string, the associated _units dictionary
+        # retains original insertion order. No need to hang onto old string.
         units = self.units
         try:
             units_standard = self.cfvariable.units_standard

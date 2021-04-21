@@ -189,6 +189,7 @@ def latex_units(units, /, *, long_form=None):
     suitable for (e.g.) matplotlib figure text. Includes the following features:
 
     * Raises component units to negative exponents instead of using fractions.
+    * Disables alphabetical sorting of component units to retain logical grouping.
     * Separates component units with the 3-mu ``\,`` seperator.
     * Uses short form for most units and long form for the units listed in `long_form`
       (default is ``('day', 'month', 'year')``.
@@ -222,6 +223,7 @@ def latex_units(units, /, *, long_form=None):
                 )
                 for key, exp in units._units.items()
             ],
+            sort=False,
             as_ratio=False,
             power_fmt='{}^{{{}}}',
             product_fmt=r' \, ',
