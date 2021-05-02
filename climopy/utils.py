@@ -377,7 +377,7 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
 @quack._xarray_find_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y'))
 def find(
-    x, y, /, axis=-1, axis_track=-2, track=True, diff=None, centered=True, which='both',
+    x, y, /, axis=-1, axis_track=-2, track=True, diff=None, which='both', centered=True,
     **kwargs,
 ):
     """
@@ -397,21 +397,21 @@ def find(
         Whether to track zeros. If ``False`` they are added in the order they appeared.
     diff : int, optional
         How many times to differentiate along the axis.
-    centered : bool, optional
-        Whether to use centered finite differencing or half level differencing.
     which : {'negpos', 'posneg', 'both'}, optional
-        Whether to find values that go from negative to positive, positive
-        to negative, or both (the ``'min'`` and ``'max'`` keys really
-        only apply to when `diff` is ``1``).
+        Whether to find values that go from negative to positive, positive to negative,
+        or both.
+    centered : bool, optional
+        If False, use half-level differentiation rather than centered differentiation.
+        Gives more accurate locations but less accurate values.
     **kwargs
         Passed to `linetrack` and used to group the locations into
         coherent tracks.
 
     Returns
     -------
-    zx : array-like
+    x0s : array-like
         The zero locations.
-    zy : array-like
+    y0s : array-like
         The zero values. If ``diff == 0`` these should all be equal to zero
         up to floating point precision. Otherwise these are the minima and
         maxima corresponding to the zero derivative locations.
@@ -434,8 +434,8 @@ def find(
     ...     y * ureg.m, name='variable',
     ...     dims=('x', 'y'), coords={'x': xarr.climo.dequantify()}
     ... )
-    >>> zx, zy = climo.find(xarr, yarr, axis=0, ntrack=2)
-    >>> zx
+    >>> x0s, y0s = climo.find(xarr, yarr, axis=0, ntrack=2)
+    >>> x0s
     <xarray.DataArray 'x' (track: 2, y: 10)>
     <Quantity([[25.56712412 17.1468964  25.94590963 24.43748793 25.96456694 23.50805224
       24.26007638 25.76728476 26.30359681 22.41433647]
@@ -466,31 +466,27 @@ def find(
         # NOTE: Axes are pushed to right in the specified order. Result: first axis
         # contains flattened extra dimensions, second axis is dimension along which
         # we are tracking zeros, and third axis is dimension across which we find zeros.
-        ys = context.data
-        zxs = []
-        zys = []
-        nextra, nalong, nreduce = ys.shape
+        y = context.data
+        x0s, y0s = [], []
+        nextra, nalong, nreduce = y.shape
         for i in range(nextra):
             # Optionally take derivatives onto half-levels and interpolate to points
             # on those half-levels.
             # NOTE: Doesn't matter if units are degrees or meters for latitude.
-            y = ys[i, :, :]
-            dy = y
+            ix = x
+            iy = dy = y[i, :, :]
             if diff:  # not zero or None
                 if centered:
-                    # Centered differencing onto same levels
-                    dy = deriv_uneven(x, y, axis=-1, order=diff, keepedges=True)
+                    dy = deriv_uneven(ix, iy, axis=-1, order=diff, keepedges=True)
                 else:
-                    # More accurate differencing onto half levels
-                    dx, dy = deriv_half(x, y, axis=-1, order=diff)
-                    yi = dy.copy()
+                    iix, dy = deriv_half(ix, iy, axis=-1, order=diff)
+                    iiy = np.full(dy.shape, np.nan)
                     for i in range(nalong):
-                        yi[i, :] = np.interp(dx, x, y[i, :])
-                    x, y = dx, yi
+                        iiy[i, :] = np.interp(iix, ix, iy[i, :])
+                    iy = iiy
 
             # Find where sign switches from +ve to -ve and vice versa
-            zxs_track = []
-            zys_track = []
+            x0s_track, y0s_track = [], []
             for k in range(nalong):
                 # Get indices where vals go positive [to zero] to negative or vice versa
                 # NOTE: Always have False where NaNs present
@@ -508,11 +504,10 @@ def find(
                 # Record exact zero locations and values
                 idxs, = np.where(exact)
                 idxs += 1
-                zxs_reduce = []
-                zys_reduce = []
+                x0s_reduce, y0s_reduce = [], []
                 for idx in idxs:
-                    zxs_reduce.append(x[idx])
-                    zys_reduce.append(y[k, idx])
+                    x0s_reduce.append(ix[idx])
+                    y0s_reduce.append(iy[k, idx])
 
                 # Interpolate to inexact zero locations and values at those locations
                 for j, inexact in enumerate((negpos, posneg)):
@@ -523,49 +518,49 @@ def find(
                             slice_ = slice(idx, idx + 2)
                         else:
                             slice_ = slice(idx + 1, idx - 1, -1)
-                        ix = x[slice_]
-                        iy = y[k, slice_]
-                        idy = dy[k, slice_]
-                        if ix.size in (0, 1):
+                        jx = ix[slice_]
+                        jy = iy[k, slice_]
+                        jdy = dy[k, slice_]
+                        if jx.size in (0, 1):
                             continue  # weird error
-                        zx = np.interp(0, idy, ix, left=np.nan, right=np.nan)
-                        if np.isnan(zx):  # no extrapolation!
+                        x0 = np.interp(0, jdy, jx, left=np.nan, right=np.nan)
+                        if np.isnan(x0):  # no extrapolation!
                             continue
-                        slice_ = slice(None) if ix[1] > ix[0] else slice(None, None, -1)
-                        zy = np.interp(zx, ix[slice_], iy[slice_])
-                        zxs_reduce.append(zx)
-                        zys_reduce.append(zy)  # record
+                        slice_ = slice(None) if jx[1] > jx[0] else slice(None, None, -1)
+                        y0 = np.interp(x0, jx[slice_], jy[slice_])
+                        x0s_reduce.append(x0)  # the locations
+                        y0s_reduce.append(y0)  # the values
 
                 # Add to list
                 # NOTE: Must use lists because number of zeros varies
-                zxs_track.append(zxs_reduce)
-                zys_track.append(zys_reduce)
+                x0s_track.append(x0s_reduce)
+                y0s_track.append(y0s_reduce)
 
             # Optionally track values along particular axis
             if track:
-                zxs_track, zys_track = linetrack(zxs_track, zys_track, **kwargs)
+                x0s_track, y0s_track = linetrack(x0s_track, y0s_track, **kwargs)
             else:
-                ntracks = max(map(len, zxs_track))
-                pad = lambda x: x + [np.nan] * (ntracks - len(x))  # noqa: E731
-                zxs_track = np.vstack(list(map(pad, zxs_track)))
-                zys_track = np.vstack(list(map(pad, zys_track)))
-            zxs.append(zxs_track)
-            zys.append(zys_track)
+                ntracks = max(map(len, x0s_track))
+                pad = lambda _: _ + [np.nan] * (ntracks - len(_))  # noqa: E731
+                x0s_track = np.vstack(list(map(pad, x0s_track)))
+                y0s_track = np.vstack(list(map(pad, y0s_track)))
+            x0s.append(x0s_track)
+            y0s.append(y0s_track)
 
         # Concatenate arrays
         # NOTE: Last dimension is the track dimension so pad them first
-        ntracks = max(_.shape[1] for _ in zxs)
-        pad = lambda x: np.pad(x, ((0, 0), (0, ntracks - x.shape[1])), constant_values=np.nan)  # noqa: E501, E731
-        zxs = np.vstack([_[None, ...] for _ in map(pad, zxs)])
-        zys = np.vstack([_[None, ...] for _ in map(pad, zys)])
+        ntracks = max(_.shape[1] for _ in x0s)
+        pad = lambda _: np.pad(_, ((0, 0), (0, ntracks - _.shape[1])), constant_values=np.nan)  # noqa: E501, E731
+        x0s = np.vstack([_[None, ...] for _ in map(pad, x0s)])
+        y0s = np.vstack([_[None, ...] for _ in map(pad, y0s)])
 
         # Add back as new data
-        context.replace_data(zxs, zys)
+        context.replace_data(x0s, y0s)
 
     # Return unfurled data
-    zxs, zys = context.data
+    x0s, y0s = context.data
     if ndim == 2:
-        zxs, zys = zxs[0, ...], zys[0, ...]
+        x0s, y0s = x0s[0, ...], y0s[0, ...]
     if ndim == 1:
-        zxs, zys = zxs[0, 0, ...], zys[0, 0, ...]
-    return zxs, zys
+        x0s, y0s = x0s[0, 0, ...], y0s[0, 0, ...]
+    return x0s, y0s

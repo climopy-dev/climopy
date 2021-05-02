@@ -206,14 +206,14 @@ poles, the numerator is assumed to vanish and l'Hopital's rule is invoked.
 
 Parameters
 ----------
-half : bool, optional
-    Whether to use more accurate (but less convenient) half-level
-    differentiation rather than centered differentiation.
 cos_power : int, optional
     Exponent to which the cosines in the numerator and denominator is raised.
-    Default is ``1``, but the contribution of the zonal momentum flux convergence
+    Default is ``1``, but the contribution of the angular momentum flux convergence
     to the zonal wind budget requires ``2`` (this can be seen by writing the budget
     equation for the angular momentum :math:`L` and solving for :math:`\partial_t u`).
+centered : bool, optional
+    If False, use more accurate (but less convenient) half-level
+    differentiation rather than centered differentiation.
 **kwargs
     Passed to `~.diff.deriv_uneven` or `~.diff.deriv_half`.
 """
@@ -260,7 +260,7 @@ def _expand_variable_args(func):
     keyword dicts. Permits e.g. `get(('t', {'lat': 'mean'}))` tuple pairs.
     """
     @functools.wraps(func)
-    def _wrapper(self, arg, **kwargs):
+    def _wrapper(self, *keys, **kwargs):
         args = []
         kwargs = kwargs.copy()
         def _iter_args(*iargs):  # noqa: E306
@@ -273,7 +273,7 @@ def _expand_variable_args(func):
                     kwargs.update(arg)
                 else:
                     raise ValueError(f'Invalid variable spec {arg!r}.')
-        _iter_args(arg)
+        _iter_args(*keys)
         return func(self, *args, **kwargs)
 
     return _wrapper
@@ -2994,7 +2994,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dims = data.dims
         src = dataset or data
         find_names = (
-            'min', 'max', 'absmin', 'absmax', 'argmin', 'argmin',
+            'min', 'max', 'absmin', 'absmax', 'argmax', 'argmin',
             'absargmin', 'absargmax', 'argzero',
         )
         average_names = {
@@ -3014,7 +3014,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             'autocorr': ('lag', 'ilag', 'maxlag', 'imaxlag'),
             'autocovar': ('lag', 'ilag', 'maxlag', 'imaxlag'),
             'average': ('skipna',),
-            'find': ('centered', 'which', 'diff', 'sep', 'seed', 'ntrack', 'dim_track'),
+            'find': ('diff', 'which', 'centered', 'sep', 'seed', 'ntrack', 'dim_track'),
             'hist': ('bins',),
             'slope': (),
             'timescale': ('maxlag', 'imaxlag', 'maxlag_fit', 'imaxlag_fit'),
@@ -3420,7 +3420,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_CFAccessor._clear_cache
     @_while_quantified
     @_keep_cell_attrs
-    def derivative(self, indexers=None, half=False, **kwargs):
+    def derivative(self, indexers=None, centered=True, **kwargs):
         """
         Take the nth order centered finite difference for the specified dimensions.
 
@@ -3429,8 +3429,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         indexers : dict, optional
             Dictionary mapping of dimension names to derivative order. For example,
             to get the second time derivative, use ``time=0``.
-        half : bool, optional
-            Whether to use more accurate (but less convenient) half-level
+        centered : bool, optional
+            If False, use more accurate (but less convenient) half-level
             differentiation rather than centered differentiation.
         **indexers_kwargs
             The keyword arguments form of `indexers`.
@@ -3446,14 +3446,14 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.pop('order', None)
         for dim, order in indexers.items():
             coord = data.climo.coords[dim]
-            if half:
-                _, data = diff.deriv_half(coord, data, order=order, **kwargs)
-            else:
+            if centered:
                 kwargs.setdefault('keepedges', True)
                 data = diff.deriv_uneven(coord, data, order=order, **kwargs)
+            else:
+                _, data = diff.deriv_half(coord, data, order=order, **kwargs)
             data.climo.update_cell_methods({dim: 'derivative'})
         data.coords.update(
-            {key: da for key, da in coords.items() if not half or key not in da.dims}
+            {key: da for key, da in coords.items() if centered or key not in da.dims}
         )
         return data
 
@@ -3470,7 +3470,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_while_quantified
     @_keep_cell_attrs
     @docstring.inject_snippets(operator='divergence')
-    def divergence(self, half=False, cos_power=1, **kwargs):
+    def divergence(self, cos_power=1, centered=True, **kwargs):
         """
         %(template_divcon)s
         """
@@ -3480,14 +3480,14 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data
         coords = data.coords
         kwargs['order'] = 1
-        if half:
-            cos2 = 0.5 * (cos.data[1:] + cos.data[:-1])
-            y, res = diff.deriv_half(y, data * cos ** cos_power, **kwargs)
-            res /= cos2 ** cos_power
-        else:
+        if centered:
             kwargs.setdefault('keepedges', True)
             cos **= cos_power
             res = diff.deriv_uneven(y, data * cos, **kwargs) / cos
+        else:
+            cos2 = 0.5 * (cos.data[1:] + cos.data[:-1])
+            y, res = diff.deriv_half(y, data * cos ** cos_power, **kwargs)
+            res /= cos2 ** cos_power
 
         # If numerator vanishes, divergence at poles is precisely 2 * dflux / dy.
         # See Hantel 1974, Journal of Applied Meteorology, or just work it out
@@ -3501,7 +3501,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 )
         res.climo.update_cell_methods({'area': 'divergence'})
         res.coords.update(
-            {key: da for key, da in coords.items() if not half or key not in da.dims}
+            {key: da for key, da in coords.items() if centered or key not in da.dims}
         )
         return res
 
@@ -4414,6 +4414,7 @@ short_suffix : str, optional
         # TODO: Avoid name conflicts with functions and variables?
         if len(keys) != 1:
             raise TypeError(f'Expected one positional argument, got {len(keys)}.')
+        print(kwargs)
         attrs = {key: kwargs.pop(key) for key in CFVARIABLE_ARGS if key in kwargs}
         regex = r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|_ratio)?\Z'
         abs, key, reduce, pair = re.match(regex, *keys).groups()
@@ -4422,8 +4423,7 @@ short_suffix : str, optional
 
         # Automatically determine 'reduce' kwargs for energy and momentum budget
         # WARNING: Flux convergence terms are subgroups of flux terms, not tendency
-        if reduce:
-            reduce = reduce.strip('_')
+        if reduce := reduce and reduce.strip('_'):
             content = key in vreg.energy or key in vreg.momentum
             tendency = key in vreg.energy_flux or key in vreg.acceleration
             transport = key in vreg.meridional_energy_flux or key in vreg.meridional_momentum_flux  # noqa: E501

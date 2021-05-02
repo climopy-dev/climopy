@@ -185,14 +185,14 @@ def parse_units(units, /):
 
 def latex_units(units, /, *, long_form=None):
     r"""
-    Fussily format unit string or `pint.Unit` object into TeX-compatible form
+    Fussily the format unit string or `pint.Unit` object into TeX-compatible form
     suitable for (e.g.) matplotlib figure text. Includes the following features:
 
     * Raises component units to negative exponents instead of using fractions.
     * Disables alphabetical sorting of component units to retain logical grouping.
     * Separates component units with the 3-mu ``\,`` seperator.
-    * Uses short form for most units and long form for the units listed in `long_form`
-      (default is ``('day', 'month', 'year')``.
+    * Uses long form for units in `long_form` (default is ``('day', 'month', 'year')``,
+      short form otherwise. Long form units in numerator are written in plural.
     * Parses units on either side of the first slash independently. For example,
       the sensitivity parameter ``K / (W m^-2)`` is formatted as ``K / W m^-2``.
     """
