@@ -377,7 +377,7 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
 @quack._xarray_find_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=x', '=y'))
 def find(
-    x, y, /, axis=-1, axis_track=-2, track=True, diff=None, which='both', centered=True,
+    x, y, /, axis=-1, axis_track=None, track=True, diff=None, which='both', centered=True,  # noqa: E501
     **kwargs,
 ):
     """
@@ -392,7 +392,8 @@ def find(
     axis : int, optional
         Axis along which zeros are found and (optionally) derivatives are taken.
     axis_track : int, optional
-        Axis along which zeros taken along `axis` are "tracked".
+        Axis along which zeros taken along `axis` are "tracked". Default is the
+        last position not occupied by `axis`.
     track : bool, optional
         Whether to track zeros. If ``False`` they are added in the order they appeared.
     diff : int, optional
@@ -447,19 +448,25 @@ def find(
     """
     # Tests
     # TODO: Support tracking across single axis
-    if which not in ('negpos', 'posneg', 'both'):
-        raise ValueError(f'Invalid which {which!r}.')
-    if x.ndim != 1 or y.shape[axis] != x.size:
-        raise ValueError(f'Invalid shapes {x.shape=} and {y.shape=}.')
-    if x[1] - x[0] < 0:  # TODO: check this works?
-        which = 'negpos' if which == 'posneg' else 'posneg' if which == 'negpos' else which  # noqa: E501
-    ndim = y.ndim
-    if ndim <= 2:
-        axis = -1
-        axis_track = -2
+    for _ in range(3 - y.ndim):  # add missing 'extra' and 'track' dims
         y = y[None, ...]
-        if ndim == 1:
-            y = y[None, ...]
+    ndim = y.ndim
+    if axis < 0:
+        axis += ndim
+    if axis_track is None:
+        axis_track = ndim - 2 if axis == ndim - 1 else ndim - 1
+    if axis_track < 0:
+        axis_track += ndim
+    if which not in ('negpos', 'posneg', 'both'):
+        raise ValueError(f'Invalid {which=}.')
+    if x.ndim != 1 or y.shape[axis] != x.size:
+        raise ValueError(f'Invalid {x.shape=} and {y.shape=}.')
+    if not 0 <= axis < ndim or not 0 <= axis_track < ndim:
+        raise ValueError(f'Invalid {axis=} or {axis_track=} for {ndim}D array.')
+    if axis == axis_track:
+        raise ValueError(f'Cannot have {axis=} same as {axis_track=}.')
+    if x.size > 2 and x[1] - x[0] < 0:  # TODO: check this works?
+        which = 'negpos' if which == 'posneg' else 'posneg' if which == 'negpos' else which  # noqa: E501
 
     with quack._ArrayContext(y, push_right=(axis_track, axis)) as context:
         # Get flattened data and iterate over extra dimensions

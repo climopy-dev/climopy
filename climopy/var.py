@@ -428,6 +428,8 @@ def eof(
     axis_space[axis_space < 0] += data.ndim
     if axis_time < 0:
         axis_time += data.ndim
+    if np.any(axis_space == axis_time):
+        raise ValueError(f'Cannot have {axis_time=} same as {axis_space=}.')
     axis_extra = tuple(set(range(data.ndim)) - {axis_time, *axis_space})
 
     # Remove the mean and optionally standardize the data
