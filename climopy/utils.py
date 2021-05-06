@@ -446,23 +446,26 @@ def find(
     Attributes:
         long_name:  x coordinate
     """
-    # Tests
-    # TODO: Support tracking across single axis
-    for _ in range(3 - y.ndim):  # add missing 'extra' and 'track' dims
-        y = y[None, ...]
+    # Standardize input
     ndim = y.ndim
     if axis < 0:
         axis += ndim
+    if axis_track is not None and axis_track < 0:
+        axis_track += ndim
     if axis_track is None:
         axis_track = ndim - 2 if axis == ndim - 1 else ndim - 1
-    if axis_track < 0:
-        axis_track += ndim
+    for _ in range(3 - ndim):  # add missing 'extra' and 'track' dims
+        y = y[None, ...]
+        axis += 1
+        axis_track += 1
+
+    # Ensure valid params
     if which not in ('negpos', 'posneg', 'both'):
         raise ValueError(f'Invalid {which=}.')
     if x.ndim != 1 or y.shape[axis] != x.size:
         raise ValueError(f'Invalid {x.shape=} and {y.shape=}.')
-    if not 0 <= axis < ndim or not 0 <= axis_track < ndim:
-        raise ValueError(f'Invalid {axis=} or {axis_track=} for {ndim}D array.')
+    if not 0 <= axis < y.ndim or not 0 <= axis_track < y.ndim:
+        raise ValueError(f'Invalid {axis=} or {axis_track=} for {y.ndim}D array.')
     if axis == axis_track:
         raise ValueError(f'Cannot have {axis=} same as {axis_track=}.')
     if x.size > 2 and x[1] - x[0] < 0:  # TODO: check this works?
@@ -566,8 +569,6 @@ def find(
 
     # Return unfurled data
     x0s, y0s = context.data
-    if ndim == 2:
+    for _ in range(3 - ndim):
         x0s, y0s = x0s[0, ...], y0s[0, ...]
-    if ndim == 1:
-        x0s, y0s = x0s[0, 0, ...], y0s[0, 0, ...]
     return x0s, y0s

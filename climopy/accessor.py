@@ -4414,7 +4414,6 @@ short_suffix : str, optional
         # TODO: Avoid name conflicts with functions and variables?
         if len(keys) != 1:
             raise TypeError(f'Expected one positional argument, got {len(keys)}.')
-        print(kwargs)
         attrs = {key: kwargs.pop(key) for key in CFVARIABLE_ARGS if key in kwargs}
         regex = r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|_ratio)?\Z'
         abs, key, reduce, pair = re.match(regex, *keys).groups()
