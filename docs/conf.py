@@ -64,8 +64,8 @@ extensions = [
     'sphinx.ext.napoleon',  # for NumPy style docstrings, instead of reStructred Text
     'sphinx.ext.intersphinx',  # external links
     'sphinx_copybutton',
-    'sphinxcontrib.bibtex',  # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html
-    'sphinx_automodapi.automodapi',  # see: https://github.com/lukelbd/sphinx-automodapi/tree/proplot-mods # noqa
+    'sphinxcontrib.bibtex',  # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html  # noqa: #501
+    'sphinx_automodapi.automodapi',  # see: https://github.com/lukelbd/sphinx-automodapi/tree/proplot-mods  # noqa: #501
 ]
 
 extlinks = {
@@ -97,7 +97,7 @@ autosummary_generate = True
 # Normally have to *enumerate* function names manually. This will document
 # them automatically. Just be careful, if you use from x import *, to exclude
 # them in the automodapi:: directive
-automodapi_toctreedirnm = 'api' # create much better URL for the page
+automodapi_toctreedirnm = 'api'  # create much better URL for the page
 automodsumm_inherited_members = False
 
 # Turn off code and image links for embedded mpl plots
@@ -124,7 +124,7 @@ intersphinx_mapping = {
 
 # If true, the current module name will be prepended to all description
 # unit titles (such as .. function::).
-add_module_names = False # confusing, because I use submodules for *organization*
+add_module_names = False  # confusing, because I use submodules for *organization*
 
 # Napoleon options
 # See: http://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html
@@ -134,7 +134,7 @@ napoleon_use_keyword = False
 napoleon_use_rtype = False
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False
-napoleon_include_init_with_doc = False # move init doc to 'class' doc
+napoleon_include_init_with_doc = False  # move init doc to 'class' doc
 
 # Fix duplicate class member documentation from autosummary + numpydoc
 # See: https://github.com/phn/pytpm/issues/3#issuecomment-12133978
@@ -161,9 +161,9 @@ language = None
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path .
 exclude_patterns = [
-    '_templates', '_themes', 'sphinxext',
-    '.DS_Store', '**.ipynb_checkpoints',
-    '*.ipynb',
+    '.DS_Store',
+    '_build', '_templates', '_themes',
+    'conf.py', 'sphinxext', '*.ipynb', '**.ipynb_checkpoints',
 ]
 
 # The name of the Pygments (syntax highlighting) style to use.
@@ -198,7 +198,7 @@ html_logo = '_static/logo_square.png'
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 # html_theme = 'alabaster'
-html_theme = 'sphinx_rtd_theme' # from: https://sphinx-rtd-theme.readthedocs.io/en/latest/installing.html
+html_theme = 'sphinx_rtd_theme'  # from https://sphinx-rtd-theme.readthedocs.io/en/latest/installing.html  # noqa: E501
 html_theme_options = {
     'logo_only': True,
     'display_version': False,
