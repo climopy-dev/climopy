@@ -1,0 +1,40 @@
+# Hard requirements for running tests
+# See docs/environment.yml for dependency notes
+name: climopy-dev
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.8
+  - matplotlib
+  - numpy
+  - scipy
+  - pint
+  - pandas
+  - xarray
+  - cf_xarray
+  - ipykernel
+  - pandoc
+  - python-build
+  - setuptools
+  - setuptools_scm
+  - setuptools_scm_git_archive
+  - wheel
+  - pip
+  - pip:
+    - ..
+    - flake8
+    - isort==4.3.21
+    - black
+    - doc8
+    - pytest
+    - pytest-sugar
+    - pyqt5
+    - proplot
+    - docutils==0.16
+    - sphinx>=3.0
+    - sphinx-copybutton
+    - sphinx_rtd_theme==0.4.3
+    - jinja2==2.11.3
+    - nbsphinx==0.8.1
+    - jupytext
+    - git+https://github.com/lukelbd/sphinx-automodapi@proplot-mods
