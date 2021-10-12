@@ -196,8 +196,8 @@ class CFVariable(object):
         self,
         long_name=None, standard_units=None, short_name=None, standard_name=None, *,
         long_prefix=None, long_suffix=None, short_prefix=None, short_suffix=None,
-        symbol=None, sigfig=None, reference=None, colormap=None,
-        axis_scale=None, axis_reverse=None, axis_formatter=None,
+        symbol=None, reference=None, colormap=None, axis_scale=None, axis_reverse=None,
+        axis_formatter=None, scalar_formatter=None,
     ):
         """
         Update the variable. This is called during initialization. Unspecified variables
@@ -251,9 +251,13 @@ class CFVariable(object):
             Whether to reverse the axis by default when using this quantity as
             an axis variable.
         axis_formatter : formatter-spec, optional
-            The axis formatter when using this quantity as an axis variable. Generally
-            this should be parsed by `~proplot.constructor.Formatter`. Set to ``False``
-            or ``None`` to revert to the default formatter.
+            The number formatter when using this quantity as an axis variable. Parsed
+            by `proplot.constructor.Formatter`. Set to ``False`` to revert to the
+            default formatter instead of inheriting the formatter.
+        scalar_formatter : formatter-spec, optional
+            The number formatter when using this quantity as a scalar label. Parsed
+            by `proplot.constructor.Formatter`. Set to ``False`` to revert to the
+            default formatter instead of inheriting the formatter.
         """
         # Parse input names and apply prefixes and suffixes
         # NOTE: Important to add prefixes and suffixes to long_name *after* using
@@ -270,19 +274,23 @@ class CFVariable(object):
             standard_name = re.sub(r'_+', '_', standard_name)  # squeeze consecutive
 
         # Add attributes
-        # NOTE: Permit axis_formatter=False to revert to default formatter and
-        # ignore inherited formatter.
+        default_axis_formatter = 'auto'
+        if axis_formatter is False:
+            axis_formatter = default_axis_formatter
+        default_scalar_formatter = ('sigfig', 2)
+        if scalar_formatter is False:
+            scalar_formatter = default_scalar_formatter
         self._standard_units = standard_units
         self._long_name = long_name
         self._short_name = short_name
         self._standard_name = standard_name
         self._symbol = self._inherit('symbol', symbol, default='').strip('$')
-        self._sigfig = self._inherit('sigfig', sigfig, default=1)
         self._reference = self._inherit('reference', reference)
         self._colormap = self._inherit('colormap', colormap, default='Greys')
-        self._axis_formatter = None if axis_formatter is False else self._inherit('axis_formatter', axis_formatter)  # noqa: E501
+        self._axis_formatter = self._inherit('axis_formatter', axis_formatter, default=default_axis_formatter)  # noqa: E501
         self._axis_reverse = self._inherit('axis_reverse', axis_reverse, default=False)
         self._axis_scale = self._inherit('axis_scale', axis_scale)
+        self._scalar_formatter = self._inherit('scalar_formatter', scalar_formatter, default=default_scalar_formatter)  # noqa: E501
 
     # Core properties
     @property
@@ -366,7 +374,8 @@ class CFVariable(object):
         """
         The axis formatter used when plotting against this variable.
         """
-        return self._axis_formatter
+        from proplot import Formatter
+        return Formatter(self._axis_formatter)
 
     @property
     def axis_reverse(self):
@@ -383,11 +392,12 @@ class CFVariable(object):
         return self._axis_scale
 
     @property
-    def sigfig(self):
+    def scalar_formatter(self):
         """
-        The number of significant figures for scalar labels of this variable.
+        The formatter used for scalar labels of this variable.
         """
-        return self._sigfig
+        from proplot import Formatter
+        return Formatter(self._scalar_formatter)
 
     # Color properties
     @property
@@ -446,27 +456,28 @@ class CFVariable(object):
         return label
 
     @property
-    def scalar_label(self):
+    def scalar_label(self, pad=2):
         """
         Scalar label. This *always* shows the standardized form.
         """
-        import proplot as plot
-        symbol = self.symbol
         units = self.units_label.strip('$')
-        sigfig = self.sigfig
+        symbol = self.symbol
         accessor = self._accessor
+        formatter = self.scalar_formatter
         value = accessor.to_standard_units()
         value = value.climo.dequantify()
         value = value.item()
         if np.isnan(value):
             value = 'NaN'
         else:
-            value = plot.SigFigFormatter(sigfig=sigfig)(value)
+            value = formatter(value)
         if '.' in value:
             if value[-1] == '1':  # close enough
                 value = value[:-1]
             value = value.rstrip('0').rstrip('.')
-        return rf'{symbol} = {value}$ \, {units}$'
+        string = rf'{symbol} = {value}$ \, {units}$'
+        string = ' ' * pad + string
+        return string
 
     @property
     def units_pint(self):
