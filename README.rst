@@ -42,7 +42,7 @@ The documentation is `published on readthedocs <https://climopy.readthedocs.io>`
 
 .. |build-status| image:: https://img.shields.io/travis/lukelbd/climopy.svg?style=flat
     :alt: build status
-    :target: https://travis-ci.org/lukelbd/climopy
+    :target: https://travis-ci.com/lukelbd/climopy
 
 .. |code-style| image:: https://img.shields.io/badge/code%20style-pep8-green.svg
    :alt: pep8
