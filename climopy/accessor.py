@@ -3767,13 +3767,15 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     # @_manage_coord_reductions
     @docstring.inject_snippets()
-    def argloc(self, dim=None, value=0, **kwargs):
+    def argloc(self, dim=None, value=None, **kwargs):
         """
         %(template_argloc)s
         """
         kwargs.update(abs=False, arg=True)
         kwargs.setdefault('which', 'both')
-        return self._find_extrema(dim, **kwargs)
+        if value is not None:
+            data = self.data - value  # find points meeting this value (default 0)
+        return data.climo._find_extrema(dim, **kwargs)
 
     @_CFAccessor._clear_cache
     @_keep_cell_attrs
