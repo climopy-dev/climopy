@@ -191,7 +191,7 @@ Parameters
 dim : str, optional
     The dimension.
 value : int, optional
-    The value we are searching for. Default it ``0``.
+    The value we are searching for. Default is ``0``.
 dim_track : str, optional
     The dimension along which coordinates are grouped into lines and tracked with
     `~.utils.linetrack`.
@@ -488,7 +488,7 @@ class _CFAccessor(object):
         self._obj = data
         self._src = data.coords if isinstance(data, xr.DataArray) else data
         self._stale_cache = False
-        self._variable_registry = vreg
+        self._variable_registry = registry
 
     @staticmethod
     def _clear_cache(func):
@@ -1226,7 +1226,7 @@ class ClimoAccessor(object):
         """
         self._data = data
         self._cf_accessor = None
-        self._variable_registry = vreg
+        self._variable_registry = registry
 
     def _dequantify_indexers(self, indexers):
         """
@@ -3910,7 +3910,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_while_quantified
     def to_variable(self, dest, standardize=False, **kwargs):
         """
-        Transform this variable to another variable using two-way transformations
+        Transform this variable to another variable using transformations
         registered with `register_transformation`. Transformations work recursively,
         i.e. definitions for A --> B and B --> C permit transforming A --> C.
 
