@@ -1948,7 +1948,7 @@ class ClimoAccessor(object):
     @_CFAccessor._clear_cache
     @_manage_coord_reductions
     @docstring.inject_snippets(operator='mean')
-    def mean(self, dim=None, skipna=None, weight=None, **kwargs):
+    def mean(self, dim=None, **kwargs):
         """
         %(template_meansum)s
 
@@ -1961,7 +1961,7 @@ class ClimoAccessor(object):
     @_CFAccessor._clear_cache
     @_manage_coord_reductions
     @docstring.inject_snippets(operator='sum')
-    def sum(self, dim=None, skipna=None, weight=None, **kwargs):
+    def sum(self, dim=None, **kwargs):
         """
         %(template_meansum)s
         """
