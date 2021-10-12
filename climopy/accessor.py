@@ -2965,8 +2965,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             Additional weighting parameter name or `xarray.DataArray`, used for
             averages and integrations. Mass weighting is applied automatically.
         mask : {None, 'land', 'sea', 'trop', 'pv'}, optional
-            The 2-dimensional mask to apply before taking the weighted average. Presets
-            will be added to this.
+            The 2-dimensional mask to apply before taking the weighted average.
+            Presets will be added to this.
         **indexers_kwargs
             The keyword arguments form of `indexers`.
             One of `indexers` or `indexers_kwargs` must be provided.
@@ -3019,6 +3019,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             'slope': (),
             'timescale': ('maxlag', 'imaxlag', 'maxlag_fit', 'imaxlag_fit'),
         }
+        if mask is not None:
+            raise NotImplementedError('Mask application not yet implemented')
+        if centroid:
+            raise NotImplementedError('Centroid calculation not yet implemented')
 
         # Parse indexers
         # NOTE: Prefer dataset here to allow for things like lat_min='ehf_lat'
