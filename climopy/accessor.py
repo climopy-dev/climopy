@@ -598,7 +598,7 @@ class _CFAccessor(object):
         attrs = attrs or ('axes', 'coordinates', 'cell_measures', 'standard_names')
         for attr in attrs:
             names = getattr(self, attr).get(key, None)
-            if not names:
+            if not names:  # unknown in dictionary
                 pass
             elif len(names) > 1:
                 raise KeyError(f'Too many options for CF key {key!r}: {names!r}')
@@ -1392,7 +1392,7 @@ class ClimoAccessor(object):
                 # interp drops attrs. See: https://github.com/pydata/xarray/issues/4239
                 if dim in idata.coords:  # wasn't dropped
                     idata.coords[dim].attrs.update(data.coords[dim].attrs)
-                # Drop corresponding cell measures for indexed coordiantes
+                # Drop corresponding cell measures for indexed coordinates
                 # NOTE: Without this get bizarre behavior where using .interp(lev=1050)
                 # extrapolates to below surface but subsequent .reduce(lat='avg')
                 # omits those points.
@@ -3205,8 +3205,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dims = []
         measures = set()
         for dim in dims_orig:
-            msg = f'Missing {cell_method} coordinate {{!r}}. If data is '
-            msg += 'already reduced you may need to call add_scalar_coords.'
             is_coord = dim in CELL_MEASURE_BY_COORD
             is_measure = dim in CELL_MEASURE_COORDS
             if not is_coord and not is_measure:
@@ -3225,13 +3223,25 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     try:
                         names += (self.cf._decode_name(name, 'coordinates'),)
                     except KeyError:
-                        raise ValueError(msg.format(name))
-            msg = f'Missing {cell_method} cell measure {measure!r} for dim {dim!r}. '
-            msg += "If you have't already you may need to call add_cell_measures."
-            weight = self.cf._get_item(measure, 'cell_measures')
-            if weight is None:
-                raise ValueError(msg)
-            dims.extend(self.cf._decode_name(name, 'coordinates') for name in coordinates)  # noqa: E501
+                        raise ValueError(
+                            f'Missing {cell_method} coordinate {{!r}}. If data is '
+                            'already reduced you may need to call add_scalar_coords.'
+                        )
+            try:  # is cell measure missing from dictionary?
+                name = self.cf._decode_name(measure, 'cell_measures', return_if_missing=True)  # noqa: E501
+            except KeyError:
+                raise ValueError(
+                    f'Missing cell measure {measure!r} for {cell_method} dimension '
+                    f'{dim!r}. You may need to call add_cell_measures.'
+                )
+            try:  # is cell measure missing from coords? (common for external source)
+                weight = self.cf._src[name]
+            except KeyError:
+                raise ValueError(
+                    f'Missing cell measure {measure!r} variable {name!r} for '
+                    f'{cell_method} dimension {dim!r}.'
+                )
+            dims.extend(names)
             measures.add(measure)
             weights_explicit.append(weight.climo.quantify())
 
