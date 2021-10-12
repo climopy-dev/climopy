@@ -2166,7 +2166,7 @@ class ClimoAccessor(object):
         return data
 
     @_CFAccessor._clear_cache
-    def sel_pair(self, key):
+    def sel_pair(self, key, *, modify=None):
         """
         Return selection from a pseudo "parameter" axis. "Parameter" axes are identified
         as any non-scalar coordinate whose associated
@@ -2179,14 +2179,14 @@ class ClimoAccessor(object):
             The pair key. If the parameter axis is length 2, the key ``1`` returns
             the first position and the key ``2`` the second position. Otherwise, the
             key ``1`` returns the `~.cfvariable.CFVariable.reference` position and the
-            key ``2`` is a no-op that returns the original data.
-
-            To return the difference between keys ``2`` and ``1``, pass ``'anomaly'``.
-            To return the ratio of key ``2`` over key ``1``, pass ``'ratio'``.
-
-            The associated `~ClimoDataArrayAccessor.cfvariable` names are modified by
-            adding ``long_prefix`` and ``long_suffix`` attributes to the resulting
-            `~xarray.DataArray`.
+            key ``2`` is a no-op that returns the original data. To return the
+            difference between keys ``2`` and ``1``, pass ``'anomaly'``. To
+            return the ratio of key ``2`` over key ``1``, pass ``'ratio'``.
+        modify : bool, optional
+            Whether to modify the associated `~ClimoDataArrayAccessor.cfvariable` names
+            by adding ``long_prefix`` and ``long_suffix`` attributes to the resulting
+            `~xarray.DataArray`\\ (s). Default is ``False`` for variable(s) containing
+            the substrings ``'force'`` or ``'forcing'`` and ``True`` otherwise.
         """
         key = str(key)
         if key not in ('1', '2', 'anomaly', 'ratio'):
@@ -2229,7 +2229,6 @@ class ClimoAccessor(object):
         # NOTE: We are careful here to track parent_name variables found in
         # coordinates, i.e. variables associated with _find_extrema.
         prefix = suffix = None
-        modify = isinstance(data, xr.DataArray) and not re.search('(force|forcing)', data.name or '')  # noqa: E501
         if key == '1':
             prefix = 'unforced'
             result = data.sel(sels[0])
@@ -2248,12 +2247,19 @@ class ClimoAccessor(object):
                     result = result.climo.replace_coords(name=result)
 
         # Add prefixes and suffixes
-        attrs = result.attrs
-        combine = lambda *args: ' '.join(filter(None, args))  # noqa: E731
-        if prefix and modify:
-            attrs['long_prefix'] = combine(prefix, attrs.get('long_prefix'))
-        if suffix and modify:
-            attrs['long_suffix'] = combine(attrs.get('long_suffix'), suffix)
+        for da in result.climo._iter_data_vars:
+            attrs = da.attrs
+            combine = lambda *args: ' '.join(filter(None, args))  # noqa: E731
+            if modify is None:
+                skip = re.search('(force|forcing)', da.name or '')
+            else:
+                skip = not modify
+            if skip:
+                continue
+            if prefix:
+                attrs['long_prefix'] = combine(prefix, attrs.get('long_prefix'))
+            if suffix:
+                attrs['long_suffix'] = combine(attrs.get('long_suffix'), suffix)
 
         return result
 
