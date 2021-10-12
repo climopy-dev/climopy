@@ -3149,6 +3149,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dims = dims or ('volume',)
         data = self.data.climo.truncate(**kwargs)
         name = data.name
+        cell_method = 'integral' if integral else 'average'
         weights_explicit = []  # quantification necessary for integral()
         weights_implicit = []  # quantification not necessary, slows things down a bit
         if weight is not None:
@@ -3169,7 +3170,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # therefore we want unnormalized 'cell width' longitude (cosine latitude)
         # weights. Here we manually add these with a warning message.
         if 'latitude' in dims_std and 'longitude' not in dims_std:
-            cell_method = 'integral' if integral else 'average'
             warnings._warn_climopy(
                 f'Only latitude {cell_method} was specified, but almost always '
                 'want to integrate over just longitudes or both longitudes and '
@@ -3177,8 +3177,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             )
             dims_orig = ('longitude', *dims_orig)
 
-        # Translate 'area' to longitude latitude and 'volume' to all dimensions
-        # if these cell measures are not present. TODO: Issue warning here?
+        # Translate 'area' to longitude latitude and 'volume' to
+        # all dimensions if these cell measures are not present.
+        # NOTE: This permits 2D and 3D cell measures for non-standard grids and using
+        # 'area' and 'volume' as shorthands for 1D cell measures for standard grids
         dims_orig = list(dims_orig)
         if 'volume' in dims_orig and 'volume' not in self.cf.cell_measures:
             dims_orig.remove('volume')
@@ -3189,29 +3191,37 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         # Get quantified cell measure weights for dimensions we are integrating over,
         # and translate 'area' and 'volume' to their component coordinates
+        # NOTE: Below error messages are critical. Pretty much the whole reason
+        # we wrote those two functions is to facillitate averages.
         dims = []
         measures = set()
         for dim in dims_orig:
-            # Get the corresponding cell measure
-            # NOTE: Why not allow 'width', 'depth', 'height' user input? Because 'area'
-            # and 'volume' are required for non-standard horizontal grids where
-            # 'latitude' and 'longitude' *never* make sense on their own.
-            if dim in ('area', 'volume'):  # pseudo-dimensions
-                measure = dim
-                coordinates = ('longitude', 'latitude')
-                if dim == 'volume':
-                    coordinates += ('vertical',)
-            else:
+            msg = f'Missing {cell_method} coordinate {{!r}}. If data is '
+            msg += 'already reduced you may need to call add_scalar_coords.'
+            is_coord = dim in CELL_MEASURE_BY_COORD
+            is_measure = dim in CELL_MEASURE_COORDS
+            if not is_coord and not is_measure:
                 try:
                     coordinate = self.cf._encode_name(dim, 'coordinates')
                 except KeyError:
-                    warnings._warn_climopy(f'Unknown weights for dimension {dim!r}.')
-                    continue
+                    raise ValueError(f'Missing {cell_method} dimension {dim!r}.')
+                names = (dim,)
                 measure = CELL_MEASURE_BY_COORD[coordinate]
                 coordinates = (coordinate,)
+            else:
+                names = ()
+                measure = dim if is_measure else CELL_MEASURE_BY_COORD[dim]
+                coordinates = (dim,) if is_coord else CELL_MEASURE_COORDS[dim]
+                for name in coordinates:
+                    try:
+                        names += (self.cf._decode_name(name, 'coordinates'),)
+                    except KeyError:
+                        raise ValueError(msg.format(name))
+            msg = f'Missing {cell_method} cell measure {measure!r} for dim {dim!r}. '
+            msg += "If you have't already you may need to call add_cell_measures."
             weight = self.cf._get_item(measure, 'cell_measures')
             if weight is None:
-                raise ValueError(f'Cell measure {measure!r} for dim {dim!r} not found.')
+                raise ValueError(msg)
             dims.extend(self.cf._decode_name(name, 'coordinates') for name in coordinates)  # noqa: E501
             measures.add(measure)
             weights_explicit.append(weight.climo.quantify())
@@ -3234,12 +3244,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         one = xr.DataArray(1)  # ensure returned 'weight' is DataArray
         weights = (*weights_explicit, *weights_implicit)
         if integral:
-            cell_method = 'integral'
             normalize_denom = True
             weight_num = math.prod(weights, start=one)
             weight_denom = math.prod(weights_implicit, start=one)
         else:
-            cell_method = 'average'
             normalize_denom = False
             weight_num = weight_denom = math.prod(weights, start=one).climo.dequantify()
 
