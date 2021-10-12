@@ -2244,9 +2244,8 @@ class ClimoAccessor(object):
                     result = data.climo.sel(sels[1]) - data.climo.sel(sels[0])
                 else:
                     result = data.climo.sel(sels[1]) / data.climo.sel(sels[0])
-                if name and name in data.coords and key == 'anomaly':
-                    parent = data.coords[name]
-                    result.coords[name] = parent.climo.sel(sels[1]) - parent.climo.sel(sels[0])  # noqa: E501
+                if name and name in data.coords:
+                    result = result.climo.replace_coords(name=result)
 
         # Add prefixes and suffixes
         attrs = result.attrs
