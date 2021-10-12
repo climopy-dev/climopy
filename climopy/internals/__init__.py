@@ -2,12 +2,6 @@
 """
 Utilities used internally by climopy.
 """
-try:  # print debugging
-    from icecream import ic
-except ImportError:  # graceful fallback if IceCream isn't installed
-    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
-
-from . import docstring, quack, warnings  # noqa: F401
 
 
 def _first_unique(args):
@@ -47,3 +41,11 @@ def _make_stopwatch(verbose=True, fixedwidth=20):
         if verbose and message:
             print(message + ':' + ' ' * (fixedwidth - len(message)), delta)
     return _stopwatch
+
+
+try:  # print debugging
+    from icecream import ic
+except ImportError:  # graceful fallback if IceCream isn't installed
+    ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
+
+from . import docstring, quack, warnings  # noqa: F401
