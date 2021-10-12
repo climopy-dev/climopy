@@ -3358,7 +3358,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_CFAccessor._clear_cache
     @docstring.inject_snippets(operator='integral', action='integration')
-    def cumintegral(self, dim, skipna=None, **kwargs):
+    def cumintegral(self, dim, **kwargs):
         """
         %(template_cumavgint)s
 
@@ -3371,7 +3371,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_CFAccessor._clear_cache
     @docstring.inject_snippets(operator='average', action='averaging')
-    def cumaverage(self, dim, reverse=False, weight=None, skipna=None, **kwargs):
+    def cumaverage(self, dim, **kwargs):
         """
         %(template_cumavgint)s
 
