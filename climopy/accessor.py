@@ -1602,8 +1602,8 @@ class ClimoAccessor(object):
         self, measures=None, *, dataset=None, override=False, verbose=False, **kwargs
     ):
         """
-        Add cell measures to the `~xarray.DataArray.coords` and update the
-        ``cell_measures`` attribute(s).
+        Add cell measures to `~xarray.DataArray.coords`, remove cell measures missing
+        from `~xarray.DataArray.coords`, and update the ``cell_measures`` attribute(s).
 
         Parameters
         ----------
@@ -1639,7 +1639,6 @@ class ClimoAccessor(object):
 
         # Add default cell measures
         if not measures:
-            import warnings
             stopwatch('init')
             for measure in ('width', 'depth', 'height', 'duration'):
                 # Skip measures that already exist in coordinates and measures that
@@ -1685,18 +1684,27 @@ class ClimoAccessor(object):
         # TODO: Stop adding cell measures attribute to whole dataset
         # NOTE: This approach is used as an example in cf_xarray docs:
         # https://cf-xarray.readthedocs.io/en/latest/examples/introduction.html#Feature:-Weight-by-Cell-Measures
-        for measure, da in measures.items():
-            if not isinstance(da, xr.DataArray):
-                raise ValueError('Input cell measures must be DataArrays.')
-            if da.name is None:
-                raise ValueError('Input cell measures must have names.')
-            data.coords[da.name] = da.climo.dequantify()
-            for obj in data.climo._iter_data_vars(dataset=True):
+        missing = set()  # only emit warning once
+        if not all(isinstance(da, xr.DataArray) for da in measures.values()):
+            raise ValueError('Input cell measures must be DataArrays.')
+        if any(da.name is None for da in measures.values()):
+            raise ValueError('Input cell measures must have names.')
+        for obj in data.climo._iter_data_vars(dataset=True):
+            measures_old = cf._decode_attr(obj.attrs.get('cell_measures', ''))
+            for key in measures_old:
+                (measure,), name = key
+                if name in data.coords:
+                    continue
+                measures_old.remove(key)
+                if verbose and name not in missing:
+                    print(f'Removed missing {measure!r} cell measure {name!r}.')
+                missing.add(name)
+            for measure, da in measures.items():
+                data.coords[da.name] = da.climo.dequantify()
                 if isinstance(obj, xr.DataArray) and obj.climo._is_bounds:
                     continue
-                obj.attrs['cell_measures'] = cf._encode_attr(
-                    obj.attrs.get('cell_measures'), ((measure, da.name),)
-                )
+                measures_new = (*measures_old, (measure, da.name))
+                obj.attrs['cell_measures'] = cf._encode_attr(measures_new)
 
         return data
 
