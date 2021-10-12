@@ -10,7 +10,7 @@ from . import const
 from .accessor import register_derivation, register_transformation
 from .cfvariable import vreg
 from .internals import ic  # noqa: F401
-from .internals.warnings import ClimoPyWarning, _warn_climopy
+from .internals.warnings import ClimoPyWarning
 from .unit import ureg
 
 # Ignore override warnings arising due to autoreload. Only want to issue warnings
@@ -123,11 +123,6 @@ with warnings.catch_warnings():
                 }
                 mask = data.climo[idx].data < ps.climo[idx].data
                 data.climo[idx].data[mask] = ps.climo[idx].data[mask]
-            if ps is None:
-                _warn_climopy(
-                    'Surface pressure not found. '
-                    'Vertical mass weighting will be inaccurate in lower levels.'
-                )
             data = data.diff('bnds').isel(bnds=0)
             data = data / const.g
         elif type_ == 'hybrid':

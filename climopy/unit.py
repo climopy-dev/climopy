@@ -165,7 +165,7 @@ def parse_units(units, /):
     * Interpret CF standard time units, e.g. convert ``days since 0001-01-01``
       to ``days``.
     * Interpret climopy-defined units with constants without the leading dummy
-      underscore (e.g. ``'100km'`` instead of ``'_100km'``; see `ureg` for details).
+      underscore (e.g. ``100km`` instead of ``_100km``; see `ureg` for details).
     * Interpret everything to the right of the first slash as part of the denominator.
       This permits e.g. ``W / m2 Pa`` instead of ``W / m^2 / Pa``; additional slashes
       after the first slash are optional.
