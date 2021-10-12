@@ -1609,9 +1609,9 @@ class ClimoAccessor(object):
         ----------
         measures : dict-like, optional
             Dictionary of cell measures. If none are provided, the default `width`,
-            `depth`, `height`, and `duration` measures are automatically calculated. If
-            this is a DataArray, surface pressure will not be taken into account and
-            isentropic grids will error out.
+            `depth`, `height`, and `duration` measures are automatically calculated.
+            If this is a DataArray, surface pressure will not be taken into account
+            and isentropic grids will error out.
         dataset : xarray.Dataset, optional
             The dataset associated with this `xarray.DataArray`. Needed when
             calculating cell measures automatically.
@@ -1699,12 +1699,17 @@ class ClimoAccessor(object):
                 if verbose and name not in missing:
                     print(f'Removed missing {measure!r} cell measure {name!r}.')
                 missing.add(name)
+            measures_new = measures_old.copy()
             for measure, da in measures.items():
+                if not isinstance(da, xr.DataArray):
+                    raise ValueError('Input cell measures must be DataArrays.')
+                if da.name is None:
+                    raise ValueError('Input cell measures must have names.')
                 data.coords[da.name] = da.climo.dequantify()
                 if isinstance(obj, xr.DataArray) and obj.climo._is_bounds:
                     continue
-                measures_new = (*measures_old, (measure, da.name))
-                obj.attrs['cell_measures'] = cf._encode_attr(measures_new)
+                measures_new.append((measure, da.name))
+            obj.attrs['cell_measures'] = cf._encode_attr(measures_new)
 
         return data
 
