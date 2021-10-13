@@ -496,7 +496,7 @@ class _CFAccessor(object):
         Return whether the input string is already a CF standard
         axis name, coordinate name, or cell measure name.
         """
-        return (
+        return any(
             key == name for attr in ('_AXIS_NAMES', '_COORD_NAMES', '_CELL_MEASURES')
             for name in getattr(_cf_accessor, attr, ())
         )
