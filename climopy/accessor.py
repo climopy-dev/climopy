@@ -1666,9 +1666,9 @@ class ClimoAccessor(object):
                             search_registry=False,
                             add_cell_measures=False
                         )
-                    except RuntimeError:
+                    except RuntimeError as err:
                         if verbose:
-                            print(f'Failed to add cell measure {measure!r} with name {name!r}.')  # noqa: E501
+                            print(f'Failed to add cell measure {measure!r} with name {name!r}. Error message: {err!s}')  # noqa: E501
                         continue
                     else:
                         if weight.sizes.keys() - data.sizes.keys():
@@ -2399,10 +2399,7 @@ class ClimoAccessor(object):
                 names_prev = coords_prev.get(coord, [])
                 for name_prev, name_curr in zip(names_prev, names_curr):
                     if name_prev != name_curr:
-                        print(
-                            f'Renamed coordinate {coord!r} name '
-                            f'{name_prev!r} to {name_curr!r}.'
-                        )
+                        print(f'Renamed coordinate {coord!r} name {name_prev!r} to {name_curr!r}.')  # noqa: E501
 
         # Manage bounds variables
         for name, da in data.coords.items():
@@ -2412,29 +2409,21 @@ class ClimoAccessor(object):
                 if bounds and bounds not in data:
                     del da.attrs['bounds']
                     if verbose:
-                        print(
-                            f'Deleted coordinate {name!r} bounds attribute {bounds!r} '
-                            '(bounds variable not present in dataset).'
-                        )
+                        print(f'Deleted coordinate {name!r} bounds attribute {bounds!r} (bounds variable not present in dataset).')  # noqa: E501
                 # Infer unset bounds attributes
                 for suffix in ('bnds', 'bounds'):
                     bounds = name + '_' + suffix
                     if bounds in data and 'bounds' not in da.attrs:
                         da.attrs['bounds'] = bounds
                         if verbose:
-                            print(
-                                f'Set coordinate {name!r} bounds to discovered '
-                                f'bounds-like variable {bounds!r}.'
-                            )
+                            print(f'Set coordinate {name!r} bounds to discovered bounds-like variable {bounds!r}.')  # noqa: E501
                 # Standardize bounds name and remove attributes (similar to rename_like)
                 bounds = da.attrs.get('bounds')
                 if bounds and bounds != (bounds_new := da.name + '_bnds'):
                     da.attrs['bounds'] = bounds_new
                     data = data.rename_vars({bounds: bounds_new})
                     if verbose:
-                        print(
-                            'Renamed bounds variable {bounds!r} to {bounds_new!r}.'
-                        )
+                        print(f'Renamed bounds variable {bounds!r} to {bounds_new!r}.')
                 # Delete all bounds attributes as recommended by CF manual
                 if bounds:
                     data[bounds_new].attrs.clear()
