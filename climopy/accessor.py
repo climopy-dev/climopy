@@ -4601,8 +4601,10 @@ def register_derivation(dest, /, *, assign_name=True):
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
             data = func(*args, **kwargs)
+            if data is NotImplemented:
+                raise NotImplementedError(f'Derivation {func} is not implemnted.')
             if not isinstance(data, xr.DataArray):
-                raise TypeError('Derivation must return a DataArray.')
+                raise TypeError(f'Derivation {func} did not return a DataArray.')
             if assign_name:
                 data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
             return data
@@ -4656,8 +4658,10 @@ def register_transformation(src, dest, /, *, assign_name=True):
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
             data = func(*args, **kwargs)
+            if data is NotImplemented:
+                raise NotImplementedError(f'Transformation {func} is not implemnted.')
             if not isinstance(data, xr.DataArray):
-                raise TypeError('Derivation must return a DataArray.')
+                raise TypeError(f'Transformation {func} did not return a DataArray.')
             if assign_name:
                 data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
             return data
