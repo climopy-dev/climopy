@@ -4319,7 +4319,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         if not isinstance(key, str):
             raise TypeError(f'Invalid key {key!r}. Must be string.')
         if search_vars:
-            da = self.vars.get(key, search_registry=False, **kwargs)
+            da = self.vars.get(key, search_registry=search_registry, **kwargs)
             regex = r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z'
             if da is not None:  # noqa: E501
                 da.name = re.sub(regex, r'\1', da.name)
@@ -4330,7 +4330,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         # TODO: Make derivations look like transformations; define functions that
         # accept data arrays with particular names.
         if search_coords:
-            coord = self.coords.get(key, search_registry=False, **kwargs)
+            coord = self.coords.get(key, search_registry=search_registry, **kwargs)
             if coord is not None:
                 return 'coord', coord
         if search_derivations:
