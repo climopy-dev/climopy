@@ -410,7 +410,7 @@ def _while_quantified(func):
         elif not self._is_quantity:
             data = data.climo.quantify()
 
-        # Main functoin
+        # Main function
         result = func(data.climo, *args, **kwargs)
 
         # Requantify
@@ -491,6 +491,17 @@ class _CFAccessor(object):
         self._variable_registry = registry
 
     @staticmethod
+    def _is_cfname(key):
+        """
+        Return whether the input string is already a CF standard
+        axis name, coordinate name, or cell measure name.
+        """
+        return (
+            key == name for attr in ('_AXIS_NAMES', '_COORD_NAMES', '_CELL_MEASURES')
+            for name in getattr(_cf_accessor, attr, ())
+        )
+
+    @staticmethod
     def _clear_cache(func):
         """
         Wrapper to clear cache before running. Call this before every top-level public
@@ -537,11 +548,7 @@ class _CFAccessor(object):
         """
         if not isinstance(key, str):
             raise KeyError('Key must be string.')
-        # Check if already valid CF name
-        if any(
-            key == name for attr in ('_AXIS_NAMES', '_COORD_NAMES', '_CELL_MEASURES')
-            for name in getattr(_cf_accessor, attr, ())
-        ):
+        if self._is_cfname(key):
             return key
         # Decode variable aliases into native dataset names used by CF accessor
         if search_registry:
@@ -557,7 +564,7 @@ class _CFAccessor(object):
             for coord, names in mapping.items():
                 if key in names:
                     return coord
-        raise KeyError(f'Invalid variable {key!r}.')
+        raise KeyError(f'Failed to find CF name for variable {key!r}.')
 
     def _decode_attr(self, attr):
         """
@@ -584,7 +591,7 @@ class _CFAccessor(object):
             parts.append((dims, value))
         return parts
 
-    def _decode_name(self, key, *attrs, search_registry=True, return_if_missing=False):
+    def _decode_name(self, key, *attrs, search_registry=None, return_if_missing=False):
         """
         Translate a standard CF name or registry variable alias into dataset variable
         name or registry variable name. Check only the specified attributes.
@@ -607,14 +614,16 @@ class _CFAccessor(object):
             elif return_if_missing:
                 return names[0]  # e.g. missing cell_measures variable
         # Check if key matches registry variable alias
-        if search_registry:
+        # WARNING: Do not search for matches to standard CF names! This can lead
+        # to e.g. missing 'height' cell measure translating to 'height' coordinate.
+        if search_registry and not self._is_cfname(key):
             var = self._variable_registry.get(key, None)
             for name in getattr(var, 'identifiers', ()):
                 if name in self._src:
                     return name
             if var and return_if_missing:
-                return var.name  # e.g. missing variable
-        raise KeyError(f'Invalid variable {key!r}.')
+                return var.name  # return *standard* registered name
+        raise KeyError(f'Failed to find dataset or registry name for CF name {key!r}.')
 
     def _get_attr(self, attr):
         """
