@@ -591,7 +591,7 @@ class _CFAccessor(object):
             parts.append((dims, value))
         return parts
 
-    def _decode_name(self, key, *attrs, search_registry=None, return_if_missing=False):
+    def _decode_name(self, key, *attrs, search_registry=True, return_if_missing=False):
         """
         Translate a standard CF name or registry variable alias into dataset variable
         name or registry variable name. Check only the specified attributes.
@@ -614,9 +614,7 @@ class _CFAccessor(object):
             elif return_if_missing:
                 return names[0]  # e.g. missing cell_measures variable
         # Check if key matches registry variable alias
-        # WARNING: Do not search for matches to standard CF names! This can lead
-        # to e.g. missing 'height' cell measure translating to 'height' coordinate.
-        if search_registry and not self._is_cfname(key):
+        if search_registry:
             var = self._variable_registry.get(key, None)
             for name in getattr(var, 'identifiers', ()):
                 if name in self._src:
@@ -1412,7 +1410,7 @@ class ClimoAccessor(object):
                         continue
                     measure = CELL_MEASURE_BY_COORD[coordinate]
                     try:
-                        measure = self.cf._decode_name(measure, 'cell_measures')
+                        measure = self.cf._decode_name(measure, 'cell_measures', search_registry=False)  # noqa: E501
                     except KeyError:
                         continue
                     if measure is not None and measure in idata.coords:
@@ -3239,7 +3237,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                             'already reduced you may need to call add_scalar_coords.'
                         )
             try:  # is cell measure missing from dictionary?
-                name = self.cf._decode_name(measure, 'cell_measures', return_if_missing=True)  # noqa: E501
+                name = self.cf._decode_name(measure, 'cell_measures', search_registry=False, return_if_missing=True)  # noqa: E501
             except KeyError:
                 raise ValueError(
                     f'Missing cell measure {measure!r} for {cell_method} dimension '
