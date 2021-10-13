@@ -1447,8 +1447,8 @@ class ClimoAccessor(object):
         indexers = {dim: None for dim in dims}
         indexers, _ = self._parse_indexers(indexers, **kwargs)
         if not single:
-            return tuple(indexers) or None
-        elif len(indexers) != 1:
+            return tuple(indexers)
+        elif len(indexers) > 1:
             raise ValueError(f'Expected one dimension, got {len(indexers)}.')
         else:
             return tuple(indexers)[0]
@@ -1506,7 +1506,7 @@ class ClimoAccessor(object):
 
         # Warn if empty
         if not indexers_filtered:
-            warnings._warn_climopy(f'No indexers found in {indexers!r}.')
+            raise ValueError(f'No valid indexers found in kwargs {indexers!r}.')
         return indexers_filtered, indexers
 
     def _parse_truncate_args(self, **kwargs):
