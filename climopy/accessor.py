@@ -2850,16 +2850,19 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     coordinate = meta.climo.cf._encode_name(coord, 'coordinates')
                 except KeyError:
                     continue
-                method = []
-                if coord != name and da.size == 1 and not da.isnull():  # point select
+                if coord == name:
+                    pass
+                elif da.size == 1 and not da.isnull():
                     units = parse_units(da.attrs['units']) if 'units' in da.attrs else 1
-                    method.append(units * da.item())
-                if any(coord in dims for dims, _ in methods):
-                    method.extend(m for dims, m in methods if coord in dims)
-                kwargs[coordinate] = method
+                    if np.issubdtype(da.data.dtype, np.str):  # noqa: E501
+                        kwargs['label'] = [da.item()]
+                    else:
+                        kwargs[coordinate] = [units * da.item()]
+                elif any(coord in dims for dims, _ in methods):
+                    kwargs[coordinate] = [m for dims, m in methods if coord in dims]
 
             # Find if DataArray corresponds to a variable but its values and name
-            # corresond to a coordinate. This happens e.g. with 'argmax'. Also try
+            # correspond to a coordinate. This happens e.g. with 'argmax'. Also try
             # to avoid e.g. name='ehf' combined with long_name='latitude'.
             parent_name = data.attrs.get('parent_name', None)
             try:
