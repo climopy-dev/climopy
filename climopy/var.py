@@ -103,9 +103,8 @@ This function uses the following formula to estimate %(name)s at lag :math:`k`:
 
 def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
     r"""
-    Return one or more artificial red noise time series with prescribed mean
-    and standard deviation. The time series are generated with the following
-    equation:
+    Return one or more artificial red noise time series with prescribed mean and
+    standard deviation. The time series are generated with the following equation:
 
     .. math::
 
@@ -509,7 +508,7 @@ def eof(
 
 def eot(data, neof=5):  # noqa
     """
-    EOTs, whatever they are.
+    Empirical orthogonal teleconnections.
 
     Warning
     -------
@@ -520,8 +519,8 @@ def eot(data, neof=5):  # noqa
 
 def reof(data, neof=5):  # noqa
     """
-    Rotated EOFs, e.g. according to the "varimax" method. The EOFs will
-    be rotated according only to the first `neof` EOFs.
+    Rotated empirical orthogonal functions, e.g. according to the "varimax"
+    method. The EOFs will be rotated according only to the first `neof` EOFs.
 
     Warning
     -------
@@ -607,7 +606,7 @@ def hist(bins, y, /, axis=0):
     return context.data
 
 
-@quack._xarray_fit_wrapper
+@quack._xarray_lls_wrapper
 @quack._pint_wrapper(('=x', '=y'), ('=y / x', '=y / x', '=y'))
 def linefit(x, y, /, axis=0):
     """
@@ -620,7 +619,7 @@ def linefit(x, y, /, axis=0):
     y : array-like
         The *y* coordinates.
     axis : int, optional
-        Regression axis
+        The regression axis.
 
     Returns
     -------
@@ -689,7 +688,7 @@ def linefit(x, y, /, axis=0):
     return context.data
 
 
-@quack._xarray_fit_wrapper
+@quack._xarray_lls_wrapper
 @quack._pint_wrapper(('=t', ''), ('=t', '=t', ''))
 def rednoisefit(
     dt, a, /, maxlag=None, imaxlag=None, maxlag_fit=None, imaxlag_fit=None, axis=0
@@ -725,7 +724,7 @@ def rednoisefit(
     imaxlag_fit : int, optional
         As with `maxlag` but specifies the index instead of the physical time.
     axis : int, optional
-        The "lag" dimension. Each slice along this axis should represent an
+        The lag axis. Each slice along this axis should represent an
         autocorrelation spectrum generated with `corr`.
 
         * If `axis` is singleton, the data are assumed to be lag-1 autocorrelations

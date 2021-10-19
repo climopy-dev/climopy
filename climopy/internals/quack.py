@@ -231,29 +231,6 @@ def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
     return (*args, kwargs)
 
 
-def _xarray_fit_wrapper(func):
-    """
-    Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
-    and returning a fit parameter, the fit standard error, and the reconstruction.
-    """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        x, y = args  # *both* or *one* of these is dataarray
-        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
-        fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
-
-        # Build back the DataArray
-        if isinstance(y, xr.DataArray):
-            dim_coords = {y.dims[kwargs['axis']]: None}
-            fit_val = _dataarray_from(y, fit_val, dim_coords=dim_coords)
-            fit_err = _dataarray_from(y, fit_err, dim_coords=dim_coords)
-            fit_line = _dataarray_from(y, fit_line)  # same everything
-
-        return fit_val, fit_err, fit_line
-
-    return wrapper
-
-
 def _xarray_yy_wrapper(func):
     """
     Generic `xarray.DataArray` wrapper for functions accepting and returning
@@ -422,6 +399,29 @@ def _xarray_power2d_wrapper(func):
             )
 
         return k, *Ps
+
+    return wrapper
+
+
+def _xarray_lls_wrapper(func):
+    """
+    Generic `xarray.DataArray` wrapper for functions accepting *x* and *y*
+    and returning a fit parameter, the fit standard error, and the reconstruction.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        x, y = args  # *both* or *one* of these is dataarray
+        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
+        fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
+
+        # Build back the DataArray
+        if isinstance(y, xr.DataArray):
+            dim_coords = {y.dims[kwargs['axis']]: None}
+            fit_val = _dataarray_from(y, fit_val, dim_coords=dim_coords)
+            fit_err = _dataarray_from(y, fit_err, dim_coords=dim_coords)
+            fit_line = _dataarray_from(y, fit_line)  # same everything
+
+        return fit_val, fit_err, fit_line
 
     return wrapper
 
