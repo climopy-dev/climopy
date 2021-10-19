@@ -9,7 +9,6 @@ and `Dennis Hartmann \
 import numpy as np
 import scipy.linalg as linalg
 import scipy.optimize as optimize
-import scipy.stats as stats
 
 from .internals import ic  # noqa: F401
 from .internals import docstring, quack
@@ -22,7 +21,6 @@ __all__ = [
     'eof',
     'eot',
     'reof',
-    'gaussian',
     'hist',
     'linefit',
     'rednoise',
@@ -101,21 +99,6 @@ This function uses the following formula to estimate %(name)s at lag :math:`k`:
 
 %(math)s
 """
-
-
-def gaussian(z, mean=0, stdev=None, sigma=1):
-    """
-    Returns sample points on Gaussian curve.
-
-    Parameters
-    ----------
-    z : array-like, optional
-        The z-statistics to be sampled.
-    """
-    sigma = stdev if stdev is not None else sigma
-    norm = stats.norm(loc=mean, scale=sigma)
-    pdf = norm.pdf(z, loc=mean, scale=sigma)
-    return z, pdf
 
 
 def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
