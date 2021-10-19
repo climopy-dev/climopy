@@ -428,23 +428,28 @@ def _xarray_lls_wrapper(func):
 
 def _xarray_covar_wrapper(func):
     """
-    Support `xarray.DataArray` for `corr`, `covar`, `autocorr`, and `autocovar` funcs.
+    Support `xarray.DataArray` for `corr` and `covar` funcs.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+        nargs = 2 if 'auto' in func.__name__ else 3
+        if len(args) == nargs - 1:
+            *args = 1, *args  # time step of 1
+        if len(args) != nargs:
+            raise TypeError(f'Expected {nargs} positional arguments. Got {len(args)}.')
         x, *ys = args  # *both* or *one* of these is dataarray
-        y = ys[0]
+        y = ys[0]  # the first one
         x_in, *ys_in, kwargs = _dataarray_strip(func, x, *ys, **kwargs)
-        lag, C = func(x_in, *ys_in, **kwargs)
+        lag, cov = func(x_in, *ys_in, **kwargs)
 
         # Build back the DataArray
         if isinstance(x, xr.DataArray):
             lag = _dataarray_from(x, lag, name='lag', dims=('lag',), coords={})
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
-            C = _dataarray_from(y, C, dim_change={dim: 'lag'}, dim_coords={'lag': lag})
+            cov = _dataarray_from(y, cov, dim_change={dim: 'lag'}, dim_coords={'lag': lag})  # noqa: E501
 
-        return lag, C
+        return lag, cov
 
     return wrapper
 

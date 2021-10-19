@@ -73,7 +73,8 @@ behavior returns the lag-0 %(name)s.
 Parameters
 ----------
 dt : float or array-like, optional
-    The timestep or time series (from which the timestep is inferred).
+    The timestep or time series (from which the timestep is inferred). Default is
+    ``1`` (note this makes `lag` and `ilag`, `maxlag` and `imaxlag` identical).
 %(data)s
 axis : int, optional
     Axis along which %(name)s is taken.
