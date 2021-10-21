@@ -14,36 +14,41 @@ __all__ = [
 
 # Docstring snippets
 # NOTE: Includes snippets used in other parts of code
-docstring.snippets['params_uneven'] = """
+_params_uneven = """
 x : float or array-like
     The step size, a 1-d coordinate vector, or an array of coordinates
     matching the shape of `y`.
 y : array-like
     The data.
 """
-docstring.snippets['params_axisdim'] = """
+_params_axisdim = """
 axis : int, optional
     Axis along which %(name)s is taken.
 dim : str, optional
     *For `xarray.DataArray` input only*.
     Named dimension along which %(name)s is taken.
 """
-docstring.snippets['params_order'] = """
+_params_order = """
 order : int, optional
     The order of the derivative, i.e. the :math:`n` in :math:`d^ny/dx^n`.
     Default is ``1``.
 """
-docstring.snippets['params_cyclic'] = """
+_params_cyclic = """
 cyclic : bool, optional
-    Whether to treat the axis cyclically. If ``True``, the dimension size is
-    not reduced. This is appropriate for derivatives across longitudes and
-    cyclic idealized model domains.
+    Whether to treat the axis cyclically. If ``True``, the dimension size
+    is not reduced. This is appropriate for derivatives across longitudes
+    and cyclic idealized model domains.
 """
-docstring.snippets['params_edges'] = """
+_params_edges = """
 keepedges : bool, optional
     Whether to fill the edge positions with progressively lower-`accuracy`
     finite difference estimates to prevent reducing the dimension size.
 """
+docstring.snippets['params_axisdim'] = _params_axisdim
+docstring.snippets['params_uneven'] = _params_uneven
+docstring.snippets['params_order'] = _params_order
+docstring.snippets['params_cyclic'] = _params_cyclic
+docstring.snippets['params_edges'] = _params_edges
 
 
 def _fornberg_coeffs(x, x0, order=1):

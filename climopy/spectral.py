@@ -36,14 +36,24 @@ __all__ = [
 ]
 
 # Input values
-docstring.snippets['params_power1d'] = """
+_power_data = """
+y : array-like
+    The input data.
+"""
+_copower_data = """
+y1 : array-like
+   First input data.
+y2 : array-like
+   Second input data. Must have same shape as `y1`.
+"""
+_params_power1d = """
 dx : float or array-like
     Dimension step size in physical units. Used to scale `fx`.
 %(data)s
 axis : int, optional
     Location of the "time" axis.
 """
-docstring.snippets['params_power2d'] = """
+_params_power2d = """
 dx_lon : float or array-like
     Longitude or cyclic dimension step size in physical units. Used to scale `fx_lon`.
 dx_time : float or array-like
@@ -54,7 +64,7 @@ axis_lon : int, optional
 axis_time : int, optional
     Location of the "time" axis.
 """
-docstring.snippets['params_power'] = """
+_params_power = """
 wintype : str or (str, float), optional
     The window specification, passed to `window`. The resulting
     weights are used to window the data before carrying out spectral
@@ -66,34 +76,26 @@ detrend : {'constant', 'linear'}, optional
     Passed as the `type` argument to `scipy.signal.detrend`. ``'constant'``
     removes the mean and ``'linear'`` removes the linear trend.
 """
-
-_power_data = """
-y : array-like
-    The input data.
-"""
-_copower_data = """
-y1 : array-like
-   First input data.
-y2 : array-like
-   Second input data. Must have same shape as `y1`.
-"""
+docstring.snippets['params_power1d'] = _params_power1d
+docstring.snippets['params_power2d'] = _params_power2d
+docstring.snippets['params_power'] = _params_power
 
 # Return values
-docstring.snippets['returns_power1d'] = """
+_returns_power1d = """
 fx : array-like
     Frequencies. Units are the inverse of the `dx` units.
 """
-docstring.snippets['returns_power2d'] = """
+_returns_power2d = """
 fx_lon : array-like
     Frequencies for *longitude* or *cyclic* axis. Units are the inverse of `dx_lon`.
 fx_time : array-like
     Frequencies for *time* axis. Units are the inverse of the `dx_time`.
 """
-docstring.snippets['returns_power'] = """
+_returns_power = """
 P : array-like
     Power spectrum. Units are the input units squared.
 """
-docstring.snippets['returns_copower'] = """
+_returns_copower = """
 C : array-like
     Co-power spectrum.
 Q : array-like
@@ -107,9 +109,13 @@ Coh : array-like, optional
 Phi : array-like, optional
     Phase difference in degrees.
 """
+docstring.snippets['returns_power1d'] = _returns_power1d
+docstring.snippets['returns_power2d'] = _returns_power2d
+docstring.snippets['returns_power'] = _returns_power
+docstring.snippets['returns_copower'] = _returns_copower
 
 # Notes
-docstring.snippets['notes_power'] = """
+_notes_power = """
 Notes
 -----
 The Fourier coefficients are scaled so that total variance is equal to one
@@ -155,6 +161,7 @@ References
 ----------
 .. bibliography:: ../bibs/power.bib
 """
+docstring.snippets['notes_power'] = _notes_power
 
 
 @quack._pint_wrapper(('=x', '', '=x'), '')

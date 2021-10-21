@@ -66,7 +66,7 @@ _covar_math = r"""
 
 where :math:`\overline{x}` and :math:`\overline{y}` are the sample means.
 """  # noqa: E501
-docstring.snippets['template_var'] = """
+_var_template = """
 Return the %(name)s spectrum at a single lag or successive lags. Default
 behavior returns the lag-0 %(name)s.
 
@@ -100,6 +100,7 @@ This function uses the following formula to estimate %(name)s at lag :math:`k`:
 
 %(math)s
 """
+docstring.snippets['template_var'] = _var_template
 
 
 def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):

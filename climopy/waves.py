@@ -19,7 +19,7 @@ __all__ = [
     'eqlat', 'waq', 'waqlocal',
 ]
 
-docstring.snippets['params_eqlat'] = """
+_params_eqlat = """
 lon, lat : ndarray
     The longitude and latitude coordinates.
 q : ndarray
@@ -28,8 +28,7 @@ q : ndarray
 skip : int, optional
     The interval of sorted `q` from which we select output `Q` values.
 """
-
-docstring.snippets['params_waq'] = """
+_params_waq = """
 flip : bool, optional
     Whether to flip the input data along the latitude dimension. Use this
     if your zonal average gradient is negative poleward.
@@ -38,6 +37,8 @@ omega : ndarray, optional
 sigma : ndarray, optional
     The data weights, useful for isentropic coordinates. Shape must match `q`.
 """
+docstring.snippets['params_eqlat'] = _params_eqlat
+docstring.snippets['params_waq'] = _params_waq
 
 
 class _LongitudeLatitude(object):

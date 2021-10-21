@@ -98,8 +98,8 @@ if hasattr(_cf_accessor, 'regex'):
 else:
     warnings._warn_climopy('cf_xarray API changed. Cannot update regexes.')
 
-# Mean and average snippets
-docstring.snippets['template_meansum'] = """
+# Mean and average templates
+_template_meansum = """
 Return the %(operator)s along dimension(s), preserving attributes and coordinates.
 
 Parameters
@@ -113,7 +113,7 @@ weight : xr.DataArray, optional
 **kwargs
     Passed to `~ClimoAccessor.truncate`. Used to limit bounds of %(operator)s.
 """
-docstring.snippets['template_avgint'] = """
+_template_avgint = """
 Return the mass-weighted %(operator)s.
 
 Parameters
@@ -131,7 +131,7 @@ skipna : bool, optional
     Passed to `~ClimoAccessor.truncate`. Used to limit the bounds of the
     %(action)s.
 """
-docstring.snippets['template_cumavgint'] = """
+_template_cumavgint = """
 Return the cumulative mass-weighted %(operator)s.
 
 Parameters
@@ -147,18 +147,25 @@ reverse : bool, optional
 **kwargs
     Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
 """
-docstring.snippets['notes_avgmean'] = """
+docstring.snippets['template_meansum'] = _template_meansum
+docstring.snippets['template_avgint'] = _template_avgint
+docstring.snippets['template_cumavgint'] = _template_cumavgint
+
+# Mean and average notes
+_notes_avgmean = """
 ClimoPy makes an artifical distinction between the "mean" as a naive, unweighted
 average and the "average" as a cell measures-aware, mass-weighted average.
 """
-docstring.snippets['notes_weighted'] = """
+_notes_weighted = """
 This was added as a dedicated accessor function rather than creating a
 custom `~xarray.core.weighted.Weighted` object because the selection of
 mass weights depends on the dimension(s) passed by the user.
 """
+docstring.snippets['notes_avgmean'] = _notes_avgmean
+docstring.snippets['notes_weighted'] = _notes_weighted
 
-# Extrema snippets
-docstring.snippets['template_minmax'] = """
+# Extrema templates
+_template_minmax = """
 Return the %(prefix)s local %(extrema)s along the dimension. Multiple %(extrema)s are
 concatenated along a 'track' dimension.
 
@@ -173,7 +180,7 @@ dim_track : str, optional
 **kwargs
     Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
 """
-docstring.snippets['template_absminmax'] = """
+_template_absminmax = """
 Return the %(prefix)s global %(extrema)s along the dimension.
 
 Parameters
@@ -183,7 +190,7 @@ dim : str, optional
 **kwargs
     Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
 """
-docstring.snippets['template_argloc'] = """
+_template_argloc = """
 Return the coordinate(s) of a given value along the dimension.
 
 Parameters
@@ -198,9 +205,12 @@ dim_track : str, optional
 **kwargs
     Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
 """
+docstring.snippets['template_minmax'] = _template_minmax
+docstring.snippets['template_absminmax'] = _template_absminmax
+docstring.snippets['template_argloc'] = _template_argloc
 
 # Differentiation
-docstring.snippets['template_divcon'] = r"""
+_template_divcon = r"""
 Return the spherical meridional %(operator)s. To calculate the %(operator)s at the
 poles, the numerator is assumed to vanish and l'Hopital's rule is invoked.
 
@@ -217,9 +227,10 @@ centered : bool, optional
 **kwargs
     Passed to `~.diff.deriv_uneven` or `~.diff.deriv_half`.
 """
+docstring.snippets['template_divcon'] = _template_divcon
 
 # Auto-variance
-docstring.snippets['template_auto'] = """
+_template_auto = """
 Return the auto%(operator)s along the input dimension.
 
 Parameters
@@ -230,9 +241,10 @@ dim : str
 **kwargs
     Passed to `~.var.auto%(func)s`.
 """
+docstring.snippets['template_auto'] = _template_auto
 
 # Variable derivations
-docstring.snippets['params_register'] = r"""
+_params_register = r"""
 dest : str, tuple, or re.Pattern
     The destination variable name, a tuple of valid destination names, or an
     `re.compile`'d pattern matching a set of valid destination names. In the
@@ -244,14 +256,16 @@ assign_name : bool, optional
     Whether to assign the user-input string as the output `xarray.DataArray.name`.
     Default is ``True``.
 """
+docstring.snippets['params_register'] = _params_register
 
 # Messages
-docstring.snippets['warning_inplace'] = """
+_warning_inplace = """
 Warning
 -------
 Unlike most other public methods, this modifies the data in-place rather
 than returning a copy.
 """
+docstring.snippets['warning_inplace'] = _warning_inplace
 
 
 def _expand_variable_args(func):
