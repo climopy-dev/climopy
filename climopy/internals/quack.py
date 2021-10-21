@@ -434,7 +434,7 @@ def _xarray_covar_wrapper(func):
     def wrapper(*args, **kwargs):
         nargs = 2 if 'auto' in func.__name__ else 3
         if len(args) == nargs - 1:
-            *args = 1, *args  # time step of 1
+            args = 1, *args  # time step of 1
         if len(args) != nargs:
             raise TypeError(f'Expected {nargs} positional arguments. Got {len(args)}.')
         x, *ys = args  # *both* or *one* of these is dataarray
