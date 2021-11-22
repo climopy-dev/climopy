@@ -7,6 +7,7 @@ and `Dennis Hartmann \
 <https://atmos.washington.edu/~dennis/552_Notes_ftp.html>`__.
 """
 import numpy as np
+import numpy.ma as ma
 import scipy.linalg as linalg
 import scipy.optimize as optimize
 
@@ -200,6 +201,10 @@ def _covar_driver(
             print(f'Calculating lag-{lag} {prefix}{suffix}.')
         else:
             print(f'Calculating {prefix}{suffix} to lag {maxlag} for axis size {naxis}.')  # noqa: E501
+
+    # Mask data
+    z1 = ma.masked_invalid(z1)
+    z2 = ma.masked_invalid(z2)
 
     # Means and permute
     z1 = np.moveaxis(z1, axis, -1)

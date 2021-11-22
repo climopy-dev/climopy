@@ -917,8 +917,9 @@ class _CoordsQuantified(object):
                 bnds = data[bounds]
             except KeyError:
                 warnings._warn_climopy(
-                    f'Coordinate {coord.name!r} bounds variable {bounds!r} '
-                    f'missing from dataset with variables {tuple(data)}.'
+                    f'Coordinate {coord.name!r} bounds variable {bounds!r} missing '
+                    f'from dataset with variables {tuple(data)}. Calculating '
+                    'bounds on-the-fly instead.'
                 )
         if bnds is not None:
             if bnds.ndim != 2 or 2 not in bnds.shape:
@@ -3527,7 +3528,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         %(template_divcon)s
         """
-        # Compute divergence in spherical coordinates
+        # Divergence far away from poles
+        # Allow for eddy zonal wind flux correction for its contribution to zonal
+        # wind budget under angular momentum conservation that requires cos_power == 2.
         y = self.coords['meridional_coordinate']
         cos = self.coords['cosine_latitude']
         data = self.data
