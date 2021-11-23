@@ -17,7 +17,7 @@ import numpy as np
 import scipy.signal as signal
 
 from .internals import ic  # noqa: F401
-from .internals import docstring, quack, warnings
+from .internals import docstring, quack, quant, warnings
 
 __all__ = [
     'butterworth',
@@ -164,7 +164,7 @@ References
 docstring.snippets['notes_power'] = _notes_power
 
 
-@quack._pint_wrapper(('=x', '', '=x'), '')
+@quant.quantify(('=x', '', '=x'), '')
 def butterworth(dx, order, cutoff, /, btype='low'):
     """
     Applies Butterworth filter to data. Since this is a *recursive*
@@ -218,7 +218,7 @@ def butterworth(dx, order, cutoff, /, btype='low'):
     return b, a
 
 
-@quack._pint_wrapper(('=x', '', '=x'), '')
+@quant.quantify(('=x', '', '=x'), '')
 def lanczos(dx, width, cutoff, /):
     """
     Returns *coefficients* for Lanczos high-pass filter with
@@ -273,8 +273,8 @@ def lanczos(dx, width, cutoff, /):
     return window[1:-1], 1
 
 
-@quack._xarray_yy_wrapper
-@quack._pint_wrapper(('=x', ''), '=x')
+@quack._yy_metadata
+@quant.quantify(('=x', ''), '=x')
 def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     """
     Apply scipy.signal.lfilter to data. By default this does *not* pad
@@ -365,8 +365,8 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     return context.data
 
 
-@quack._xarray_yy_wrapper
-@quack._pint_wrapper(('=y', ''), '=y')
+@quack._yy_metadata
+@quant.quantify(('=y', ''), '=y')
 def harmonics(y, n, /, axis=-1):
     """
     Select the first Fourier harmonics of the time series.
@@ -399,8 +399,8 @@ def harmonics(y, n, /, axis=-1):
     return np.moveaxis(yf, -1, axis)
 
 
-@quack._xarray_yy_wrapper
-@quack._pint_wrapper(('=y', ''), '=y')
+@quack._yy_metadata
+@quant.quantify(('=y', ''), '=y')
 def highpower(y, n, /, axis=-1):
     """
     Select only the highest power frequencies. Useful for crudely reducing noise.
@@ -679,8 +679,8 @@ def _power2d_driver(
         return (fx_lon / dx_lon, fx_time / dx_time, context.data)
 
 
-@quack._xarray_power_wrapper
-@quack._pint_wrapper(('=x', '=y'), ('=1 / x', '=y ** 2'))
+@quack._power_metadata
+@quant.quantify(('=x', '=y'), ('=1 / x', '=y ** 2'))
 @docstring.inject_snippets(data=_power_data)
 def power(dx, y1, /, axis=0, **kwargs):
     """
@@ -738,8 +738,8 @@ def power(dx, y1, /, axis=0, **kwargs):
     return _power_driver(dx, y1, y1, axis=axis, **kwargs)
 
 
-@quack._xarray_power_wrapper
-@quack._pint_wrapper(
+@quack._power_metadata
+@quant.quantify(
     ('=x', '=y1', '=y2'),
     ('=1 / x', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
@@ -819,8 +819,8 @@ def copower(dx, y1, y2, /, axis=0, **kwargs):
     return _power_driver(dx, y1, y2, axis=axis, **kwargs)
 
 
-@quack._xarray_power2d_wrapper
-@quack._pint_wrapper(('=x1', '=x2', '=y'), ('=1 / x1', '=1 / x2', '=y ** 2'))
+@quack._power2d_metadata
+@quant.quantify(('=x1', '=x2', '=y'), ('=1 / x1', '=1 / x2', '=y ** 2'))
 @docstring.inject_snippets(data=_power_data)
 def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
     """
@@ -844,8 +844,8 @@ def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
     )
 
 
-@quack._xarray_power2d_wrapper
-@quack._pint_wrapper(
+@quack._power2d_metadata
+@quant.quantify(
     ('=x1', '=x2', '=y1', '=y2'),
     ('=1 / x1', '=1 / x2', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
@@ -873,7 +873,7 @@ def copower2d(dx_lon, dx_time, y1, y2, /, axis_lon=0, axis_time=-1, **kwargs):
     )
 
 
-@quack._pint_wrapper(('=x', '', ''), ('', ''))
+@quant.quantify(('=x', '', ''), ('', ''))
 def response(dx, b, a=1, /, n=1000, simple=False):
     """
     Calculate the response function given the *a* and *b* coefficients for some
@@ -939,8 +939,8 @@ def response(dx, b, a=1, /, n=1000, simple=False):
     return x, y
 
 
-@quack._xarray_yy_wrapper
-@quack._pint_wrapper(('=y', ''), '=y')
+@quack._yy_metadata
+@quant.quantify(('=y', ''), '=y')
 def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     """
     Apply running average to array.
@@ -1001,7 +1001,7 @@ def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     return np.moveaxis(yr, -1, axis)
 
 
-@quack._pint_wrapper('=x', '=x')
+@quant.quantify('=x', '=x')
 def waves(x, /, wavenums=None, wavelengths=None, phase=None, state=None):
     """
     Compose array of sine waves. Useful for testing the performance of filters.

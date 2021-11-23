@@ -6,7 +6,7 @@ Various finite difference schemes.
 import numpy as np
 
 from .internals import ic  # noqa: F401
-from .internals import docstring, quack
+from .internals import docstring, quack, quant
 
 __all__ = [
     'integral', 'deriv_even', 'deriv_half', 'deriv_uneven',
@@ -140,8 +140,8 @@ def _standardize_x_y(x, y, /, axis=0):
     return x, y
 
 
-@quack._xarray_xyy_wrapper
-@quack._pint_wrapper(('=x', '=y'), '=x * y')
+@quack._xyy_metadata
+@quant.quantify(('=x', '=y'), '=x * y')
 @docstring.inject_snippets(name='integral')
 def integral(x, y, /, y0=0, axis=0):
     """
@@ -349,8 +349,8 @@ def _deriv_third(
     return np.concatenate((*ldiff, diff, *rdiff), axis=-1)
 
 
-@quack._xarray_xyy_wrapper
-@quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
+@quack._xyy_metadata
+@quant.quantify(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.inject_snippets(name='derivative')
 def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=False):
     """
@@ -415,8 +415,8 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=Fal
     return np.moveaxis(diff, -1, axis)
 
 
-@quack._xarray_xyy_wrapper
-@quack._pint_wrapper(('=x', '=y'), '=y / x ** {order}', order=1)
+@quack._xyy_metadata
+@quant.quantify(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.inject_snippets(name='derivative')
 def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=False):
     r"""
@@ -497,8 +497,8 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=F
     return diff
 
 
-@quack._xarray_xyxy_wrapper
-@quack._pint_wrapper(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
+@quack._xyxy_metadata
+@quant.quantify(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
 @docstring.inject_snippets(name='derivative')
 def deriv_half(x, y, /, order=1, axis=0, cyclic=False):
     """

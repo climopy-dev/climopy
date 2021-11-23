@@ -48,4 +48,4 @@ try:  # print debugging
 except ImportError:  # graceful fallback if IceCream isn't installed
     ic = lambda *a: None if not a else (a[0] if len(a) == 1 else a)  # noqa
 
-from . import docstring, quack, warnings  # noqa: F401
+from . import context, docstring, quack, quant, warnings  # noqa: F401

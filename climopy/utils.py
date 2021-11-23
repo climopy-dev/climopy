@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Includes miscellaneous mathematical functions.
+Miscellaneous mathematical functions.
 """
 import datetime
 from functools import partial
@@ -11,7 +11,7 @@ import xarray as xr
 
 from .diff import deriv_half, deriv_uneven
 from .internals import ic  # noqa: F401
-from .internals import quack, warnings
+from .internals import quack, quant, warnings
 
 __all__ = [
     'calendar',
@@ -96,8 +96,8 @@ def calendar(dt, /):
     return out
 
 
-@quack._xarray_find_wrapper
-@quack._pint_wrapper(('=x', '=y'), ('=x', '=y'))
+@quack._find_metadata
+@quant.quantify(('=x', '=y'), ('=x', '=y'))
 def find(
     x, y, /, axis=-1, axis_track=None, track=True, diff=None, which='both', centered=True,  # noqa: E501
     **kwargs,

@@ -12,7 +12,7 @@ import scipy.linalg as linalg
 import scipy.optimize as optimize
 
 from .internals import ic  # noqa: F401
-from .internals import docstring, quack
+from .internals import docstring, quack, quant
 
 __all__ = [
     'autocorr',
@@ -266,8 +266,8 @@ def _covar_driver(
     return lags, np.moveaxis(covar, -1, axis)
 
 
-@quack._xarray_covar_wrapper
-@quack._pint_wrapper(('=t', '=z'), ('=t', ''))
+@quack._covar_metadata
+@quant.quantify(('=t', '=z'), ('=t', ''))
 @docstring.inject_snippets(name='autocorrelation', data=_var_data, math=_corr_math)
 def autocorr(dt, z, axis=0, **kwargs):
     """
@@ -278,8 +278,8 @@ def autocorr(dt, z, axis=0, **kwargs):
     return _covar_driver(dt, z, z, axis=axis, **kwargs)
 
 
-@quack._xarray_covar_wrapper
-@quack._pint_wrapper(('=t', '=z'), ('=t', '=z ** 2'))
+@quack._covar_metadata
+@quant.quantify(('=t', '=z'), ('=t', '=z ** 2'))
 @docstring.inject_snippets(name='autocovariance', data=_var_data, math=_covar_math)
 def autocovar(dt, z, axis=0, **kwargs):
     """
@@ -289,8 +289,8 @@ def autocovar(dt, z, axis=0, **kwargs):
     return _covar_driver(dt, z, z, axis=axis, **kwargs)
 
 
-@quack._xarray_covar_wrapper
-@quack._pint_wrapper(('=t', '=z1', '=z2'), ('=t', ''))
+@quack._covar_metadata
+@quant.quantify(('=t', '=z1', '=z2'), ('=t', ''))
 @docstring.inject_snippets(name='correlation', data=_covar_data, math=_corr_math)
 def corr(dt, z1, z2, axis=0, **kwargs):
     """
@@ -300,8 +300,8 @@ def corr(dt, z1, z2, axis=0, **kwargs):
     return _covar_driver(dt, z1, z2, axis=axis, **kwargs)
 
 
-@quack._xarray_covar_wrapper
-@quack._pint_wrapper(('=t', '=z1', '=z2'), ('=t', '=z1 * z2'))
+@quack._covar_metadata
+@quant.quantify(('=t', '=z1', '=z2'), ('=t', '=z1 * z2'))
 @docstring.inject_snippets(name='covariance', data=_covar_data, math=_covar_math)
 def covar(dt, z1, z2, axis=0, **kwargs):
     """
@@ -310,8 +310,8 @@ def covar(dt, z1, z2, axis=0, **kwargs):
     return _covar_driver(dt, z1, z2, axis=axis, **kwargs)
 
 
-@quack._xarray_eof_wrapper
-@quack._pint_wrapper('=z', ('', '=z', '=z ** 2', 'count'))
+@quack._eof_metadata
+@quant.quantify('=z', ('', '=z', '=z ** 2', 'count'))
 def eof(
     data, /, neof=5, axis_time=-2, axis_space=-1,
     weights=None, percent=False, normalize=False,
@@ -536,8 +536,8 @@ def reof(data, neof=5):  # noqa
     raise NotImplementedError
 
 
-@quack._xarray_hist_wrapper
-@quack._pint_wrapper(('=y', '=y'), 'count')
+@quack._hist_metadata
+@quant.quantify(('=y', '=y'), 'count')
 @docstring.inject_snippets(name='count')
 def hist(bins, y, /, axis=0):
     """
@@ -613,8 +613,8 @@ def hist(bins, y, /, axis=0):
     return context.data
 
 
-@quack._xarray_lls_wrapper
-@quack._pint_wrapper(('=x', '=y'), ('=y / x', '=y / x', '=y'))
+@quack._lls_metadata
+@quant.quantify(('=x', '=y'), ('=y / x', '=y / x', '=y'))
 def linefit(x, y, /, axis=0):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
@@ -695,8 +695,8 @@ def linefit(x, y, /, axis=0):
     return context.data
 
 
-@quack._xarray_lls_wrapper
-@quack._pint_wrapper(('=t', ''), ('=t', '=t', ''))
+@quack._lls_metadata
+@quant.quantify(('=t', ''), ('=t', '=t', ''))
 def rednoisefit(
     dt, a, /, maxlag=None, imaxlag=None, maxlag_fit=None, imaxlag_fit=None, axis=0
 ):
