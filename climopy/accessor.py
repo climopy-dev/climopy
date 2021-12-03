@@ -409,6 +409,7 @@ def _keep_cell_attrs(func):
 def _while_quantified(func):
     """
     Wrapper that temporarily quantifies the data.
+    Compare to `~climopy.quant.while_quantified`.
     """
     @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
@@ -416,11 +417,11 @@ def _while_quantified(func):
         data = self.data
         if isinstance(data, xr.Dataset):
             data = data.copy(deep=False)
-            dequantify = set()
+            quantified = set()
             for da in data.values():
                 if not da.climo._is_quantity and not da.climo._is_bounds:
                     da.climo._quantify()
-                    dequantify.add(da.name)
+                    quantified.add(da.name)
         elif not self._is_quantity:
             data = data.climo.quantify()
 
@@ -430,7 +431,7 @@ def _while_quantified(func):
         # Requantify
         if isinstance(data, xr.Dataset):
             result = result.copy(deep=False)
-            for name in dequantify:
+            for name in quantified:
                 result[name].climo._dequantify()
         elif not self._is_quantity:
             result = result.climo.dequantify()
@@ -443,6 +444,7 @@ def _while_quantified(func):
 def _while_dequantified(func):
     """
     Wrapper that temporarily dequantifies the data.
+    Compare to `~climopy.quant.while_dequantified`.
     """
     @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
@@ -450,10 +452,10 @@ def _while_dequantified(func):
         data = self.data
         if isinstance(data, xr.Dataset):
             data = data.copy(deep=False)
-            quantify = {}
+            dequantified = {}
             for da in data.values():
                 if da.climo._is_quantity:
-                    quantify[da.name] = encode_units(da.data.units)
+                    dequantified[da.name] = encode_units(da.data.units)
                     da.climo._dequantify()
         elif self._is_quantity:
             units = encode_units(data.data.units)
@@ -467,7 +469,7 @@ def _while_dequantified(func):
         # setdefault to prevent overwriting them!
         if isinstance(data, xr.Dataset):
             result = result.copy(deep=False)
-            for name, units in quantify.items():
+            for name, units in dequantified.items():
                 result[name].attrs.setdefault('units', units)
                 result[name].climo._quantify()
         elif self._is_quantity:
@@ -704,7 +706,7 @@ class _CFDatasetAccessor(
 
 class _GroupByQuantified(object):
     """
-    A unit-friendly ``.groupby`` indexers.ClimoAccessor.groupby` indexer.
+    A unit-friendly `ClimoAccessor.groupby` indexer.
     """
     def __init__(self, obj, group, *args, **kwargs):
         # Infer non-data group
@@ -753,7 +755,7 @@ class _DatasetGroupByQuantified(
 
 class _DataArrayLocIndexerQuantified(object):
     """
-    A unit-friendly `.loc` indexer for `xarray.DataArray`\\ s.
+    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.DataArray`\\ s.
     """
     def __init__(self, data_array):
         self._data = data_array
@@ -785,7 +787,7 @@ class _DataArrayLocIndexerQuantified(object):
 
 class _DatasetLocIndexerQuantified(object):
     """
-    A unit-friendly `.loc` indexer for `xarray.Dataset`\\ s.
+    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.Dataset`\\ s.
     """
     def __init__(self, dataset):
         self._data = dataset
@@ -799,7 +801,7 @@ class _DatasetLocIndexerQuantified(object):
 
 class _CoordsQuantified(object):
     """
-    A unit-friendly `.coords` container.
+    A unit-friendly `ClimoAccessor.coords` container.
     """
     def __init__(self, data, registry=vreg):
         """

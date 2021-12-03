@@ -141,7 +141,7 @@ def _standardize_x_y(x, y, /, axis=0):
 
 
 @quack._xyy_metadata
-@quant.quantify(('=x', '=y'), '=x * y')
+@quant.while_dequantified(('=x', '=y'), '=x * y')
 @docstring.inject_snippets(name='integral')
 def integral(x, y, /, y0=0, axis=0):
     """
@@ -350,7 +350,7 @@ def _deriv_third(
 
 
 @quack._xyy_metadata
-@quant.quantify(('=x', '=y'), '=y / x ** {order}', order=1)
+@quant.while_dequantified(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.inject_snippets(name='derivative')
 def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=False):
     """
@@ -416,7 +416,7 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=Fal
 
 
 @quack._xyy_metadata
-@quant.quantify(('=x', '=y'), '=y / x ** {order}', order=1)
+@quant.while_dequantified(('=x', '=y'), '=y / x ** {order}', order=1)
 @docstring.inject_snippets(name='derivative')
 def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=False):
     r"""
@@ -498,7 +498,7 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=F
 
 
 @quack._xyxy_metadata
-@quant.quantify(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
+@quant.while_dequantified(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
 @docstring.inject_snippets(name='derivative')
 def deriv_half(x, y, /, order=1, axis=0, cyclic=False):
     """
