@@ -127,7 +127,7 @@ def _pint_parse_args(units, *, quantify=False):
         units = {}
         definitions = {}
         for key, idx in independents.items():
-            arg  = args[idx]
+            arg = args[idx]
             unit = arg.units if isinstance(arg, pint.Quantity) else ureg.dimensionless
             units[idx] = definitions[key] = unit
         for idx in dependents:
@@ -231,7 +231,7 @@ def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_de
             n_expect = len(units_out)
             if not is_container_out and isinstance(result, tuple):
                 raise ValueError('Got tuple of return values, expected one value.')
-            if is_container_out and n_result != len(units_out):
+            if is_container_out and n_result != len(units_out_fmt):
                 raise ValueError(f'Expected {n_expect} return values, got {n_result}.')
 
             # Quantify output, but *only* if input were quantities
@@ -245,9 +245,11 @@ def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_de
                     unit = _pint_replace_units(container, definitions)
                 else:
                     unit = pint.Unit(container)
-                if result_quantify and not isinstance(res, pint.Quantity):
+                if isinstance(res, pint.Quantity):
+                    res = res.to(unit)
+                else:
                     res = ureg.Quantity(res, unit)
-                elif not result_quantify and isinstance(res, pint.Quantity):
+                if not result_quantify:
                     res = res.magnitude
                 result_new.append(res)
 
