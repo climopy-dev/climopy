@@ -267,7 +267,7 @@ def _covar_driver(
 
 
 @quack._covar_metadata
-@quant.quantify(('=t', '=z'), ('=t', ''))
+@quant.while_dequantified(('=t', '=z'), ('=t', ''))
 @docstring.inject_snippets(name='autocorrelation', data=_var_data, math=_corr_math)
 def autocorr(dt, z, axis=0, **kwargs):
     """
@@ -279,7 +279,7 @@ def autocorr(dt, z, axis=0, **kwargs):
 
 
 @quack._covar_metadata
-@quant.quantify(('=t', '=z'), ('=t', '=z ** 2'))
+@quant.while_dequantified(('=t', '=z'), ('=t', '=z ** 2'))
 @docstring.inject_snippets(name='autocovariance', data=_var_data, math=_covar_math)
 def autocovar(dt, z, axis=0, **kwargs):
     """
@@ -290,7 +290,7 @@ def autocovar(dt, z, axis=0, **kwargs):
 
 
 @quack._covar_metadata
-@quant.quantify(('=t', '=z1', '=z2'), ('=t', ''))
+@quant.while_dequantified(('=t', '=z1', '=z2'), ('=t', ''))
 @docstring.inject_snippets(name='correlation', data=_covar_data, math=_corr_math)
 def corr(dt, z1, z2, axis=0, **kwargs):
     """
@@ -301,7 +301,7 @@ def corr(dt, z1, z2, axis=0, **kwargs):
 
 
 @quack._covar_metadata
-@quant.quantify(('=t', '=z1', '=z2'), ('=t', '=z1 * z2'))
+@quant.while_dequantified(('=t', '=z1', '=z2'), ('=t', '=z1 * z2'))
 @docstring.inject_snippets(name='covariance', data=_covar_data, math=_covar_math)
 def covar(dt, z1, z2, axis=0, **kwargs):
     """
@@ -311,7 +311,7 @@ def covar(dt, z1, z2, axis=0, **kwargs):
 
 
 @quack._eof_metadata
-@quant.quantify('=z', ('', '=z', '=z ** 2', 'count'))
+@quant.while_dequantified('=z', ('', '=z', '=z ** 2', 'count'))
 def eof(
     data, /, neof=5, axis_time=-2, axis_space=-1,
     weights=None, percent=False, normalize=False,
@@ -537,7 +537,7 @@ def reof(data, neof=5):  # noqa
 
 
 @quack._hist_metadata
-@quant.quantify(('=y', '=y'), 'count')
+@quant.while_dequantified(('=y', '=y'), 'count')
 @docstring.inject_snippets(name='count')
 def hist(bins, y, /, axis=0):
     """
@@ -614,7 +614,7 @@ def hist(bins, y, /, axis=0):
 
 
 @quack._lls_metadata
-@quant.quantify(('=x', '=y'), ('=y / x', '=y / x', '=y'))
+@quant.while_dequantified(('=x', '=y'), ('=y / x', '=y / x', '=y'))
 def linefit(x, y, /, axis=0):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
@@ -696,7 +696,7 @@ def linefit(x, y, /, axis=0):
 
 
 @quack._lls_metadata
-@quant.quantify(('=t', ''), ('=t', '=t', ''))
+@quant.while_dequantified(('=t', ''), ('=t', '=t', ''))
 def rednoisefit(
     dt, a, /, maxlag=None, imaxlag=None, maxlag_fit=None, imaxlag_fit=None, axis=0
 ):

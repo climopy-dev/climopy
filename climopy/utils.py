@@ -97,7 +97,7 @@ def calendar(dt, /):
 
 
 @quack._find_metadata
-@quant.quantify(('=x', '=y'), ('=x', '=y'))
+@quant.while_dequantified(('=x', '=y'), ('=x', '=y'))
 def find(
     x, y, /, axis=-1, axis_track=None, track=True, diff=None, which='both', centered=True,  # noqa: E501
     **kwargs,

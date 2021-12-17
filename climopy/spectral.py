@@ -164,7 +164,7 @@ References
 docstring.snippets['notes_power'] = _notes_power
 
 
-@quant.quantify(('=x', '', '=x'), '')
+@quant.while_dequantified(('=x', '', '=x'), '')
 def butterworth(dx, order, cutoff, /, btype='low'):
     """
     Applies Butterworth filter to data. Since this is a *recursive*
@@ -218,7 +218,7 @@ def butterworth(dx, order, cutoff, /, btype='low'):
     return b, a
 
 
-@quant.quantify(('=x', '', '=x'), '')
+@quant.while_dequantified(('=x', '', '=x'), '')
 def lanczos(dx, width, cutoff, /):
     """
     Returns *coefficients* for Lanczos high-pass filter with
@@ -274,7 +274,7 @@ def lanczos(dx, width, cutoff, /):
 
 
 @quack._yy_metadata
-@quant.quantify(('=x', ''), '=x')
+@quant.while_dequantified(('=x', ''), '=x')
 def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     """
     Apply scipy.signal.lfilter to data. By default this does *not* pad
@@ -366,7 +366,7 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
 
 
 @quack._yy_metadata
-@quant.quantify(('=y', ''), '=y')
+@quant.while_dequantified(('=y', ''), '=y')
 def harmonics(y, n, /, axis=-1):
     """
     Select the first Fourier harmonics of the time series.
@@ -400,7 +400,7 @@ def harmonics(y, n, /, axis=-1):
 
 
 @quack._yy_metadata
-@quant.quantify(('=y', ''), '=y')
+@quant.while_dequantified(('=y', ''), '=y')
 def highpower(y, n, /, axis=-1):
     """
     Select only the highest power frequencies. Useful for crudely reducing noise.
@@ -680,7 +680,7 @@ def _power2d_driver(
 
 
 @quack._power_metadata
-@quant.quantify(('=x', '=y'), ('=1 / x', '=y ** 2'))
+@quant.while_dequantified(('=x', '=y'), ('=1 / x', '=y ** 2'))
 @docstring.inject_snippets(data=_power_data)
 def power(dx, y1, /, axis=0, **kwargs):
     """
@@ -739,7 +739,7 @@ def power(dx, y1, /, axis=0, **kwargs):
 
 
 @quack._power_metadata
-@quant.quantify(
+@quant.while_dequantified(
     ('=x', '=y1', '=y2'),
     ('=1 / x', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
@@ -820,7 +820,7 @@ def copower(dx, y1, y2, /, axis=0, **kwargs):
 
 
 @quack._power2d_metadata
-@quant.quantify(('=x1', '=x2', '=y'), ('=1 / x1', '=1 / x2', '=y ** 2'))
+@quant.while_dequantified(('=x1', '=x2', '=y'), ('=1 / x1', '=1 / x2', '=y ** 2'))
 @docstring.inject_snippets(data=_power_data)
 def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
     """
@@ -845,7 +845,7 @@ def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
 
 
 @quack._power2d_metadata
-@quant.quantify(
+@quant.while_dequantified(
     ('=x1', '=x2', '=y1', '=y2'),
     ('=1 / x1', '=1 / x2', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
@@ -873,7 +873,7 @@ def copower2d(dx_lon, dx_time, y1, y2, /, axis_lon=0, axis_time=-1, **kwargs):
     )
 
 
-@quant.quantify(('=x', '', ''), ('', ''))
+@quant.while_dequantified(('=x', '', ''), ('', ''))
 def response(dx, b, a=1, /, n=1000, simple=False):
     """
     Calculate the response function given the *a* and *b* coefficients for some
@@ -940,7 +940,7 @@ def response(dx, b, a=1, /, n=1000, simple=False):
 
 
 @quack._yy_metadata
-@quant.quantify(('=y', ''), '=y')
+@quant.while_dequantified(('=y', ''), '=y')
 def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     """
     Apply running average to array.
@@ -1001,7 +1001,7 @@ def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     return np.moveaxis(yr, -1, axis)
 
 
-@quant.quantify('=x', '=x')
+@quant.while_dequantified('=x', '=x')
 def waves(x, /, wavenums=None, wavelengths=None, phase=None, state=None):
     """
     Compose array of sine waves. Useful for testing the performance of filters.
