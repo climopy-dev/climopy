@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Convenient wrappers for python APIs used to download climatological
-datasets.
+Convenient wrappers for python APIs used to download
+climatological datasets.
 
 Warning
 -------
@@ -19,6 +19,24 @@ __all__ = [
     'ncar',
     'satellite',
 ]
+
+
+def cmip(url=None):
+    """
+    Download CMIP5 model data.
+
+    Parameters
+    ----------
+    url : str, default: 'https://esgf-node.llnl.gov/esg-search'
+        The search URL.
+    """
+    # Data requests
+    from pyesgf.search import SearchConnection
+    if url is None:
+        url = 'https://esgf-node.llnl.gov/esg-search'
+    conn = SearchConnection(url, distrib=True)
+    ctx = conn.new_context()
+    return ctx
 
 
 def era(
@@ -361,17 +379,6 @@ def ncar():
 def satellite():
     """
     Download satellite data.
-
-    Warning
-    -------
-    Not yet implemented.
-    """
-    raise NotImplementedError
-
-
-def cmip():
-    """
-    Download CMIP5 model data.
 
     Warning
     -------
