@@ -17,7 +17,7 @@ import numpy as np
 import scipy.signal as signal
 
 from .internals import ic  # noqa: F401
-from .internals import docstring, quack, quant, warnings
+from .internals import context, docstring, quack, quant, warnings
 
 __all__ = [
     'butterworth',
@@ -322,9 +322,9 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     n_half = (max(len(a), len(b)) - 1) // 2
 
     # Apply filter 'n' times to each sample
-    with quack._ArrayContext(x, push_right=axis) as context:
+    with context._ArrayContext(x, push_right=axis) as ctx:
         # Take mean
-        y_filtered = context.data.copy()
+        y_filtered = ctx.data.copy()
         y_mean = y_filtered.mean(axis=1, keepdims=True)
 
         # Filter data
@@ -359,10 +359,10 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
             y_filtered = np.concatenate((y_left, y_filtered, y_right), axis=-1)
 
         # Replace context data
-        context.replace_data(y_filtered)
+        ctx.replace_data(y_filtered)
 
     # Return
-    return context.data
+    return ctx.data
 
 
 @quack._yy_metadata
@@ -512,9 +512,9 @@ def _power_driver(
         raise ValueError(f'Got conflicting shapes for y1 {y1.shape} and y2 {y2.shape}.')
 
     # Get copsectrum, quadrature spectrum, and powers for each window
-    with quack._ArrayContext(y1, y2, push_right=axis) as context:
+    with context._ArrayContext(y1, y2, push_right=axis) as ctx:
         # Get window and flattened, trimmed data
-        y1, y2 = context.data
+        y1, y2 = ctx.data
         win, winloc, y1, y2 = _window_data(y1, y2, nperseg=nperseg, wintype=wintype)
         pm = win.size // 2
         nwindows = winloc.size
@@ -579,9 +579,9 @@ def _power_driver(
             arrays = (C, Q, Py1, Py2, Coh, Phi)
 
         # Replace arrays
-        context.replace_data(*arrays)
+        ctx.replace_data(*arrays)
 
-    return (f / dx, *context.data) if copower else (f / dx, context.data)
+    return (f / dx, *ctx.data) if copower else (f / dx, ctx.data)
 
 
 def _power2d_driver(
@@ -606,9 +606,9 @@ def _power2d_driver(
         raise ValueError(f'Shapes of y1 {y1.shape} and y2 {y2.shape} must match.')
 
     # Permute and flatten
-    with quack._ArrayContext(y1, y2, push_right=(axis_time, axis_lon)) as context:
+    with context._ArrayContext(y1, y2, push_right=(axis_time, axis_lon)) as ctx:
         # Get window and flattened, trimmed data
-        y1, y2 = context.data
+        y1, y2 = ctx.data
         win, winloc, y1, y2 = _window_data(y1, y2, nperseg=nperseg, wintype=wintype)
         pm = win.size // 2
         nwindows = winloc.size
@@ -670,13 +670,13 @@ def _power2d_driver(
             arrays = (C, Q, Py1, Py2, Coh, Phi)
 
         # Replace context data
-        context.replace_data(*arrays)
+        ctx.replace_data(*arrays)
 
     # Return unflattened data
     if copower:
-        return (fx_lon / dx_lon, fx_time / dx_time, *context.data)
+        return (fx_lon / dx_lon, fx_time / dx_time, *ctx.data)
     else:
-        return (fx_lon / dx_lon, fx_time / dx_time, context.data)
+        return (fx_lon / dx_lon, fx_time / dx_time, ctx.data)
 
 
 @quack._power_metadata

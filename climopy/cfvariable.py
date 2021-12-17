@@ -86,7 +86,7 @@ class CFVariable(object):
 
     def __eq__(self, other):
         """
-        Whether quantities are equivalent.
+        Whether variables are equivalent.
         """
         if isinstance(other, str):
             if not self._registry:
@@ -110,9 +110,8 @@ class CFVariable(object):
         elif all(s != o for s, o in zip(self_names, other_names)):
             return False
         else:
-            raise RuntimeError(
-                f'Partial overlap between {self} and {other}. Equality is unclear.'
-            )
+            warnings._warn_climopy(f'Partial overlap between {self} and {other}.')
+            return True
 
     def __iter__(self):
         """

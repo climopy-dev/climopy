@@ -13,7 +13,7 @@ In the meantime, feel free to copy and modify it.
 import numpy as np
 
 from . import const
-from .internals import docstring, quack, warnings
+from .internals import context, docstring, warnings
 
 __all__ = [
     'eqlat', 'waq', 'waqlocal',
@@ -133,14 +133,14 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
     # TODO: Use C-style time x plev x lat x lon instead as prototypical dimensionality
     mass = sigma is not None
     arrays = (q, sigma) if mass else (q,)
-    with quack._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
+    with context._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as ctx:
         # Get flattened arrays
         if not mass:
-            q = context.data
+            q = ctx.data
         else:
             # Get cumulative mass from equator to pole at each latitude
             # and add them together
-            q, sigma = context.data
+            q, sigma = ctx.data
             mass = sigma * areas[..., None]
             masscum = mass.cumsum(axis=1).sum(axis=0, keepdims=True)
 
@@ -175,10 +175,10 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
                     bands[0, n, k] = np.interp(mass, masscumk, lat)
 
         # Unshape data
-        context.replace_data(bands, q_bands)
+        ctx.replace_data(bands, q_bands)
 
     # Return unflattened data
-    return context.data
+    return ctx.data
 
 
 @docstring.inject_snippets()
@@ -214,16 +214,16 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
         arrays.append(omega)
     if has_sigma:
         arrays.append(sigma)
-    with quack._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
+    with context._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as ctx:
         # Get flattened data
         if has_omega and has_sigma:
-            q, omega, sigma = context.data
+            q, omega, sigma = ctx.data
         elif has_omega:
-            q, omega = context.data
+            q, omega = ctx.data
         elif has_sigma:
-            q, sigma = context.data
+            q, sigma = ctx.data
         else:
-            q = context.data
+            q = ctx.data
 
         # Get equivalent latiitudes
         bands, q_bands = eqlat(lon, lat, q, sigma=sigma, skip=skip)
@@ -304,10 +304,10 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
                 waq[0, :, k] = np.interp(lat, bands[0, ~nanfilt, k], waq_k[~nanfilt])
 
         # Reapply data
-        context.replace_data(waq)
+        ctx.replace_data(waq)
 
     # Return
-    waq = context.waq
+    waq = ctx.waq
     if flip:
         waq = np.flip(waq, axis=1)
     return waq
@@ -353,16 +353,16 @@ def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
         arrays.append(sigma)
 
     # Flatten (eqlat can do this, but not necessary here)
-    with quack._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as context:
+    with context._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as ctx:
         # Get flattened data
         if has_omega and has_sigma:
-            q, omega, sigma = context.data
+            q, omega, sigma = ctx.data
         elif has_omega:
-            q, omega = context.data
+            q, omega = ctx.data
         elif has_sigma:
-            q, sigma = context.data
+            q, sigma = ctx.data
         else:
-            q = context.data
+            q = ctx.data
 
         # Get equivalent latiitudes
         bands, q_bands = eqlat(lon, lat, q, sigma=sigma, skip=skip)
@@ -429,10 +429,10 @@ def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
             waq[l, :, k] = np.interp(lat, bands[0, :, k], waq_k[l, :])
 
         # Replace context data
-        context.replace_data(waq)
+        ctx.replace_data(waq)
 
     # Return
-    waq = context.data
+    waq = ctx.data
     if flip:
         waq = np.flip(waq, axis=1)
     return waq

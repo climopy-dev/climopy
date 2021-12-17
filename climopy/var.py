@@ -12,7 +12,7 @@ import scipy.linalg as linalg
 import scipy.optimize as optimize
 
 from .internals import ic  # noqa: F401
-from .internals import docstring, quack, quant
+from .internals import context, docstring, quack, quant
 
 __all__ = [
     'autocorr',
@@ -149,8 +149,8 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
     # Nested loop
     if state is None:
         state = np.random
-    with quack._ArrayContext(data, push_left=0) as context:
-        data = context.data
+    with context._ArrayContext(data, push_left=0) as ctx:
+        data = ctx.data
         data[0, :] = 0.0  # initialize
         for i in range(data.shape[-1]):
             eps = state.normal(loc=0, scale=1, size=ntime)
@@ -158,7 +158,7 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
                 data[t, i] = a * data[t - 1, i] + b * eps[t - 1]
 
     # Return
-    data = context.data
+    data = ctx.data
     if len(nsamples) == 1 and nsamples[0] == 1:
         data = data.squeeze()
     return mean + stdev * data  # rescale to have specified stdeviation/mean
@@ -441,15 +441,15 @@ def eof(
     # Turn matrix in to extra (K) x time (M) x space (N)
     # Requires flatening space axes into one, and flattening extra axes into one
     shape_orig = data.shape
-    with quack._ArrayContext(
+    with context._ArrayContext(
         data, dataw,
         push_left=axis_extra,
         push_right=(axis_time, *axis_space),
         nflat_right=len(axis_space),  # flatten space axes
         nflat_left=data.ndim - len(axis_space) - 1,  # flatten
-    ) as context:
+    ) as ctx:
         # Retrieve reshaped data
-        data, dataw = context.data
+        data, dataw = ctx.data
         k = data.shape[0]  # ensure 3D
         if data.ndim != 3 or ntime != data.shape[1] or nspace != data.shape[2]:
             raise RuntimeError(
@@ -507,10 +507,10 @@ def eof(
                 evals[i, :, 0, 0] = l[::-1]  # actual eigenvalues
 
         # Replace context data with new dimension inserted on left side
-        context.replace_data(pcs, projs, evals, nstars, insert_left=1)
+        ctx.replace_data(pcs, projs, evals, nstars, insert_left=1)
 
     # Return data restored to original dimensionality
-    return context.data
+    return ctx.data
 
 
 def eot(data, neof=5):  # noqa
@@ -597,9 +597,9 @@ def hist(bins, y, /, axis=0):
     if bins.ndim != 1:
         raise ValueError('Bins must be 1-dimensional.')
 
-    with quack._ArrayContext(y, push_right=axis) as context:
+    with context._ArrayContext(y, push_right=axis) as ctx:
         # Get flattened data
-        y = context.data
+        y = ctx.data
         yhist = np.empty((y.shape[0], bins.size - 1))
 
         # Take histogram
@@ -607,10 +607,10 @@ def hist(bins, y, /, axis=0):
             yhist[k, :] = np.histogram(y[k, :], bins=bins)[0]
 
         # Replace data
-        context.replace_data(yhist)
+        ctx.replace_data(yhist)
 
     # Return unflattened data
-    return context.data
+    return ctx.data
 
 
 @quack._lls_metadata
@@ -665,11 +665,11 @@ def linefit(x, y, /, axis=0):
             f'of y-shape {y.shape}.'
         )
 
-    with quack._ArrayContext(y, push_right=axis) as context:
+    with context._ArrayContext(y, push_right=axis) as ctx:
         # Get regression coefficients. Flattened data is shape (K, N)
         # where N is regression dimension. Permute to (N, K) then back again.
         # N gets replaced with length-2 dimension (slope, offset).
-        y = context.data
+        y = ctx.data
         params, covar = np.polyfit(x, y.T, deg=1, cov=True)
         params = np.fliplr(params.T)  # flip to (offset column 0, slope column 1)
 
@@ -690,9 +690,9 @@ def linefit(x, y, /, axis=0):
         stderr = np.sqrt(scale * covar[0, 0, :, None])
 
         # Replace context data
-        context.replace_data(slope, stderr, fit)
+        ctx.replace_data(slope, stderr, fit)
 
-    return context.data
+    return ctx.data
 
 
 @quack._lls_metadata
@@ -783,9 +783,9 @@ def rednoisefit(
     if maxlag_fit is not None:
         imaxlag_fit = np.round(maxlag_fit / dt).astype(int)
 
-    with quack._ArrayContext(a, push_right=axis) as context:
+    with context._ArrayContext(a, push_right=axis) as ctx:
         # Set defaults
-        a = context.data
+        a = ctx.data
         nlag = a.shape[1] - 1  # not including 0-lag entry
         nextra = a.shape[0]
         imaxlag = max(1, nlag) if imaxlag is None else min(imaxlag, nlag)
@@ -813,10 +813,10 @@ def rednoisefit(
             fit[i, :] = np.exp(-dt * lags_fit / tau)  # best-fit spectrum
 
         # Replace context data
-        context.replace_data(taus, sigmas, fit)
+        ctx.replace_data(taus, sigmas, fit)
 
     # Return permuted data
-    return context.data
+    return ctx.data
 
 
 def wilks(percentiles, alpha=0.10):

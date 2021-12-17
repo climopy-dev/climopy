@@ -11,7 +11,7 @@ import xarray as xr
 
 from .diff import deriv_half, deriv_uneven
 from .internals import ic  # noqa: F401
-from .internals import quack, quant, warnings
+from .internals import context, quack, quant, warnings
 
 __all__ = [
     'calendar',
@@ -193,12 +193,12 @@ def find(
     if x.size > 2 and x[1] - x[0] < 0:  # TODO: check this works?
         which = 'negpos' if which == 'posneg' else 'posneg' if which == 'negpos' else which  # noqa: E501
 
-    with quack._ArrayContext(y, push_right=(axis_track, axis)) as context:
+    with context._ArrayContext(y, push_right=(axis_track, axis)) as ctx:
         # Get flattened data and iterate over extra dimensions
         # NOTE: Axes are pushed to right in the specified order. Result: first axis
         # contains flattened extra dimensions, second axis is dimension along which
         # we are tracking zeros, and third axis is dimension across which we find zeros.
-        y = context.data
+        y = ctx.data
         x0s, y0s = [], []
         nextra, nalong, nreduce = y.shape
         for i in range(nextra):
@@ -287,10 +287,10 @@ def find(
         y0s = np.vstack([_[None, ...] for _ in map(pad, y0s)])
 
         # Add back as new data
-        context.replace_data(x0s, y0s)
+        ctx.replace_data(x0s, y0s)
 
     # Return unfurled data
-    x0s, y0s = context.data
+    x0s, y0s = ctx.data
     for _ in range(3 - ndim):
         x0s, y0s = x0s[0, ...], y0s[0, ...]
     return x0s, y0s

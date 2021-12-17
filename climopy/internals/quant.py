@@ -18,7 +18,7 @@ REGEX_FORMAT = re.compile(r'\{([^{}]+?)\}')  # '+?' is non-greedy, group inside 
 __all__ = ['quantify']
 
 
-def _pint_units_container(arg):
+def _units_container(arg):
     """
     Convert a unit compatible type to a UnitsContainer, checking if it is string field
     prefixed with an equal (which is considered a reference). Return the unit container
@@ -29,7 +29,7 @@ def _pint_units_container(arg):
     return putil.to_units_container(arg, ureg), False
 
 
-def _pint_replace_units(original_units, values_by_name):
+def _replace_units(original_units, values_by_name):
     """
     Convert a unit compatible type to a UnitsContainer.
     """
@@ -50,7 +50,7 @@ def _pint_replace_units(original_units, values_by_name):
     return getattr(q, '_units', putil.UnitsContainer({}))
 
 
-def _pint_parse_args(args):
+def _parse_args(args):
     """
     Parse pint wrapper arguments.
     """
@@ -59,7 +59,7 @@ def _pint_parse_args(args):
     defs_args_ndx = set()  # (i.e. names that appear alone and for the first time)
     dependent_args_ndx = set()  # arguments which depend on others
     unit_args_ndx = set()  # arguments which have units.
-    args_as_uc = [_pint_units_container(arg) for arg in args]
+    args_as_uc = [_units_container(arg) for arg in args]
 
     # Check for references in args, remove None values
     for ndx, (arg, is_ref) in enumerate(args_as_uc):
@@ -108,11 +108,11 @@ def _pint_parse_args(args):
         # Second pass: calculate derived values based on named values
         for ndx in dependent_args_ndx:
             arg = args[ndx]
-            assert _pint_replace_units(args_as_uc[ndx][0], args_by_name) is not None
+            assert _replace_units(args_as_uc[ndx][0], args_by_name) is not None
             args_new[ndx] = ureg._convert(
                 getattr(arg, '_magnitude', arg),
                 getattr(arg, '_units', putil.UnitsContainer({})),
-                _pint_replace_units(args_as_uc[ndx][0], args_by_name),
+                _replace_units(args_as_uc[ndx][0], args_by_name),
             )
 
         # Third pass: convert other arguments
@@ -150,11 +150,10 @@ def quantify(units_in, units_out, strict=False, **fmt_defaults):
     Parameters
     ----------
     units_in : unit-like, string, or list thereof
-        A pint unit like `~pint.UnitRegistry.meter`, a relational string
-        like ``'=x ** 2'``, or list thereof, specifying the units of the
-        input data. You can put keyword arguments into the unit specification
-        with, for example ``quantify(('=x', '=y'), '=y / x ** {{n}}')``
-        for the ``n``th derivative.
+        A pint unit like `~pint.UnitRegistry.meter`, a relational string like
+        ``'=x^2'``, or list thereof, specifying the units of the input data. You
+        can put keyword arguments into the unit specification with, for example
+        ``quantify(('=x', '=y'), '=y / x^{{n}}')`` for the ``n``th derivative.
     units_out : unit-like, string, or list thereof
         As with `units_in` but for the output arguments.
     strict : bool, optional
@@ -244,7 +243,7 @@ def quantify(units_in, units_out, strict=False, **fmt_defaults):
                     units_fmt.append(unit)
 
             # Dequantify input
-            converter = _pint_parse_args(units_in_fmt)
+            converter = _parse_args(units_in_fmt)
             args_new, args_by_name = converter(args, strict)
 
             # Call main function and check output
@@ -259,10 +258,10 @@ def quantify(units_in, units_out, strict=False, **fmt_defaults):
             # Quantify output, but *only* if input was quantities
             if not is_container_out:
                 result = (result,)
-            pairs = tuple(_pint_units_container(arg) for arg in units_out_fmt)
+            pairs = tuple(_units_container(arg) for arg in units_out_fmt)
             no_quantities = not any(isinstance(arg, ureg.Quantity) for arg in args)
             units = tuple(
-                _pint_replace_units(unit, args_by_name) if is_ref else unit
+                _replace_units(unit, args_by_name) if is_ref else unit
                 for (unit, is_ref) in pairs
             )
             result = tuple(

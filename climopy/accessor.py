@@ -3817,8 +3817,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         kwargs.update(abs=False, arg=True)
         kwargs.setdefault('which', 'both')
+        data = self.data
         if value is not None:
-            data = self.data - value  # find points meeting this value (default 0)
+            data = data - value  # find points meeting this value (default 0)
         return data.climo._find_extrema(dim, **kwargs)
 
     @_CFAccessor._clear_cache
