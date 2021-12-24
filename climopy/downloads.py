@@ -21,6 +21,71 @@ __all__ = [
 ]
 
 
+# CMIP constants. Results of get_facet_options() for SearchContext(project='CMIP5')
+# and SearchContext(project='CMIP6') using https://esgf-node.llnl.gov/esg-search
+# for the SearchConnection URL. Conventions changed between projects so e.g.
+# 'experiment', 'ensemble', 'cmor_table', and 'time_frequency' in CMIP5 must be
+# changed to 'experiment_id', 'variant_label', 'table_id', and 'frequency' in CMIP6.
+# Note 'member_id' is equivalent to 'variant_label' if 'sub_experiment_id' is unset
+# and for some reason 'variable' and 'variable_id' are kepts synonyms in CMIP5.
+# URL https://esgf-node.llnl.gov/esg-search:     11900116 hits for CMIP6 (use this one!)
+# URL https://esgf-data.dkrz.de/esg-search:      01009809 hits for CMIP6
+# URL https://esgf-node.ipsl.upmc.fr/esg-search: 01452125 hits for CMIP6
+CMIP5_FACETS = [
+    'access', 'cera_acronym', 'cf_standard_name', 'cmor_table', 'data_node',
+    'ensemble', 'experiment', 'experiment_family', 'forcing', 'format',
+    'index_node', 'institute', 'model', 'product', 'realm', 'time_frequency',
+    'variable', 'variable_long_name', 'version'
+]
+CMIP6_FACETS = [
+    'access', 'activity_drs', 'activity_id', 'branch_method', 'creation_date',
+    'cf_standard_name', 'data_node', 'data_specs_version', 'datetime_end',
+    'experiment_id', 'experiment_title', 'frequency', 'grid', 'grid_label',
+    'index_node', 'institution_id', 'member_id', 'nominal_resolution', 'realm',
+    'short_description', 'source_id', 'source_type', 'sub_experiment_id', 'table_id',
+    'variable', 'variable_id', 'variable_long_name', 'variant_label', 'version'
+]
+
+# ECMWF constants. Update this list if you modify script for ERA5, etc.
+# NOTE: Some variables are technically on "levels" like hybrid
+# level surface pressure but we still need 60 "levels".
+# TODO: Fix the 12 hour thing. Works for some parameters (e.g. diabatic
+# heating, has 3, 6, 9, 12) but other parameters have 0, 6, 12, 18.
+ECMWF_LEVOPTS = {
+    'ml': range(1, 137 + 1),
+    'pl': [1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 775, 800, 825, 850, 875, 900, 925, 950, 975, 1000],  # noqa: E501
+    'pt': [265, 270, 285, 300, 315, 330, 350, 370, 395, 430, 475, 530, 600, 700, 850],
+    'pv': None,
+    'sfc': None,
+}
+ECMWF_VAROPTS = {
+    'tdt': '110.162',  # diabatic temp tendency
+    'msp': '152.128',  # model-level surface pressure (use for tdt etc., requires lev=1)
+    'sp': '134.128',  # surface pressure
+    't2m': '167.128',  # 2 meter air temp
+    'd2m': '168.128',  # 2 meter dew point
+    'sst': '34.128',  # sea surface temp
+    'msl': '151.128',  # sea level pressure
+    'slp': '151.128',
+    'z': '129.128',  # geopotential
+    't': '130.128',  # temp
+    'u': '131.128',  # u wind
+    'v': '132.128',  # v wind
+    'w': '135.128',  # w wind
+    'q': '133.128',  # specific humidity
+    'r': '157.128',  # relative humidity
+    'vo': '138.128',  # relative vorticity
+    'vort': '138.128',
+    'zeta': '138.128',
+    'pt': '3.128',  # potential temp (available on 2PVU surface)
+    'theta': '3.128',
+    'p': '54.128',  # pressure (availble on potential temp and 2PVU surfaces)
+    'pres': '54.128',
+    'pv': '60.128',  # potential voriticy (available on pressure and potential temp)
+    'precip': '228.128',  # precipitation accumulation
+}
+
+
 def cmip(url=None):
     """
     Download CMIP5 model data.
@@ -62,9 +127,9 @@ def era(
     filename='era.nc',
 ):
     """
-    Retrieves ERA reanalysis data using the provided API. User must have, in
-    home directory, a file named ``.ecmwfapirc``. See API documentation, but
-    should look like:
+    Retrieve ERA reanalysis data using the provided API. User must have a file
+    named ``.ecmwfapirc`` in the home directory. Please see the API documentation
+    for detalis, but it should look something like this:
 
     ::
 
@@ -88,8 +153,8 @@ def era(
     stream : {'oper', 'moda', 'mofm', 'mdfa', 'mnth'}
         The data stream.
     levtype : {'ml', 'pl', 'sfc', 'pt', 'pv'}
-        Level type: model, pressure, surface, potential temperature, and 2PVU
-        surface, respectively.
+        Level type: model, pressure, surface, potential
+        temperature, and 2PVU surface, respectively.
     levrange : float or (float, float), optional
         Individual level or range of levels.
     levs : float or ndarray, optional
@@ -137,50 +202,16 @@ def era(
     # https://rda.ucar.edu/datasets/ds627.0/docs/era_interim_grib_table.html)
     if isinstance(params, str) or not np.iterable(params):
         params = (params,)
-    params = [
-        {
-            'tdt': '110.162',
-            # model-level surface pressure; use this whenever getting tdt and stuff
-            # (requires lev=1)
-            'msp': '152.128',
-            'sp': '134.128',  # surface pressure
-            't2m': '167.128',  # 2m temp
-            'd2m': '168.128',  # 2m dew point
-            'sst': '34.128',  # sst
-            'msl': '151.128',  # sea level pressure
-            'slp': '151.128',  # same
-            'z': '129.128',  # geopotential
-            't': '130.128',  # temp
-            'u': '131.128',  # u wind
-            'v': '132.128',  # v wind
-            'w': '135.128',  # w wind
-            'q': '133.128',  # specific humidity
-            'r': '157.128',  # relative humidity
-            'vort': '138.128',  # relative vorticity
-            'vo': '138.128',  # same
-            'zeta': '138.128',  # same
-            'pt': '3.128',  # potential temp (available on 2pvu surf)
-            'theta': '3.128',  # same
-            'p': '54.128',  # pressure (availble on pt, 2pvu surfaces)
-            'pres': '54.128',  # same
-            # potential vorticity (available on p, pt surfaces)
-            'pv': '60.128',
-            'precip': '228.128',
-        }.get(p)
-        for p in params
-    ]  # returns generator object for each param
+    params = [ECMWF_VAROPTS.get(p, None) for p in params]
     if None in params:
-        raise ValueError(
-            'MARS id for variable is unknown (might need to be added to this script).'
-        )
+        raise ValueError('MARS ID for param unknown (consider adding to this script).')
     params = '/'.join(params)
 
-    # Time selection as various RANGES or LISTS
-    # Priority; just use daterange as datetime or date objects
+    # Time selection as various ranges or lists
+    # Priority. Use daterange as datetime or date objects
     if daterange is not None:
         if not np.iterable(daterange):
-            daterange = (daterange,)  # want a SINGLE DAY
-        # options for monthly or daily data
+            daterange = (daterange,)  # want a single day
         if stream != 'oper':
             y0, m0, y1, m1 = (
                 daterange[0].year,
@@ -197,10 +228,9 @@ def era(
             # MARS will get calendar days in range
             dates = '/to/'.join(d.strftime('%Y%m%d') for d in daterange)
 
-    # Alternative; list the years/months desired, and if synoptic, get all
-    # calendar days within
+    # Alternative. List years/months desired, and if synoptic, get all days within
     else:
-        # First, years
+        # Year specification
         if years is not None:
             if not np.iterable(years):
                 years = (years,)  # single month
@@ -211,7 +241,7 @@ def era(
                 years = tuple(range(yearrange[0], yearrange[1] + 1))
         else:
             raise ValueError('You must use "years" or "yearrange" kwargs.')
-        # Next, months (this way, can just download JJA data, for example)
+        # Month specification (helpful for e.g. JJA data)
         if months is not None:
             if not np.iterable(months):
                 months = (months,)  # single month
@@ -222,7 +252,7 @@ def era(
                 months = tuple(range(monthrange[0], monthrange[1] + 1))
         else:
             months = tuple(range(1, 13))
-        # And get dates; options for monthly means and daily stuff
+        # Construct dates ranges
         if stream != 'oper':
             dates = '/'.join(
                 '/'.join('%04d%02d00' % (y, m) for m in months) for y in years
@@ -239,57 +269,29 @@ def era(
                 for y in years
             )
 
-    # Level selection as RANGE or LIST
-    # Update this list if you modify script for ERA5, etc.
-    levchoices = {
-        'sfc': None,
-        'pv': None,
-        'ml': np.arange(1, 137 + 1),
-        'pl': np.array(
-            [
-                1, 2, 3, 5, 7, 10, 20, 30, 50, 70,
-                100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 550,
-                600, 650, 700, 750, 775, 800, 825, 850, 875, 900, 925, 950, 975, 1000,
-            ]
-        ),
-        'pt': np.array(
-            [265, 270, 285, 300, 315, 330, 350, 370, 395, 430, 475, 530, 600, 700, 850]
-        ),
-    }.get(levtype, [])
-    if levchoices == []:
+    # Level selection as range or list
+    levopts = np.array(ECMWF_LEVOPTS.get(levtype))  # could be np.array(None)
+    if not levopts:
         raise ValueError('Invalid level type. Choose from "pl", "pt", "pv", "sfc".')
-    # More options
-    # WARNING: Some vars are technically on "levels" like hybrid level surface
-    # pressure, but we still need 60.
     if levtype not in ('sfc', 'pv'):  # these have multiple options
-        # Require input
         if levs is None and levrange is None:
             raise ValueError(
-                'Must specify list of levels to "levs" kwarg, range of levels '
-                'to "levrange" kwarg, or single level to either one.'
+                'Must specify list of levels with the "levs" keyword, a range of '
+                'levels with the "levrange" keyword, or a single level to either one.'
             )
-        # Convert levels to mars request
         if levs is not None:
-            if not np.iterable(levs):
-                levs = (levs,)
+            levs = np.atleast_1d(levs)
+        elif not np.iterable(levrange) or len(levrange) == 1:
+            levs = np.atleast_1d(levrange)
         else:
-            if not np.iterable(levrange):
-                levs = (levrange,)
-            else:
-                levs = levchoices[
-                    (levchoices >= levrange[0]) & (levchoices <= levrange[1])
-                ].flat
-        levs = '/'.join(str(l) for l in levs)
-
-    # Other parameters
-    # Resolution
-    # same in latitude/longitude required, for now
+            levs = levopts[(levopts >= levrange[0]) & (levopts <= levrange[1])]
+        levs = '/'.join(str(l) for l in levs.flat)
+    # Resolution (same in latitude/longitude is required for now)
     if res is not None:
         grid = '%.5f/%.5f' % (res, res)
     elif grid is None:
         grid = 'N32'
-    # Area - can be specified as pre-defined region (e.g. string 'europe') OR
-    # n/s/w/e boundary
+    # Area specified as pre-defined region (e.g. string 'europe') or n/s/w/e boundary
     if box is not None and not isinstance(box, str):
         box = '/'.join(str(b) for b in (box[3], box[0], box[2], box[1]))
     # Hour conversion
@@ -297,27 +299,23 @@ def era(
         hours = (hours,)
     hours = '/'.join(str(h).zfill(2) for h in hours)  # zfill padds 0s on left
     # Forecast type
-    # TODO: Fix the 12 hour thing. Works for some params (e.g. diabatic
-    # heating, has 3, 6, 9, 12) but others have 0, 6, 12, 18.
     if forecast:
         dtype, step = 'fc', str(step)
     else:
         dtype, step = 'an', '0'
 
     # Server instructions
-    # Not really sure what happens in some situations: list so far:
-    # 1. Evidently if you provide with variable string-name instead of numeric ID,
-    #    MARS will search for correct one; if there is name ambiguity/conflict will
-    #    throw error.
-    # 2. On GUI framework, ECMWF only offers a few resolution options, but program
-    #    seems to run when requesting custom resolutions like 5deg/5deg
     # Can also spit raw output into GRIB; apparently ERA-Interim uses
     # bilinear interpolation to make grid of point obs, which makes sense,
     # because their reanalysis model just picks out point observations
-    # from spherical harmonics; so maybe grid cell concept is dumb? Maybe need
-    # to focus on just using cosine weightings, forget about rest?
+    # from spherical harmonics; so maybe grid cell concept is dumb? Maybe
+    # need to focus on just using cosine weightings, forget about rest?
+    # Not really sure what happens in some situations: list so far:
+    # 1. If you provide with variable string-name instead of numeric ID, MARS will
+    #    search for correct one; if there is name ambiguity/conflict will throw error.
+    # 2. On GUI framework, ECMWF only offers a few resolution options, but program
+    #    seems to run when requesting custom resolutions like 5deg/5deg
     request = {
-        # Important ones
         'class': 'ei',  # ecmwf classifiction; choose ERA-Interim
         'expver': '1',
         'dataset': 'interim',  # thought we already did that; *shrug*
@@ -341,17 +339,11 @@ def era(
         request.update(area=box)
     if stream == 'oper':  # TODO: change?
         request.update(hour=hour)
-    print(
-        'REQUEST\n'
-        + '\n'.join(
-            f'"{key}": ' + ' ' * (maxlen - len(key)) + f'{value}'
-            for key, value in request.items()
-        )
-    )
-    # Retrieve DATA with settings
+    parts = (f'{k!r}: ' + ' ' * (maxlen - len(k)) + f'{v}' for k, v in request.items())
+    print('MARS request:', *parts, sep='\n')
     server = ecmwf.ECMWFDataServer()
     server.retrieve(request)
-    return
+    return request
 
 
 def merra():
