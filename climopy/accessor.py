@@ -22,7 +22,7 @@ from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
 from .internals import _first_unique, docstring, quack, warnings
-from .unit import encode_units, latex_units, parse_units, ureg
+from .unit import decode_units, encode_units, format_units, ureg
 
 __all__ = [
     'ClimoAccessor',
@@ -408,8 +408,8 @@ def _keep_cell_attrs(func):
 
 def _while_quantified(func):
     """
-    Wrapper that temporarily quantifies the data.
-    Compare to `~climopy.quant.while_quantified`.
+    Return a wrapper that temporarily quantifies the data.
+    Compare to `~.internals.quant.while_quantified`.
     """
     @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
@@ -443,8 +443,8 @@ def _while_quantified(func):
 
 def _while_dequantified(func):
     """
-    Wrapper that temporarily dequantifies the data.
-    Compare to `~climopy.quant.while_dequantified`.
+    Return a wrapper that temporarily dequantifies the data.
+    Compare to `~.internals.quant.while_dequantified`.
     """
     @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
@@ -520,7 +520,7 @@ class _CFAccessor(object):
     @staticmethod
     def _clear_cache(func):
         """
-        Wrapper to clear cache before running. Call this before every top-level public
+        Return a wrapper that clears cache before running. Use this with every public
         method where names are translated. Must come before `_manage_coord_reductions`.
         """
         # WARNING: Critical to only put this on user-facing top-level functions.
@@ -754,8 +754,8 @@ class _DatasetGroupByQuantified(
 
 
 class _DataArrayLocIndexerQuantified(object):
-    """
-    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.DataArray`\\ s.
+    r"""
+    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.DataArray`\ s.
     """
     def __init__(self, data_array):
         self._data = data_array
@@ -786,8 +786,8 @@ class _DataArrayLocIndexerQuantified(object):
 
 
 class _DatasetLocIndexerQuantified(object):
-    """
-    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.Dataset`\\ s.
+    r"""
+    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.Dataset`\ s.
     """
     def __init__(self, dataset):
         self._data = dataset
@@ -1226,9 +1226,9 @@ class _VarsQuantified(object):
 
 
 class ClimoAccessor(object):
-    """
-    Accessor with properties and methods shared by `xarray.DataArray`\\ s and
-    `xarray.Dataset`\\ s. Registered under the name ``climo`` (i.e, usage is
+    r"""
+    Accessor with properties and methods shared by `xarray.DataArray`\ s and
+    `xarray.Dataset`\ s. Registered under the name ``climo`` (i.e, usage is
     ``data_array.climo`` and ``dataset.climo``).
     """
     def __init__(self, data, registry=vreg):
@@ -1940,7 +1940,7 @@ class ClimoAccessor(object):
     @_CFAccessor._clear_cache
     def groupby(self, group, *args, **kwargs):
         """
-        A unit-friendly `~xarray.DataArray.groupby` indexer. Dequantifies the "group"
+        Return a unit-friendly `~xarray.DataArray.groupby` indexer. Dequantifies the
         `DataArray` before use and preserve attributes on the resulting coordinates.
 
         Parameters
@@ -1967,7 +1967,7 @@ class ClimoAccessor(object):
     @_keep_cell_attrs
     def _mean_or_sum(self, method, dim=None, skipna=None, weight=None, **kwargs):
         """
-        Simple average or summation.
+        Return an average or summation.
         """
         # NOTE: Unweighted mean or sum along scalar coordinate conceptually is an
         # identity operation, so ignore them. This is also important when running
@@ -2069,9 +2069,9 @@ class ClimoAccessor(object):
 
     @_CFAccessor._clear_cache
     def replace_coords(self, indexers=None, **kwargs):
-        """
+        r"""
         Return a copy with coordinate values added or replaced (if they already exist).
-        If the input coordinates are `~xarray.DataArray`\\ s, the non-conflicting
+        If the input coordinates are `~xarray.DataArray`\ s, the non-conflicting
         coordinate attributes are kept.
 
         Parameters
@@ -2204,7 +2204,7 @@ class ClimoAccessor(object):
 
     @_CFAccessor._clear_cache
     def sel_pair(self, key, *, modify=None):
-        """
+        r"""
         Return selection from a pseudo "parameter" axis. "Parameter" axes are identified
         as any non-scalar coordinate whose associated
         `~ClimoDataArrayAccessor.cfvariable` has a "reference" value (e.g., a
@@ -2222,7 +2222,7 @@ class ClimoAccessor(object):
         modify : bool, optional
             Whether to modify the associated `~ClimoDataArrayAccessor.cfvariable` names
             by adding ``long_prefix`` and ``long_suffix`` attributes to the resulting
-            `~xarray.DataArray`\\ (s). Default is ``False`` for variable(s) containing
+            `~xarray.DataArray`\ (s). Default is ``False`` for variable(s) containing
             the substrings ``'force'`` or ``'forcing'`` and ``True`` otherwise.
         """
         key = str(key)
@@ -2374,7 +2374,7 @@ class ClimoAccessor(object):
         for name in data.climo.cf.axes.get('Z', []):
             da = data.climo.coords[name]  # climopy makes unit-transformable copy
             units = data.coords[name].attrs.get('units', None)
-            units = units if units is None else parse_units(units)
+            units = units if units is None else decode_units(units)
             positive = None
             if units is None:
                 pass
@@ -2654,7 +2654,7 @@ class ClimoAccessor(object):
     @property
     def cf(self):
         """
-        Wrapper of `~cf_xarray.accessors.CFAccessor` that supports automatic cacheing
+        A version of `~cf_xarray.accessors.CFAccessor` that supports automatic cacheing
         for speed boosts. The accessor instance is preserved.
         """
         cf = self._cf_accessor
@@ -2665,9 +2665,9 @@ class ClimoAccessor(object):
     @property
     def coords(self):
         """
-        Wrapper of `~xarray.DataArray.coords` that returns always-quantified coordinate
-        variables or variables *transformed* from the native coordinates using
-        `ClimoDataArrayAccessor.to_variable` (e.g. ``'latitude'`` to
+        A version of `~xarray.DataArray.coords` that returns always-quantified
+        coordinate variables or variables *transformed* from the native coordinates
+        using `ClimoDataArrayAccessor.to_variable` (e.g. ``'latitude'`` to
         ``'meridional_coordinate'``). Coordinates can be requested by their name (e.g.
         ``'lon'``), axis attribute (e.g. ``'X'``), CF coordinate name (e.g.
         ``'longitude'``), or `~.cfvariable.CFVariableRegistry` identifier.
@@ -2734,8 +2734,8 @@ class ClimoAccessor(object):
 
 @xr.register_dataarray_accessor('climo')
 class ClimoDataArrayAccessor(ClimoAccessor):
-    """
-    Accessor for `xarray.DataArray`\\ s. Includes methods for working with `pint`
+    r"""
+    Accessor for `xarray.DataArray`\ s. Includes methods for working with `pint`
     quantities and `~.cfvariable.CFVariable` variables, several stub functions for
     integration with free-standing climopy functions (similar to numpy design), and an
     interface for transforming one physical variable to another. Registered under the
@@ -2870,7 +2870,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 if coord == name:
                     pass
                 elif da.size == 1 and not da.isnull():
-                    units = parse_units(da.attrs['units']) if 'units' in da.attrs else 1
+                    units = decode_units(da.attrs['units']) if 'units' in da.attrs else 1  # noqa: E501
                     if np.issubdtype(da.data.dtype, np.str):  # noqa: E501
                         kwargs['label'] = [da.item()]
                     else:
@@ -3986,7 +3986,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Parameters
         ----------
         units : str or `pint.Unit`
-            The destination units. Strings are parsed with `~.unit.parse_units`.
+            The destination units. Strings are parsed with `~.unit.decode_units`.
         context : str or `pint.Context`, optional
             The `pint context <https://pint.readthedocs.io/en/0.10.1/contexts.html>`_.
             Default is the ClimoPy context ``'climo'`` (see `~.unit.ureg` for details).
@@ -3995,7 +3995,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             raise ValueError('Data should be quantified.')
         data = self.data.copy(deep=False)
         if isinstance(units, str):
-            units = parse_units(units)
+            units = decode_units(units)
         args = (context,) if context else ()
         try:
             data.data = data.data.to(units, *args)  # NOTE: not ito()
@@ -4069,7 +4069,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Return a copy of the `xarray.DataArray` with underlying data converted to
         `pint.Quantity` using the ``'units'`` attribute. If the data is already
         quantified, nothing is done. If the ``'units'`` attribute is missing, a warning
-        is raised. Units are parsed with `~.unit.parse_units`.
+        is raised. Units are parsed with `~.unit.decode_units`.
         """
         # WARNING: In-place conversion resulted in endless bugs related to
         # ipython %autoreload, was departure from metpy convention, was possibly
@@ -4151,12 +4151,12 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         The units of this `~xarray.DataArray` as a `pint.Unit`, taken from the
         underlying `pint.Quantity` or the ``'units'`` attribute. Unit strings are
-        parsed with `~.unit.parse_units`.
+        parsed with `~.unit.decode_units`.
         """
         if isinstance(self.data.data, pint.Quantity):
             return self.data.data.units
         elif 'units' in self.data.attrs:
-            return parse_units(self.data.attrs['units'])
+            return decode_units(self.data.attrs['units'])
         else:
             raise RuntimeError(
                 'Units not present in attributes or as pint.Quantity '
@@ -4179,9 +4179,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         except AttributeError:
             pass
         else:
-            if units_standard is not None and units == parse_units(units_standard):
-                return latex_units(units_standard)
-        return latex_units(units)
+            if units_standard is not None and units == decode_units(units_standard):
+                return format_units(units_standard)
+        return format_units(units)
 
     @property
     def _has_units(self):
@@ -4210,8 +4210,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
 @xr.register_dataset_accessor('climo')
 class ClimoDatasetAccessor(ClimoAccessor):
-    """
-    Accessor for `xarray.Dataset`\\ s. Includes methods for working with `pint`
+    r"""
+    Accessor for `xarray.Dataset`\ s. Includes methods for working with `pint`
     quantities and `~.cfvariable.CFVariable` variables and an interface for deriving one
     physical variable from other variables in the dataset. Registered under the name
     ``climo`` (i.e, usage is ``data_array.climo``). The string representation of this
@@ -4287,8 +4287,8 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
     def _get_item(self, key, add_cell_measures=True, **kwargs):
         """
-        Return a quantified DataArray with weights optionally added. This is separated
-        from `_parse_key` to facilitate fast `__contains__`.
+        Return a quantified DataArray with weights optionally added. This is
+        separated from `_parse_key` to facilitate fast `__contains__`.
         """
         # Retrieve and compute quantity
         tup = self._parse_key(key, **kwargs)
@@ -4483,10 +4483,11 @@ short_suffix : str, optional
 
         # Automatically determine 'reduce' kwargs for energy and momentum budget
         # WARNING: Flux convergence terms are subgroups of flux terms, not tendency
+        reg = self.variable_registry
         if reduce := reduce and reduce.strip('_'):
-            content = key in vreg.energy or key in vreg.momentum
-            tendency = key in vreg.energy_flux or key in vreg.acceleration
-            transport = key in vreg.meridional_energy_flux or key in vreg.meridional_momentum_flux  # noqa: E501
+            content = key in reg.energy or key in reg.momentum
+            tendency = key in reg.energy_flux or key in reg.acceleration
+            transport = key in reg.meridional_energy_flux or key in reg.meridional_momentum_flux  # noqa: E501
             if not content and not transport and not tendency:
                 raise ValueError(f'Invalid parameter {key!r}.')
             if data.climo.cf.sizes.get('vertical', 1) > 1:
@@ -4498,7 +4499,7 @@ short_suffix : str, optional
         # WARNING: For timescale variables take inverse before and after possible
         # average. Should move this kludge away.
         if kwargs:
-            invert = any(key in v for s in ('tau', 'timescale') if (v := vreg.get(s)))
+            invert = any(key in v for s in ('tau', 'timescale') if (v := reg.get(s)))
             if invert:
                 with xr.set_options(keep_attrs=True):
                     data = 1.0 / data

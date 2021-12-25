@@ -30,7 +30,7 @@ dim : str, optional
 """
 _params_order = """
 order : int, optional
-    The order of the derivative, i.e. the :math:`n` in :math:`d^ny/dx^n`.
+    The order of the derivative, i.e. the :math:`n` in :math:`d^n y / d x^n`.
     Default is ``1``.
 """
 _params_cyclic = """
@@ -175,7 +175,7 @@ def integral(x, y, /, y0=0, axis=0):
     return y0 + (y * dx).cumsum(axis=axis)
 
 
-def _deriv_first(h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False):
+def _deriv_first(h, y, /, accuracy=2, keepleft=False, keepright=False):
     """
     Return the first order centered finite difference.
     """
@@ -225,7 +225,7 @@ def _deriv_first(h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False):
     return np.concatenate((*ldiff, diff, *rdiff), axis=-1)
 
 
-def _deriv_second(h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False):
+def _deriv_second(h, y, /, accuracy=2, keepleft=False, keepright=False):
     """
     Return the second order centered finite difference.
     """
@@ -275,9 +275,7 @@ def _deriv_second(h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False):
     return np.concatenate((*ldiff, diff, *rdiff), axis=-1)
 
 
-def _deriv_third(
-    h, y, /, axis=0, accuracy=2, keepleft=False, keepright=False, keepedges=False
-):
+def _deriv_third(h, y, /, accuracy=2, keepleft=False, keepright=False):
     """
     Return the third order centered finite difference.
     """

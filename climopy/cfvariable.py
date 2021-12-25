@@ -14,7 +14,7 @@ import pint
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
 from .internals import warnings
-from .unit import latex_units, parse_units
+from .unit import decode_units, format_units
 
 __all__ = [
     'vreg',  # pint convention
@@ -210,7 +210,7 @@ class CFVariable(object):
             The plot-friendly variable name.
         standard_units : str, optional
             The plot-friendly CF-compatible units string. Parsed with
-            `~.unit.parse_units`.
+            `~.unit.decode_units`.
         short_name : str, optional
             The shorter plot-friendly variable name. This is useful for describing
             the "category" of a variable and its descendents, e.g. "energy flux" for
@@ -486,7 +486,7 @@ class CFVariable(object):
         if self.standard_units is None:
             raise RuntimeError(f'No standard units for variable {self!r}.')
         else:
-            return parse_units(self.standard_units)
+            return decode_units(self.standard_units)
 
     @property
     def units_label(self):
@@ -495,7 +495,7 @@ class CFVariable(object):
         labels. When they are equivalent (as determined by `pint`), the
         `~CFVariable.standard_units` string is used rather than the `pint.Unit` object.
         This permits specifying a numerator and denominator by the position of the
-        forward slash in the standard units string. See `~.unit.latex_units` for
+        forward slash in the standard units string. See `~.unit.format_units` for
         details.
         """
         if self.standard_units is None:
@@ -506,7 +506,7 @@ class CFVariable(object):
             units = self._accessor.units
         else:
             units = self.standard_units
-        return latex_units(units)  # format, retaining slashes and whatnot
+        return format_units(units)  # format, retaining slashes and whatnot
 
 
 class CFVariableRegistry(object):
@@ -721,7 +721,7 @@ class CFVariableRegistry(object):
 
         # Exact coordinates
         coords = [
-            rf'{method.magnitude}$\,${latex_units(method.units)}'
+            rf'{method.magnitude}$\,${format_units(method.units)}'
             if isinstance(method, pint.Quantity) else str(method)
             for methods in (longitude, latitude, vertical, time) for method in methods
             if isinstance(method, (pint.Quantity, numbers.Number))

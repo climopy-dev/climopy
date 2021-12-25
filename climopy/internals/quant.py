@@ -12,7 +12,7 @@ import re
 import pint
 import pint.util as putil
 
-from ..unit import ureg
+from ..unit import _standardize_string, ureg
 from . import docstring
 
 __all__ = ['while_quantified', 'while_dequantified']
@@ -80,9 +80,11 @@ def _units_container(arg, **fmt_kwargs):
     (i.e. a string prefixed with an equal sign).
     """
     is_ref = isinstance(arg, str) and '=' in arg
-    if isinstance(arg, str):
-        arg = arg.format(**fmt_kwargs)  # permits extra keyword arguments
     types = (str, dict, pint.Unit, pint.Quantity, putil.UnitsContainer)
+    if isinstance(arg, str):
+        arg = arg.format(**fmt_kwargs)  # permit extra keyword arguments
+        if '=' not in arg:  # avoid interpreting numeric variable suffixes as exponents
+            arg = _standardize_string(arg)
     if arg is not None and not isinstance(arg, types):
         raise ValueError(f'Invalid unit argument {arg}. Must be any of {types}.')
     if is_ref:
