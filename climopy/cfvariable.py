@@ -54,10 +54,10 @@ class CFVariable(object):
 
     def __new__(cls, *args, **kwargs):
         # Initialize with a registry always declared.
-        inst = object.__new__(cls, *args, **kwargs)
-        if not hasattr(inst, '_registry'):  # use the 'app' registry
-            inst._registry = vreg
-        return inst
+        obj = object.__new__(cls, *args, **kwargs)
+        if not hasattr(obj, '_registry'):  # use the 'app' registry
+            obj._registry = vreg
+        return obj
 
     def __init__(self, name, *args, **kwargs):
         """
@@ -92,28 +92,36 @@ class CFVariable(object):
         """
         Whether variables are equivalent.
         """
-        if isinstance(other, str):
-            try:
-                other = self._registry._get_item(other)
-            except KeyError:
-                return False
         # NOTE: CFVariableRegistry.define() *very* robustly ensures no overlap, but
         # below accommodates edge cases arising from users making their own variables.
         # Could compare identifiers but then variables with swapped standard names
         # and canonical names would be shown as 'True'.
+        if isinstance(other, str):
+            try:
+                other = self._registry._get_item(other)
+            except KeyError:
+                return False  # mimics pint behavior
+        elif isinstance(other, CFVariable):
+            if self._registry is other._registry:
+                pass
+            else:
+                raise ValueError('Cannot operate with CFVariables of different registries.')  # noqa: E501
+        else:
+            raise ValueError('Other object must be string or CFVariable.')
         self_names = [self.name]
         other_names = [other.name]
         for var, names in zip((self, other), (self_names, other_names)):
             if name := var.standard_name:
                 names.append(name)
             names.extend(sorted(var.aliases))
+        b = True
         if self_names == other_names:
-            return True
-        elif all(s != o for s, o in zip(self_names, other_names)):
-            return False
-        else:
+            pass
+        elif any(s == o for s, o in zip(self_names, other_names)):
             warnings._warn_climopy(f'Partial overlap between {self} and {other}.')
-            return True
+        else:
+            b = False
+        return b
 
     def __iter__(self):
         """
@@ -867,7 +875,7 @@ class CFVariableRegistry(object):
             return default
 
 
-# Alternate name for registry-specific subclass inheritance. This mimics
+# Alternate name inherited by registry-specific subclass inheritance. This mimics
 # pint's registry-specific Unit and Quantity internals.
 _CFVariable = CFVariable
 
