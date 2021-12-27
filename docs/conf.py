@@ -135,6 +135,19 @@ napoleon_use_rtype = False
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False
 napoleon_include_init_with_doc = False  # move init doc to 'class' doc
+napoleon_preprocess_types = True
+napoleon_type_aliases = {
+    # Python or inherited terms
+    # NOTE: built-in types are automatically included
+    'callable': ':py:func:`callable`',
+    'sequence': ':term:`sequence`',
+    'dict-like': ':term:`dict-like <mapping>`',
+    'path-like': ':term:`path-like <path-like object>`',
+    'array-like': ':term:`array-like <array_like>`',
+    # Climopy defined terms
+    'unit-spec': ':py:func:`unit-spec <climopy.unit.ureg>`',
+    'var-spec': ':py:func:`var-spec <climopy.cfvariable.vreg>`',
+}
 
 # Fix duplicate class member documentation from autosummary + numpydoc
 # See: https://github.com/phn/pytpm/issues/3#issuecomment-12133978
