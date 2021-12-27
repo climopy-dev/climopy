@@ -52,14 +52,19 @@ class CFVariable(object):
             string += f', aliases={aliases!r}'
         return f'CFVariable({string})'
 
-    def __init__(self, name, *args, registry=None, **kwargs):
+    def __new__(cls, *args, **kwargs):
+        # Initialize with a registry always declared.
+        inst = object.__new__(cls, *args, **kwargs)
+        if not hasattr(inst, '_registry'):  # use the 'app' registry
+            inst._registry = vreg
+        return inst
+
+    def __init__(self, name, *args, **kwargs):
         """
         Parameters
         ----------
         name : str
             The canonical variable name.
-        registry : `CFVariableRegistry`
-            The associated registry.
         *args, **kwargs
             Passed to `CFVariable.update`. The `long_name`, `standard_units`, and
             `short_name` can be passed positionally (in that order).
@@ -72,7 +77,6 @@ class CFVariable(object):
         self._parents = []
         self._children = []
         self._accessor = None
-        self._registry = registry
         self.update(*args, **kwargs)
 
     def __contains__(self, other):
@@ -89,8 +93,6 @@ class CFVariable(object):
         Whether variables are equivalent.
         """
         if isinstance(other, str):
-            if not self._registry:
-                raise ValueError('CFVariable registry is unset. Cannot test equality.')
             try:
                 other = self._registry._get_item(other)
             except KeyError:
@@ -122,7 +124,7 @@ class CFVariable(object):
             yield from var
 
     @staticmethod
-    def _mod_name(name, prefix, suffix):
+    def _modify_name(name, prefix, suffix):
         """
         Modify variable name with prefix and suffix, squeeze consective spaces,
         and correct clunky names like "jet stream strength latitude".
@@ -265,8 +267,8 @@ class CFVariable(object):
         standard_units = self._inherit('standard_units', standard_units)
         long_name = self._inherit('long_name', long_name)
         short_name = self._inherit('short_name', short_name, default=long_name)
-        long_name = self._mod_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
-        short_name = self._mod_name(short_name, short_prefix, short_suffix)
+        long_name = self._modify_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
+        short_name = self._modify_name(short_name, short_prefix, short_suffix)
         standard_name = self._inherit('standard_name', standard_name)
         if standard_name is None and long_name is not None:
             standard_name = re.sub(r'\W', '_', long_name).strip('_').lower()
@@ -511,13 +513,14 @@ class CFVariable(object):
 
 class CFVariableRegistry(object):
     """
-    Container of `CFVariable` instances supporting aliases and *ad hoc* generation of
-    `CFVariable` copies with properties modified by the coordinate cell methods.
+    Container of `CFVariable` instances supporting aliases and *ad hoc* generation
+    of `CFVariable` copies with properties modified by the coordinate cell methods.
     Integrated with the xarray accessor via
     `~.accessor.ClimoDataArrayAccessor.cfvariable`.
     """
     def __init__(self):
         self._database = {}
+        self.CFVariable = self._build_cfvariable_class()
 
     def __contains__(self, key):
         try:
@@ -735,6 +738,15 @@ class CFVariableRegistry(object):
         var.update(**kwmod)
         return var
 
+    def _build_cfvariable_class(self):
+        """
+        Create a `CFVariable` subclass that uses the input registry. This mimics
+        pint's registry-specific Unit and Quantity internals.
+        """
+        class CFVariable(_CFVariable):
+            _registry = self
+        return CFVariable
+
     def _get_item(self, key):
         """
         Efficiently retrieve a variable based on its canonical name, name alias, or
@@ -753,16 +765,16 @@ class CFVariableRegistry(object):
 
     def alias(self, *args):
         """
-        Define alias(es) for an existing `CFVariable`. This can be useful for
-        identifying dataset variables from a wide variety of sources that have
+        Add aliases for an existing registered `CFVariable`. This can be useful
+        for identifying dataset variables from a wide variety of sources that have
         empty `standard_name` attributes. The variable aliasing system was
         inspired by the robust unit aliasing system of `pint.UnitRegistry`.
 
         Parameters
         ----------
         *args
-            Group of strings which should identically refer to the variable. At
-            least one of these must match the canonical name, standard name, or
+            Strings which should identically refer to the variable. At least
+            one of these must match the canonical name, standard name, or
             existing alias of an existing variable.
         """
         vars = []
@@ -814,7 +826,7 @@ class CFVariableRegistry(object):
         """
         # Create new variable or child variable
         if not parents:
-            var = CFVariable(name, *args, registry=self, **kwargs)
+            var = self.CFVariable(name, *args, **kwargs)
         else:
             if isinstance(parents, str):
                 parents = (parents,)
@@ -854,6 +866,10 @@ class CFVariableRegistry(object):
         except (KeyError, TypeError):  # allow e.g. vreg.get(None, default)
             return default
 
+
+# Alternate name for registry-specific subclass inheritance. This mimics
+# pint's registry-specific Unit and Quantity internals.
+_CFVariable = CFVariable
 
 #: The default `CFVariableRegistry` paired with `~.accessor.ClimoDataArrayAccessor`
 #: xarray accessor instances. `CFVariable` properties can be retrieved from an
