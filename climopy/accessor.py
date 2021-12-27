@@ -754,8 +754,8 @@ class _DatasetGroupByQuantified(
 
 
 class _DataArrayLocIndexerQuantified(object):
-    r"""
-    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.DataArray`\ s.
+    """
+    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.DataArray`\\ s.
     """
     def __init__(self, data_array):
         self._data = data_array
@@ -786,8 +786,8 @@ class _DataArrayLocIndexerQuantified(object):
 
 
 class _DatasetLocIndexerQuantified(object):
-    r"""
-    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.Dataset`\ s.
+    """
+    A unit-friendly `ClimoAccessor.loc` indexer for `xarray.Dataset`\\ s.
     """
     def __init__(self, dataset):
         self._data = dataset
@@ -1226,9 +1226,9 @@ class _VarsQuantified(object):
 
 
 class ClimoAccessor(object):
-    r"""
-    Accessor with properties and methods shared by `xarray.DataArray`\ s and
-    `xarray.Dataset`\ s. Registered under the name ``climo`` (i.e, usage is
+    """
+    Accessor with properties and methods shared by `xarray.DataArray`\\ s and
+    `xarray.Dataset`\\ s. Registered under the name ``climo`` (i.e, usage is
     ``data_array.climo`` and ``dataset.climo``).
     """
     def __init__(self, data, registry=vreg):
@@ -2069,9 +2069,9 @@ class ClimoAccessor(object):
 
     @_CFAccessor._clear_cache
     def replace_coords(self, indexers=None, **kwargs):
-        r"""
+        """
         Return a copy with coordinate values added or replaced (if they already exist).
-        If the input coordinates are `~xarray.DataArray`\ s, the non-conflicting
+        If the input coordinates are `~xarray.DataArray`\\ s, the non-conflicting
         coordinate attributes are kept.
 
         Parameters
@@ -2204,11 +2204,11 @@ class ClimoAccessor(object):
 
     @_CFAccessor._clear_cache
     def sel_pair(self, key, *, modify=None):
-        r"""
-        Return selection from a pseudo "parameter" axis. "Parameter" axes are identified
-        as any non-scalar coordinate whose associated
-        `~ClimoDataArrayAccessor.cfvariable` has a "reference" value (e.g., a
-        coordinate named ``'forcing'`` with a "reference" value of ``0``).
+        """
+        Return selection from a pseudo "parameter" axis. "Parameter"
+        axes are identified as any non-scalar coordinate whose associated
+        `~ClimoDataArrayAccessor.cfvariable` has a "reference" value (e.g.,
+        a coordinate named ``'forcing'`` with a "reference" value of ``0``).
 
         Parameters
         ----------
@@ -2222,7 +2222,7 @@ class ClimoAccessor(object):
         modify : bool, optional
             Whether to modify the associated `~ClimoDataArrayAccessor.cfvariable` names
             by adding ``long_prefix`` and ``long_suffix`` attributes to the resulting
-            `~xarray.DataArray`\ (s). Default is ``False`` for variable(s) containing
+            `~xarray.DataArray`\\ (s). Default is ``False`` for variable(s) containing
             the substrings ``'force'`` or ``'forcing'`` and ``True`` otherwise.
         """
         key = str(key)
@@ -2734,8 +2734,8 @@ class ClimoAccessor(object):
 
 @xr.register_dataarray_accessor('climo')
 class ClimoDataArrayAccessor(ClimoAccessor):
-    r"""
-    Accessor for `xarray.DataArray`\ s. Includes methods for working with `pint`
+    """
+    Accessor for `xarray.DataArray`\\ s. Includes methods for working with `pint`
     quantities and `~.cfvariable.CFVariable` variables, several stub functions for
     integration with free-standing climopy functions (similar to numpy design), and an
     interface for transforming one physical variable to another. Registered under the
@@ -4064,7 +4064,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             })
         return data
 
-    def quantify(self):
+    def quantify(self, units=None):
         """
         Return a copy of the `xarray.DataArray` with underlying data converted to
         `pint.Quantity` using the ``'units'`` attribute. If the data is already
@@ -4075,6 +4075,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # ipython %autoreload, was departure from metpy convention, was possibly
         # confusing for users, and not even sure if faster. So abandoned this.
         data = self.data.copy(deep=False)
+        if units is not None:
+            data.attrs['units'] = encode_units(units)
         data.climo._quantify()
         return data
 
@@ -4210,8 +4212,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
 @xr.register_dataset_accessor('climo')
 class ClimoDatasetAccessor(ClimoAccessor):
-    r"""
-    Accessor for `xarray.Dataset`\ s. Includes methods for working with `pint`
+    """
+    Accessor for `xarray.Dataset`\\ s. Includes methods for working with `pint`
     quantities and `~.cfvariable.CFVariable` variables and an interface for deriving one
     physical variable from other variables in the dataset. Registered under the name
     ``climo`` (i.e, usage is ``data_array.climo``). The string representation of this
@@ -4414,7 +4416,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
         Parameters
         ----------
-        arg : var-spec or 2-tuple thereof
+        arg : var-spec or 2-tuple
             The variable name. The following prefix and suffix shorthands
             are supported:
 
@@ -4442,7 +4444,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
             Whether to add default cell measures to the coordinates.
         quantify : bool, optional
             Whether to quantify the data with `~ClimoDataArrayAccessor.quantify()`.
-        units : unit-like, optional
+        units : unit-spec, optional
             Convert the result to the input units with
             `~ClimoDataArrayAccessor.to_units`.
         standardize : bool, optional
