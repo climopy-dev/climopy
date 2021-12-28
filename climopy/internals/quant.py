@@ -6,11 +6,12 @@ Tools for working with pint quantities.
 # for instances derived from other registries. So always test against pint namespace
 # class definitions and defer to incompatible registry errors down the line.
 import functools
-import itertools
 import re
 
+import numpy as np
 import pint
 import pint.util as putil
+import xarray as xr
 
 from ..unit import _standardize_string, ureg
 from . import docstring
@@ -30,18 +31,30 @@ non-quantities returned by the function.
 
 Parameters
 ----------
-units_in : unit-like, string, or sequence thereof
+units_in : unit-spec or str or sequence
     The units for the positional input arguments. Can be a `pint.Unit`, a unit
-    string specification like ``'cm'``, or a relational string specification
-    like ``'=x^2'``. You can include keyword arguments in the unit specification
-    by embedding the keyword in a unit string using `str.format` notation, for
-    example ``while_%(descrip)s(('=x', '=y'), '=y / x^{{order}}')`` might be
+    string specification like ``'cm'``, or a relational variable specification
+    like ``'=x'`` if the argument is not associated with any particular `pint.Unit`,
+    for example ``while_%(descrip)s(('=x', '=y'), '=y / x')`` might be used
+    for a function whose output units are the units of the second argument
+    divided by the units of the first argument). Keyword arguments can be included
+    in the variable specification using curly brace `str.format` notation
+    after providing the default value via keyword argument, for example
+    ``while_%(descrip)s(('=x', '=y'), '=y / x^{{order}}', order=1)`` might be
     used for a function that takes the nth derivative using the keyword `order`.
-units_out : unit-like, string, or sequence thereof
-    As with `units_in` but for the return values.
+    Vertical bars can be used to allow multiple incompatible units, for
+    example ``while_%(descrip)s('J | K', 'J / s | K / s')`` converts energy
+    or temperature input values into corresponding rate of change terms. This
+    can be useful for designing functions that execute similar physical
+    operations with different (but related) physical quantities.
+units_out : unit-spec or str or sequence
+    As with `units_in`, but for the return values.
 strict : bool, default: False
     Whether to forbid non-quantity input arguments. If ``False`` then these
     are assumed to be in the correct units.
+convert : bool, default: True
+    Whether to convert input argument and return value units to the specified
+    units or merely assert compatibility with the specified units.
 **fmt_defaults
     Default values for the terms surrounded by curly braces in relational
     or string unit specifications.
@@ -51,7 +64,7 @@ Example
 Here is a simple example for an nth derivative wrapper.
 
 >>> from climopy import ureg, while_%(descrip)s
->>> @while_%(descrip)s(('=x', '=y'), '=y / x^{order}', order=1)
+>>> @while_%(descrip)s(('=x', '=y'), '=y / x^{{order}}', order=1)
 ... def deriv(x, y, order=1):
 ...     return y / x ** order
 >>> deriv(1 * ureg.m, 1 * ureg.s, order=2)
@@ -60,18 +73,72 @@ Here is a simple example for an nth derivative wrapper.
 docstring.snippets['quant.quantified'] = _quant_docstring
 
 
-def _replace_units(container, definitions):
+def _parse_args(args_in, args_out):
     """
-    Convert the references in a UnitsContainer into valid pint Units, using
-    positional data argument units for each reference.
+    Parse specifications for input arguments and return values. Used for
+    `while_quantified`, `while_dequantified`, and `register_derivation`.
     """
-    unit = ureg.dimensionless
-    for name, exponent in container.items():
-        if name in definitions:
-            unit *= definitions[name] ** exponent
+    # Enforce list of input argument specs and list of return value specs.
+    # Note that register_derivation inputs can be CFVariable and quantified
+    # inputs can be arbitrary unit-specs.
+    from ..cfvariable import CFVariable  # depends on internals so import here
+    types = (str, dict, pint.Unit, pint.Quantity, putil.UnitsContainer, CFVariable)
+    is_scalar_out = False
+    if isinstance(args_in, types) or not np.iterable(args_in):
+        args_in = (args_in,)
+    if isinstance(args_out, types) or not np.iterable(args_out):
+        args_out = (args_out,)
+        is_scalar_out = True
+    if not args_in or not args_out:
+        raise TypeError('Input and output units are both required.')
+
+    # Split each spec into group of options (separated by |). Ensure same number of
+    # non-scalar options for each argument and return value options are non-scalar
+    # if and only if input arugment options are non-scalar.
+    args = []
+    nout = len(args_out)
+    sizes = set()
+    for i, arg in enumerate((*args_in, *args_out)):
+        if isinstance(arg, str):
+            arg = [a.strip() for a in arg.split('|')]
+        elif isinstance(arg, types):
+            arg = [arg]
         else:
-            raise RuntimeError(f'Missing definition for container reference {name!r}.')
-    return unit
+            raise TypeError(f'Input must be str, dict, Unit, or UnitsContainer. Instead got {arg!r}.')  # noqa: E501
+        if len(arg) > 1:
+            sizes.add(len(arg))
+        if len(sizes) > 1:
+            raise TypeError('Non-scalar name sequences must be equal length.')
+        if sizes and len(arg) == 1 and i >= len(args_in):
+            raise TypeError('Non-scalar input name sequences require non-scalar output')
+        args.append(arg)
+
+    # Split input argument specs and return value specs into lists for each option.
+    # For example _parse_args(('a|b', 'c'), 'x|y') will return the input argument
+    # spec list [['a', 'c'], ['b', 'c']] and return value spec list [['x'], ['y']].
+    args = [arg * max(sizes, default=1) if len(arg) == 1 else arg for arg in args]
+    args_in = [arg[:-nout] for arg in zip(*args)]
+    args_out = [arg[-nout:] for arg in zip(*args)]
+    return args_in, args_out, is_scalar_out
+
+
+def _units_object(arg):
+    """
+    Get the pint units associated with the input object.
+    """
+    units = None
+    if isinstance(arg, str):
+        arg = ureg.parse_expression(arg)  # appends '1' to raw unit strings
+    if isinstance(arg, pint.Unit):
+        units = arg
+    if isinstance(arg, putil.UnitsContainer):
+        units = pint.Unit(arg)
+    if isinstance(arg, pint.Quantity):
+        units = arg.units
+    if isinstance(arg, xr.DataArray):
+        if 'units' in arg.attrs or arg.climo._is_quantity:
+            units = arg.climo.units
+    return units
 
 
 def _units_container(arg, **fmt_kwargs):
@@ -83,133 +150,231 @@ def _units_container(arg, **fmt_kwargs):
     types = (str, dict, pint.Unit, pint.Quantity, putil.UnitsContainer)
     if isinstance(arg, str):
         arg = arg.format(**fmt_kwargs)  # permit extra keyword arguments
-        if '=' not in arg:  # avoid interpreting numeric variable suffixes as exponents
-            arg = _standardize_string(arg)
+        if '=' not in arg:  # avoid reading numeric variable suffixes as exponents
+            arg = _standardize_string(arg)  # support added climopy conventions
     if arg is not None and not isinstance(arg, types):
         raise ValueError(f'Invalid unit argument {arg}. Must be any of {types}.')
     if is_ref:
-        unit = putil.to_units_container(arg.split('=', 1)[1])
+        container = putil.to_units_container(arg.split('=', 1)[1])
     else:
-        unit = putil.to_units_container(arg, ureg)  # None returns None
-    return unit, is_ref
+        container = putil.to_units_container(arg, ureg)  # None returns None
+    return container, is_ref
 
 
-def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_defaults):
+def _standardize_independent(arg, quantify=False):
+    """
+    Return a quantified version of the input argument using its own units. If it
+    has no units then assign dimensionless units.
+    """
+    # Apply existing units
+    if isinstance(arg, str):  # parse expressions e.g. '5cm'
+        arg = ureg.parse_expression(arg)
+    if isinstance(arg, xr.DataArray):
+        if not (has_units := arg.climo._is_quantity):
+            arg = arg.climo.quantify(units=arg.attrs.get('units', 'dimensionless'))
+        units = arg.data.units
+    else:
+        if not (has_units := isinstance(arg, pint.Quantity)):
+            arg = arg * ureg.dimensionless
+        units = arg.units
+
+    # Optionally dequantify result after converting
+    if not quantify:
+        if isinstance(arg, xr.DataArray):
+            arg = arg.climo.dequantify()
+        else:
+            arg = arg.magnitude
+    return arg, units, has_units
+
+
+def _standardize_dependent(
+    arg, unit=None, strict=False, quantify=False, convert=True, definitions=None,
+    **fmt_kwargs
+):
+    """
+    Return a quantified version of the input argument possibly applying the
+    declared units or inferring them from the independent variable units.
+    """
+    # Parse input argument
+    if unit is None:  # placeholder meaning 'do nothing'
+        print('no standardizatin!!!')
+        return arg, False
+    if isinstance(arg, str):  # parse expressions e.g. '5cm'
+        arg = ureg.parse_expression(arg)
+    if isinstance(arg, xr.DataArray) and 'units' in arg.attrs:
+        arg = arg.climo.quantify()
+
+    # Parse input units
+    # NOTE: Here definitions are required if input is refernece
+    container, is_ref = _units_container(unit, **fmt_kwargs)
+    if not is_ref:
+        unit = ureg.Unit(container)
+    else:
+        unit = ureg.dimensionless
+        definitions = definitions or {}
+        for name, exponent in container.items():
+            if name in definitions:
+                unit *= definitions[name] ** exponent
+            else:
+                raise RuntimeError(f'Missing unit definition for variable {name!r}.')
+
+    # Enforce argument units
+    # NOTE: Important to record whether we started with units
+    if isinstance(arg, pint.Quantity):
+        has_units = True
+        if convert:
+            arg = arg.to(unit)
+        else:
+            arg + 0 * unit  # trigger compatibility check and error
+    elif isinstance(arg, xr.DataArray) and arg.climo._is_quantity:
+        has_units = True
+        if convert:
+            arg = arg.climo.to(unit)
+        else:
+            arg + 0 * unit
+    elif not strict:
+        has_units = False
+        if isinstance(arg, xr.DataArray):
+            arg = arg.climo.quantify(units=unit)
+        else:
+            arg = ureg.Quantity(arg, unit)
+    else:
+        raise ValueError('Pint quantities are required in strict mode.')
+
+    # Optionally dequantify result after converting
+    if not quantify:
+        if isinstance(arg, xr.DataArray):
+            arg = arg.climo.dequantify()
+        else:
+            arg = arg.magnitude
+    return arg, has_units
+
+
+def _while_converted(
+    units_in, units_out, strict=False, quantify=False, convert=True, **fmt_defaults
+):
     """
     Driver function for `while_quantified` and `while_dequantified`. See above
     for the full documentation.
     """
     # Ensure input arguments are valid units or references
-    is_container_in = isinstance(units_in, (tuple, list))
-    is_container_out = isinstance(units_out, (tuple, list))
-    if not is_container_in:
-        units_in = (units_in,)
-    if not is_container_out:
-        units_out = (units_out,)
-    containers_in = [_units_container(unit, **fmt_defaults) for unit in units_in]
-    containers_out = [_units_container(unit, **fmt_defaults) for unit in units_out]  # noqa: E501, F841
-
-    # Detect references in args and remove None values
-    independents = {}  # indices of independent definitions
-    dependents = set()  # indices of arguments that depend on definitions
-    constants = set()  # indices of constant units
-    for idx, (container, is_ref) in enumerate(containers_in):
-        if container is None:
-            continue
-        elif is_ref:
-            if len(container) == 1:
-                (key, value), = container.items()
-                if value == 1 and key not in independents:
-                    independents[key] = idx
-                    containers_in[idx] = (key, True)
+    # NOTE: Items in units_in, units_out are lists containing units for all input
+    # arguments or all return values. Generally singleton unless | was used.
+    units_in, units_out, is_scalar_out = _parse_args(units_in, units_out)
+    categories = []
+    containers = []
+    for units in units_in:
+        independent = {}
+        dependent = set()
+        constant = set()
+        for idx, unit in enumerate(units):
+            container, is_ref = _units_container(unit, **fmt_defaults)
+            if container is None:
+                continue
+            elif is_ref:
+                if len(container) == 1:
+                    (key, value), = container.items()
+                    if value == 1 and key not in independent:
+                        independent[key] = idx
+                    else:
+                        dependent.add(idx)
                 else:
-                    dependents.add(idx)
+                    dependent.add(idx)  # definition found elsewhere
             else:
-                dependents.add(idx)  # definition found elsewhere
-        else:
-            constants.add(idx)
-
-    # Ensure that all dependent variables are defined
-    for idx in dependents:
-        container, is_ref = containers_in[idx]
-        if isinstance(container, dict) and not container.keys() <= independents.keys():
-            raise ValueError(f'Not all variables referenced in {units_in[idx]} are defined.')  # noqa: E501
+                constant.add(idx)
+            containers.append((container, is_ref))
+        for idx in dependent:
+            container, is_ref = containers[idx]
+            if isinstance(container, dict) and not container.keys() <= independent.keys():  # noqa: E501
+                raise ValueError(f'Not all variables referenced in {units_in[idx]} are defined.')  # noqa: E501
+        print('categories', units, independent, dependent, constant)
+        categories.append((independent, dependent, constant))
 
     # Declare decorator
     def _decorator(func):
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
             # Test input
+            args = list(args)
             n_result = len(args)
-            n_expect = len(units_in)
+            n_expect = len(units_in[0])
             if n_result != n_expect:
                 raise ValueError(f'Expected {n_expect} positional args, got {n_result}.')  # noqa: E501
 
-            # Translate containers into units
-            units = {}
+            # Select group for parsing
+            # NOTE: Behavior is subtle. Iterate over possible inputs and approve each
+            # member of the grouping if either (1) it has no units, (2) the declared
+            # unit is a reference, (3) there were no declared units, or (4) the units
+            # are compatible with the declared units. If this fails we use the final
+            # grouping by default and an error will be raised down the line.
+            for grp, (independents, dependents, constants) in enumerate(categories):
+                units_input = [_units_object(args[idx]) for idx in constants]
+                units_expect = [_units_object(units_in[grp][idx]) for idx in constants]
+                if all(
+                    unit_input is None
+                    or unit_expect is None
+                    or unit_input.is_compatible_with(unit_expect)
+                    for unit_input, unit_expect in zip(units_input, units_expect)
+                ):
+                    break
+
+            # Quantify independent input arguments and record units
+            args_new = args.copy()
             definitions = {}
+            quantify_results = False
             for key, idx in independents.items():
-                arg = args[idx]
-                unit = arg.units if isinstance(arg, pint.Quantity) else ureg.dimensionless  # noqa: E501
-                units[idx] = definitions[key] = unit
+                arg, unit, has_units = _standardize_independent(
+                    args[idx],
+                    quantify=quantify
+                )
+                args_new[idx] = arg
+                definitions[key] = unit
+                quantify_results = has_units or quantify_results
+
+            # Quantify remaining arguments using recorded units
             fmt_kwargs = {key: val for key, val in kwargs.items() if key in fmt_defaults}  # noqa: E501
             for key, val in fmt_defaults.items():
                 fmt_kwargs.setdefault(key, value)
-            for idx in dependents:
-                container, _ = _units_container(units_in[idx], **fmt_kwargs)
-                units[idx] = _replace_units(container, definitions)
-            for idx in constants:
-                container, _ = _units_container(units_in[idx], **fmt_kwargs)
-                units[idx] = pint.Unit(container)
+            for idx in (*dependents, *constants):
+                arg, has_units = _standardize_dependent(
+                    args[idx],
+                    units_in[grp][idx],
+                    strict=strict,
+                    convert=convert,
+                    quantify=quantify,
+                    definitions=definitions,
+                    **fmt_kwargs
+                )
+                args_new[idx] = arg
+                quantify_results = has_units or quantify_results
 
-            # Standardize data units
-            args_new = []
-            for idx, arg in enumerate(args):
-                if isinstance(arg, str):  # parse expressions e.g. '5cm'
-                    arg = ureg.parse_expression(arg)
-                if isinstance(arg, pint.Quantity):
-                    arg = arg.to(units[idx])
-                elif not strict:
-                    arg = ureg.Quantity(arg, units[idx])
-                else:
-                    raise ValueError('Pint quantities are required in strict mode.')
-                if not quantify:
-                    arg = arg.magnitude
-                args_new.append(arg)
-
-            # Call main function and check output
-            result = func(*args_new, **kwargs)
-            n_result = 1 if not isinstance(result, tuple) else len(result)
-            n_expect = len(units_out)
-            if not is_container_out and isinstance(result, tuple):
+            # Call main function and standardize results
+            results = func(*args_new, **kwargs)
+            n_result = 1 if not isinstance(results, tuple) else len(results)
+            n_expect = len(units_out[grp])
+            if is_scalar_out and isinstance(results, tuple):
                 raise ValueError('Got tuple of return values, expected one value.')
-            if is_container_out and n_result != n_expect:
+            if not is_scalar_out and n_result != n_expect:
                 raise ValueError(f'Expected {n_expect} return values, got {n_result}.')
-
-            # Quantify output if input arguments were quantities
-            result_new = []
-            result_quantify = any(isinstance(arg, pint.Quantity) for arg in args)
-            if not is_container_out:
-                result = (result,)
-            for res, unit in itertools.zip_longest(result, units_out):
-                container, is_ref = _units_container(unit, **fmt_kwargs)
-                if is_ref:
-                    unit = _replace_units(container, definitions)
-                else:
-                    unit = pint.Unit(container)
-                if isinstance(res, pint.Quantity):
-                    res = res.to(unit)
-                else:
-                    res = ureg.Quantity(res, unit)
-                if not result_quantify:
-                    res = res.magnitude
-                result_new.append(res)
+            results_new = []
+            if is_scalar_out:
+                results = (results,)
+            for idx, res in enumerate(results):
+                res, _ = _standardize_dependent(
+                    res,
+                    units_out[grp][idx],
+                    convert=convert,
+                    quantify=quantify_results,
+                    definitions=definitions,
+                    **fmt_kwargs
+                )
+                results_new.append(res)
 
             # Return sanitized values
-            if not is_container_out:
-                return result_new[0]
+            if is_scalar_out:
+                return results_new[0]
             else:
-                return tuple(result_new)
+                return tuple(results_new)
 
         return _wrapper
 
