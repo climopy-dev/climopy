@@ -185,9 +185,9 @@ def _deriv_first(h, y, /, accuracy=2, keepleft=False, keepright=False):
     elif accuracy == 2:
         diff = (1 / 2) * (-y[..., :-2] + y[..., 2:]) / h
         if keepleft:
-            ldiff = _deriv_first(h, y[..., :2], axis=-1, keepleft=True, accuracy=0),
+            ldiff = _deriv_first(h, y[..., :2], keepleft=True, accuracy=0),
         if keepright:
-            rdiff = _deriv_first(h, y[..., -2:], axis=-1, keepright=True, accuracy=0),
+            rdiff = _deriv_first(h, y[..., -2:], keepright=True, accuracy=0),
     elif accuracy == 4:
         diff = (
             (1 / 12)
@@ -200,9 +200,9 @@ def _deriv_first(h, y, /, accuracy=2, keepleft=False, keepright=False):
             / h
         )
         if keepleft:
-            ldiff = _deriv_first(h, y[..., :3], axis=-1, keepleft=True, accuracy=2),
+            ldiff = _deriv_first(h, y[..., :3], keepleft=True, accuracy=2),
         if keepright:
-            rdiff = _deriv_first(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
+            rdiff = _deriv_first(h, y[..., -3:], keepright=True, accuracy=2),
     elif accuracy == 6:
         diff = (
             (1 / 60)
@@ -217,9 +217,9 @@ def _deriv_first(h, y, /, accuracy=2, keepleft=False, keepright=False):
             / h
         )
         if keepleft:
-            ldiff = _deriv_first(h, y[..., :5], axis=-1, keepleft=True, accuracy=4),
+            ldiff = _deriv_first(h, y[..., :5], keepleft=True, accuracy=4),
         if keepright:
-            rdiff = _deriv_first(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
+            rdiff = _deriv_first(h, y[..., -5:], keepright=True, accuracy=4),
     else:
         raise NotImplementedError(f'Invalid {accuracy=}.')
     return np.concatenate((*ldiff, diff, *rdiff), axis=-1)
@@ -249,9 +249,9 @@ def _deriv_second(h, y, /, accuracy=2, keepleft=False, keepright=False):
             / h ** 2
         )
         if keepleft:
-            ldiff = _deriv_second(h, y[..., :3], axis=-1, keepleft=True, accuracy=2),
+            ldiff = _deriv_second(h, y[..., :3], keepleft=True, accuracy=2),
         if keepright:
-            rdiff = _deriv_second(h, y[..., -3:], axis=-1, keepright=True, accuracy=2),
+            rdiff = _deriv_second(h, y[..., -3:], keepright=True, accuracy=2),
     elif accuracy == 6:
         diff = (
             (1 / 180)
@@ -267,9 +267,9 @@ def _deriv_second(h, y, /, accuracy=2, keepleft=False, keepright=False):
             / h ** 2
         )
         if keepleft:
-            ldiff = _deriv_second(h, y[..., :5], axis=-1, keepleft=True, accuracy=4),
+            ldiff = _deriv_second(h, y[..., :5], keepleft=True, accuracy=4),
         if keepright:
-            rdiff = _deriv_second(h, y[..., -5:], axis=-1, keepright=True, accuracy=4),
+            rdiff = _deriv_second(h, y[..., -5:], keepright=True, accuracy=4),
     else:
         raise NotImplementedError(f'Invalid {accuracy=}.')
     return np.concatenate((*ldiff, diff, *rdiff), axis=-1)
@@ -303,9 +303,9 @@ def _deriv_third(h, y, /, accuracy=2, keepleft=False, keepright=False):
             / h ** 3
         )
         if keepleft:
-            ldiff = _deriv_third(h, y[..., :4], axis=-1, keepleft=True, accuracy=0),
+            ldiff = _deriv_third(h, y[..., :4], keepleft=True, accuracy=0),
         if keepright:
-            rdiff = _deriv_third(h, y[..., -4:], axis=-1, keepright=True, accuracy=0),
+            rdiff = _deriv_third(h, y[..., -4:], keepright=True, accuracy=0),
     elif accuracy == 4:
         diff = (
             (1 / 8)
@@ -320,9 +320,9 @@ def _deriv_third(h, y, /, accuracy=2, keepleft=False, keepright=False):
             / h ** 3
         )
         if keepleft:
-            ldiff = _deriv_third(h, y[..., :5], axis=-1, keepleft=True, accuracy=2),
+            ldiff = _deriv_third(h, y[..., :5], keepleft=True, accuracy=2),
         if keepright:
-            rdiff = _deriv_third(h, y[..., -5:], axis=-1, keepright=True, accuracy=2),
+            rdiff = _deriv_third(h, y[..., -5:], keepright=True, accuracy=2),
     elif accuracy == 6:
         diff = (
             (1 / 240)
@@ -339,9 +339,9 @@ def _deriv_third(h, y, /, accuracy=2, keepleft=False, keepright=False):
             / h ** 3
         )
         if keepleft:
-            ldiff = _deriv_third(h, y[..., :7], axis=-1, keepleft=True, accuracy=4),
+            ldiff = _deriv_third(h, y[..., :7], keepleft=True, accuracy=4),
         if keepright:
-            rdiff = _deriv_third(h, y[..., -7:], axis=-1, keepright=True, accuracy=4),
+            rdiff = _deriv_third(h, y[..., -7:], keepright=True, accuracy=4),
     else:
         raise NotImplementedError(f'Invalid {accuracy=}.')
     return np.concatenate((*ldiff, diff, *rdiff), axis=-1)
@@ -403,11 +403,11 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=Fal
     # Calculate
     kwargs = {'accuracy': accuracy, 'keepleft': keepedges, 'keepright': keepedges}
     if order == 1:
-        diff = _deriv_first(h, y, axis=axis, **kwargs)
+        diff = _deriv_first(h, y, **kwargs)
     elif order == 2:
-        diff = _deriv_second(h, y, axis=axis, **kwargs)
+        diff = _deriv_second(h, y, **kwargs)
     elif order == 3:
-        diff = _deriv_third(h, y, axis=axis, **kwargs)
+        diff = _deriv_third(h, y, **kwargs)
     else:
         raise ValueError(f'Invalid derivative {order=}. Must fall between 1 and 3.')
     return np.moveaxis(diff, -1, axis)
@@ -462,10 +462,10 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=F
     n = y.shape[-1]
 
     # Get coefficients for blocks of x-coordinates matching the length of respective
-    # centered finite difference methods.
-    # NOTE: We figure out edge derivatives with the fornberg algorithm using the same
-    # number of points as centered samples, but could also take approach of even finite
-    # difference methods and progressively reduce numbers of points used on edge.
+    # centered finite difference methods (evenly spaced points yield these methods).
+    # NOTE: We calculate edge derivatives with the fornberg algorithm using the same
+    # number of points as center derivatives, but could also take the centered finite
+    # difference approach and progressively reduce numbers of points used on edge.
     diff = np.full(y.shape, np.nan)
     for i in range(offset, n - offset):
         # Get segment of x to pass to algorithm
