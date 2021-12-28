@@ -11,7 +11,6 @@ import re
 import numpy as np
 import pint
 
-from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
 from .internals import warnings
 from .unit import decode_units, format_units
@@ -528,7 +527,7 @@ class CFVariableRegistry(object):
     """
     def __init__(self):
         self._database = {}
-        self.CFVariable = self._build_cfvariable_class()
+        self._init_cfvariable_class()
 
     def __contains__(self, key):
         try:
@@ -746,14 +745,14 @@ class CFVariableRegistry(object):
         var.update(**kwmod)
         return var
 
-    def _build_cfvariable_class(self):
+    def _init_cfvariable_class(self):
         """
         Create a `CFVariable` subclass that uses the input registry. This mimics
         pint's registry-specific Unit and Quantity internals.
         """
         class CFVariable(_CFVariable):
             _registry = self
-        return CFVariable
+        object.__setattr__(self, 'CFVariable', CFVariable)
 
     def _get_item(self, key):
         """
