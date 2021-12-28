@@ -164,7 +164,7 @@ References
 docstring.snippets['notes_power'] = _notes_power
 
 
-@quant.while_dequantified(('=x', '', '=x'), '')
+@quant.while_dequantified(('=x', None, '=x'))
 def butterworth(dx, order, cutoff, /, btype='low'):
     """
     Applies Butterworth filter to data. Since this is a *recursive*
@@ -218,7 +218,7 @@ def butterworth(dx, order, cutoff, /, btype='low'):
     return b, a
 
 
-@quant.while_dequantified(('=x', '', '=x'), '')
+@quant.while_dequantified(('=x', None, '=x'))
 def lanczos(dx, width, cutoff, /):
     """
     Returns *coefficients* for Lanczos high-pass filter with
@@ -274,7 +274,7 @@ def lanczos(dx, width, cutoff, /):
 
 
 @quack._yy_metadata
-@quant.while_dequantified(('=x', ''), '=x')
+@quant.while_dequantified('=x', '=x')
 def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     """
     Apply scipy.signal.lfilter to data. By default this does *not* pad
@@ -285,17 +285,17 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     x : array-like
         Data to be filtered.
     b : array-like
-        *b* coefficients (non-recursive component).
+        The $b$ coefficients (non-recursive component).
     a : array-like, optional
-        *a* coefficients (recursive component). Default of ``1`` indicates
-        a non-recursive filter.
+        The $a$ coefficients (recursive component). The default
+        of ``1`` indicates a non-recursive filter.
     n : int, optional
         Number of times to filter data. Will go forward --> backward --> forward...
     axis : int, optional
         Axis along which data is filtered. Defaults to last axis.
     center : bool, optional
-        Whether to trim leading part of axis by number of *b* coefficients. Will
-        also attempt to *re-center* the data if a net-forward (e.g. f, fbf, fbfbf, ...)
+        Whether to trim leading part of axis by number of *b* coefficients. Will also
+        attempt to *re-center* the data if a net-forward (e.g. f, fbf, fbfbf, ...)
         filtering was performed. This works for non-recursive filters only.
     pad : bool, optional
         Whether to pad trimmed values with `pad_value` when `center` is ``True``.
@@ -366,7 +366,7 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
 
 
 @quack._yy_metadata
-@quant.while_dequantified(('=y', ''), '=y')
+@quant.while_dequantified('=y', '=y')
 def harmonics(y, n, /, axis=-1):
     """
     Select the first Fourier harmonics of the time series.
@@ -400,7 +400,7 @@ def harmonics(y, n, /, axis=-1):
 
 
 @quack._yy_metadata
-@quant.while_dequantified(('=y', ''), '=y')
+@quant.while_dequantified('=y', '=y')
 def highpower(y, n, /, axis=-1):
     """
     Select only the highest power frequencies. Useful for crudely reducing noise.
@@ -873,21 +873,31 @@ def copower2d(dx_lon, dx_time, y1, y2, /, axis_lon=0, axis_time=-1, **kwargs):
     )
 
 
-@quant.while_dequantified(('=x', '', ''), ('', ''))
-def response(dx, b, a=1, /, n=1000, simple=False):
+@quant.while_quantified('=x', '=x')
+def response(dx, b, a=1, /, n=1000, manual=False):
     """
-    Calculate the response function given the *a* and *b* coefficients for some
-    analog filter. For details, see Dennis Hartmann's objective analysis
+    Calculate the response function given the *a* and *b* coefficients for
+    some analog filter. For details, see Dennis Hartmann's objective analysis
     `course notes <https://atmos.washington.edu/~dennis/552_Notes_ftp.html>`__.
 
     Parameters
     ----------
-    dx : int or array-like
+    dx : array-like
         The step size.
     b : array-like
         The window `b` coefficients.
     a : array-like
         The window `a` coefficients.
+    manual : bool, default: False
+        Whether to calculate the response manually for a non-recursive filter.
+        If ``False`` then `~scipy.signal.freqz` is used instead.
+
+    Parameters
+    ----------
+    x : ndarray
+        The sample points.
+    y : ndarray
+        The response function values.
 
     Notes
     -----
@@ -904,43 +914,33 @@ def response(dx, b, a=1, /, n=1000, simple=False):
     """
     # Parse input
     a = np.atleast_1d(a)
-    x = np.linspace(0, np.pi, n)
+    x = np.linspace(0, 2 * np.pi, n) * dx
 
-    # Simple calculation given 'b' coefficients, from Libby's notes
+    # Very easy calculation given 'b' coefficients, from Libby's notes
     # Note we *need to make the exponent frequencies into
     # rad/physical units* for results to make sense.
-    if simple:
-        if not len(a) == 1 and a[0] == 1:
-            raise ValueError(
-                'Cannot manually calculate response function '
-                'for recursive filter.'
-            )
+    if manual:
+        if len(a) > 1 and a[0] == 1:
+            raise ValueError('Cannot calculate response function for recursive filter.')
         if len(b) % 2 == 0:
-            raise ValueError(
-                'Filter coefficient number should be odd, symmetric '
-                'about a central value.'
-            )
+            raise ValueError('Filter coefficient number should be odd and symmetric.')
         nb = len(b)
         C0 = b[nb // 2]
         Ck = b[nb // 2 + 1:]  # should be symmetric
         tau = np.arange(1, nb // 2 + 1)  # lag time, up to nb+1
-        x = x * 2 * np.pi * dx  # from cycles/unit --> rad/unit --> rad/step
-        y = C0 + 2 * np.sum(
-            Ck[None, :] * np.cos(tau[None, :] * x[:, None]), axis=1
-        )
+        y = C0 + 2 * np.sum(Ck * np.cos(tau * x[:, None] / dx), axis=1)
 
     # More complex freqz filter, generalized for arbitrary recursive filters,
-    # with extra allowance for working with physical units.
-    # Last entry will be Nyquist, i.e. 1/(dx*2)
+    # with extra allowance for working with physical units. Last entry will
+    # be the Nyquist frequency, i.e. 1 / (dx * 2)
     else:
-        _, y = signal.freqz(b, a, x)
-        x = x / (2 * np.pi * dx)
+        _, y = signal.freqz(b, a, x / dx)
         y = np.abs(y)
     return x, y
 
 
 @quack._yy_metadata
-@quant.while_dequantified(('=y', ''), '=y')
+@quant.while_dequantified('=y', '=y')
 def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     """
     Apply running average to array.

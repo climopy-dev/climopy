@@ -84,13 +84,16 @@ def _parse_args(args_in, args_out):
     from ..cfvariable import CFVariable  # depends on internals so import here
     types = (str, dict, pint.Unit, pint.Quantity, putil.UnitsContainer, CFVariable)
     is_scalar_out = False
-    if isinstance(args_in, types) or not np.iterable(args_in):
+    if args_in is None:
+        args_in = ()
+    elif isinstance(args_in, types) or not np.iterable(args_in):
         args_in = (args_in,)
-    if isinstance(args_out, types) or not np.iterable(args_out):
+    if args_out is None:
         args_out = (args_out,)
         is_scalar_out = True
-    if not args_in or not args_out:
-        raise TypeError('Input and output units are both required.')
+    elif isinstance(args_out, types) or not np.iterable(args_out):
+        args_out = (args_out,)
+        is_scalar_out = True
 
     # Split each spec into group of options (separated by |). Ensure same number of
     # non-scalar options for each argument and return value options are non-scalar
@@ -101,7 +104,7 @@ def _parse_args(args_in, args_out):
     for i, arg in enumerate((*args_in, *args_out)):
         if isinstance(arg, str):
             arg = [a.strip() for a in arg.split('|')]
-        elif isinstance(arg, types):
+        elif isinstance(arg, types) or arg is None:
             arg = [arg]
         else:
             raise TypeError(f'Input must be str, dict, Unit, or UnitsContainer. Instead got {arg!r}.')  # noqa: E501
@@ -197,7 +200,6 @@ def _standardize_dependent(
     """
     # Parse input argument
     if unit is None:  # placeholder meaning 'do nothing'
-        print('no standardizatin!!!')
         return arg, False
     if isinstance(arg, str):  # parse expressions e.g. '5cm'
         arg = ureg.parse_expression(arg)
@@ -251,7 +253,7 @@ def _standardize_dependent(
 
 
 def _while_converted(
-    units_in, units_out, strict=False, quantify=False, convert=True, **fmt_defaults
+    units_in=None, units_out=None, strict=False, quantify=False, convert=True, **fmt_defaults  # noqa: E501
 ):
     """
     Driver function for `while_quantified` and `while_dequantified`. See above
@@ -270,7 +272,7 @@ def _while_converted(
         for idx, unit in enumerate(units):
             container, is_ref = _units_container(unit, **fmt_defaults)
             if container is None:
-                continue
+                pass
             elif is_ref:
                 if len(container) == 1:
                     (key, value), = container.items()
@@ -287,18 +289,17 @@ def _while_converted(
             container, is_ref = containers[idx]
             if isinstance(container, dict) and not container.keys() <= independent.keys():  # noqa: E501
                 raise ValueError(f'Not all variables referenced in {units_in[idx]} are defined.')  # noqa: E501
-        print('categories', units, independent, dependent, constant)
         categories.append((independent, dependent, constant))
 
     # Declare decorator
     def _decorator(func):
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
-            # Test input
+            # Test input arguments. Bypass extra arguments
             args = list(args)
             n_result = len(args)
             n_expect = len(units_in[0])
-            if n_result != n_expect:
+            if n_expect > n_result:
                 raise ValueError(f'Expected {n_expect} positional args, got {n_result}.')  # noqa: E501
 
             # Select group for parsing
@@ -348,27 +349,26 @@ def _while_converted(
                 args_new[idx] = arg
                 quantify_results = has_units or quantify_results
 
-            # Call main function and standardize results
+            # Call main function and standardize results. Bypass extra values
             results = func(*args_new, **kwargs)
             n_result = 1 if not isinstance(results, tuple) else len(results)
             n_expect = len(units_out[grp])
             if is_scalar_out and isinstance(results, tuple):
                 raise ValueError('Got tuple of return values, expected one value.')
-            if not is_scalar_out and n_result != n_expect:
+            if not is_scalar_out and n_expect > n_result:
                 raise ValueError(f'Expected {n_expect} return values, got {n_result}.')
-            results_new = []
-            if is_scalar_out:
-                results = (results,)
-            for idx, res in enumerate(results):
+            results = [results] if is_scalar_out else list(results)
+            results_new = results.copy()
+            for idx in range(n_expect):
                 res, _ = _standardize_dependent(
-                    res,
+                    results[idx],
                     units_out[grp][idx],
                     convert=convert,
                     quantify=quantify_results,
                     definitions=definitions,
                     **fmt_kwargs
                 )
-                results_new.append(res)
+                results_new[idx] = res
 
             # Return sanitized values
             if is_scalar_out:
@@ -382,20 +382,18 @@ def _while_converted(
 
 
 @docstring.inject_snippets(descrip='dequantified')
-def while_quantified(units_in, units_out, strict=False, **fmt_defaults):
+def while_quantified(*args, **kwargs):
     """
     %(quant.quantified)s
     """
-    return _while_converted(
-        units_in, units_out, quantify=True, strict=strict, **fmt_defaults
-    )
+    kwargs['quantify'] = True
+    return _while_converted(*args, **kwargs)
 
 
 @docstring.inject_snippets(descrip='dequantified')
-def while_dequantified(units_in, units_out, strict=False, **fmt_defaults):
+def while_dequantified(*args, **kwargs):
     """
     %(quant.quantified)s
     """
-    return _while_converted(
-        units_in, units_out, quantify=False, strict=strict, **fmt_defaults
-    )
+    kwargs['quantify'] = False
+    return _while_converted(*args, **kwargs)
