@@ -13,7 +13,7 @@ import pint
 
 from .internals import ic  # noqa: F401
 from .internals import warnings
-from .unit import decode_units, format_units
+from .unit import _standardize_string, decode_units, format_units
 
 __all__ = [
     'vreg',  # pint convention
@@ -21,6 +21,21 @@ __all__ = [
     'CFVariable',
     'CFVariableRegistry',
 ]
+
+
+def _modify_name(name, prefix, suffix):
+    """
+    Modify variable name with prefix and suffix, squeeze consective spaces,
+    and correct clunky names like "jet stream strength latitude".
+    """
+    prefix = prefix or ''
+    suffix = suffix or ''
+    name = ' '.join((prefix, name, suffix)).strip()
+    name = re.sub(r'\s\+', ' ', name)  # squeeze consecutive spaces
+    for modifier in ('strength', 'intensity'):
+        for ending in ('latitude', 'anomaly', 'response'):
+            name = name.replace(f'{modifier} {ending}', ending)
+    return name
 
 
 class CFVariable(object):
@@ -130,24 +145,7 @@ class CFVariable(object):
         for var in self._children:
             yield from var
 
-    @staticmethod
-    def _modify_name(name, prefix, suffix):
-        """
-        Modify variable name with prefix and suffix, squeeze consective spaces,
-        and correct clunky names like "jet stream strength latitude".
-        """
-        if name is None:
-            return None
-        prefix = prefix or ''
-        suffix = suffix or ''
-        name = ' '.join((prefix, name, suffix)).strip()
-        name = re.sub(r'\s\+', ' ', name)  # squeeze consecutive spaces
-        for modifier in ('strength', 'intensity'):
-            for ending in ('latitude', 'anomaly', 'response'):
-                name = name.replace(f'{modifier} {ending}', ending)
-        return name
-
-    def _inherit(self, attr, value=None, default=None):
+    def _inherit_property(self, attr, value=None, default=None):
         """
         Try to inherit property if `value` was not provided.
         """
@@ -267,38 +265,36 @@ class CFVariable(object):
             by `proplot.constructor.Formatter`. Set to ``False`` to revert to the
             default formatter instead of inheriting the formatter.
         """
-        # Parse input names and apply prefixes and suffixes
         # NOTE: Important to add prefixes and suffixes to long_name *after* using
         # as default short_name. Common use case is to create "child" variables with
         # identical short_name using e.g. vreg.define('var', long_prefix='prefix')
-        standard_units = self._inherit('standard_units', standard_units)
-        long_name = self._inherit('long_name', long_name)
-        short_name = self._inherit('short_name', short_name, default=long_name)
-        long_name = self._modify_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
-        short_name = self._modify_name(short_name, short_prefix, short_suffix)
-        standard_name = self._inherit('standard_name', standard_name)
+        standard_units = self._inherit_property('standard_units', standard_units)
+        long_name = self._inherit_property('long_name', long_name)
+        short_name = self._inherit_property('short_name', short_name, default=long_name)
+        standard_name = self._inherit_property('standard_name', standard_name)
+        if standard_units is not None:
+            standard_units = _standardize_string(standard_units)
+        if long_name is not None:
+            long_name = _modify_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
+        if short_name is not None:
+            short_name = _modify_name(short_name, short_prefix, short_suffix)
         if standard_name is None and long_name is not None:
-            standard_name = re.sub(r'\W', '_', long_name).strip('_').lower()
-            standard_name = re.sub(r'_+', '_', standard_name)  # squeeze consecutive
-
-        # Add attributes
-        default_axis_formatter = 'auto'
-        if axis_formatter is False:
+            standard_name = re.sub(r'\W+', '_', long_name).strip('_').lower()
+        if axis_formatter is False and (default_axis_formatter := 'auto'):
             axis_formatter = default_axis_formatter
-        default_scalar_formatter = ('sigfig', 2)
-        if scalar_formatter is False:
+        if scalar_formatter is False and (default_scalar_formatter := ('sigfig', 2)):
             scalar_formatter = default_scalar_formatter
         self._standard_units = standard_units
         self._long_name = long_name
         self._short_name = short_name
         self._standard_name = standard_name
-        self._symbol = self._inherit('symbol', symbol, default='').strip('$')
-        self._reference = self._inherit('reference', reference)
-        self._colormap = self._inherit('colormap', colormap, default='Greys')
-        self._axis_formatter = self._inherit('axis_formatter', axis_formatter, default=default_axis_formatter)  # noqa: E501
-        self._axis_reverse = self._inherit('axis_reverse', axis_reverse, default=False)
-        self._axis_scale = self._inherit('axis_scale', axis_scale)
-        self._scalar_formatter = self._inherit('scalar_formatter', scalar_formatter, default=default_scalar_formatter)  # noqa: E501
+        self._symbol = self._inherit_property('symbol', symbol, default='').strip('$')
+        self._reference = self._inherit_property('reference', reference)
+        self._colormap = self._inherit_property('colormap', colormap, default='Greys')
+        self._axis_formatter = self._inherit_property('axis_formatter', axis_formatter, default=default_axis_formatter)  # noqa: E501
+        self._axis_reverse = self._inherit_property('axis_reverse', axis_reverse, default=False)  # noqa: E501
+        self._axis_scale = self._inherit_property('axis_scale', axis_scale)
+        self._scalar_formatter = self._inherit_property('scalar_formatter', scalar_formatter, default=default_scalar_formatter)  # noqa: E501
 
     # Core properties
     @property
@@ -311,8 +307,8 @@ class CFVariable(object):
     @property
     def identifiers(self):
         """
-        Tuple of unique variable identifiers (the `~CFVariable.name`, the
-        `~CFVariable.standard_name`, and the `~CFVariable.aliases`).
+        Tuple of unique variable identifiers (the `~CFVariable.name`,
+        the `~CFVariable.standard_name`, and the `~CFVariable.aliases`).
         """
         names = (self.name,)
         if self.standard_name:
