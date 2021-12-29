@@ -13,7 +13,7 @@ import pint
 
 from .internals import ic  # noqa: F401
 from .internals import warnings
-from .unit import _standardize_string, decode_units, format_units
+from .unit import _to_pint_string, decode_units, format_units
 
 __all__ = [
     'vreg',  # pint convention
@@ -273,7 +273,7 @@ class CFVariable(object):
         short_name = self._inherit_property('short_name', short_name, default=long_name)
         standard_name = self._inherit_property('standard_name', standard_name)
         if standard_units is not None:
-            standard_units = _standardize_string(standard_units)
+            standard_units = _to_pint_string(standard_units)
         if long_name is not None:
             long_name = _modify_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
         if short_name is not None:

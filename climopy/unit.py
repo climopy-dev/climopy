@@ -15,6 +15,11 @@ __all__ = [
     'format_units',
 ]
 
+# Regular expressions for translation from CF-compliant exponential
+# and constant indictions to pint compatible strings.
+REGEX_EXPONENTS = re.compile(r'([a-zA-Z]+)([-+]?[0-9]+)')
+REGEX_CONSTANTS = re.compile(r'\b([-+]?[0-9]+[a-zA-Z]+)')
+
 
 #: The default `pint.UnitRegistry` used throughout climopy. Includes flexible aliases
 #: for temperature, pressure, vorticity, dimensionless quantities, and units with
@@ -139,14 +144,13 @@ ureg.define('@alias meter = metre = geopotential_meter = geopotential_metre = gp
 ureg.setup_matplotlib()
 
 
-def _standardize_string(unit):
+def _to_pint_string(unit):
     """
-    Convert the input string into a unit string recognized by `pint`. Translates
-    original CF constructs and additional climopy constructs in preparation for
-    parsing by `pint.parse_units`. See `decode_units` for details.
+    Translate CF and climopy constructs in preparation for parsing by
+    `pint.parse_units`. See `decode_units` for details.
     """
-    unit = re.sub(r'([a-zA-Z]+)([-+]?[0-9]+)', r'\1^\2', unit or '')  # exponents
-    unit = re.sub(r'\b([-+]?[0-9]+[a-zA-Z]+)', r'_\1', unit)  # constants
+    unit = REGEX_EXPONENTS.sub(r'\1^\2', unit or '')
+    unit = REGEX_CONSTANTS.sub(r'_\1', unit)
     if ' since ' in unit:  # hours since, days since, etc.
         unit, *_ = unit.split()
     unit, *denominator = unit.strip().split('/')
@@ -158,8 +162,7 @@ def _standardize_string(unit):
 def encode_units(unit, /):
     """
     Convert `pint.Unit` into an unambiguous unit string. This is used with
-    `~.accessor.ClimoDataArrayAccessor.dequantify` to record units in the
-    `xarray.DataArray` attributes for future use.
+    `~.accessor.ClimoDataArrayAccessor.dequantify` to record the units attribute.
     """
     if isinstance(unit, str):
         unit = decode_units(unit)
@@ -182,7 +185,7 @@ def decode_units(unit, /):
       (e.g. ``W / m2 Pa`` instead of ``W / m^2 / Pa``; additional slashes are optional).
     """
     if isinstance(unit, str):
-        unit = _standardize_string(unit)
+        unit = _to_pint_string(unit)
     return ureg.parse_units(unit)
 
 

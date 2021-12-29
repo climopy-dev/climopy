@@ -13,7 +13,7 @@ import pint
 import pint.util as putil
 import xarray as xr
 
-from ..unit import _standardize_string, ureg
+from ..unit import _to_pint_string, ureg
 from . import docstring
 
 __all__ = ['while_quantified', 'while_dequantified']
@@ -86,9 +86,9 @@ def _group_args(args_in, args_out):
     # Enforce iterable input argument and return value specs
     # NOTE: Type checking for decorators happens here first.
     from ..cfvariable import CFVariable  # depends on internals so import here
-    if not np.iterable(args_in):
+    if isinstance(args_in, str) or not np.iterable(args_in):
         args_in = () if args_in is None else (args_in,)
-    if is_scalar_out := not np.iterable(args_out):
+    if is_scalar_out := isinstance(args_out, str) or not np.iterable(args_out):
         args_out = () if args_out is None else (args_out,)
 
     # Split string specs into groups of options (separated by |). Ensure same
@@ -130,7 +130,7 @@ def _units_container(arg, **fmt_kwargs):
         if '=' in arg:  # avoid reading numeric variable suffixes as exponents
             is_ref = True
         else:
-            arg = _standardize_string(arg)  # support added climopy conventions
+            arg = _to_pint_string(arg)  # support conventions
     elif isinstance(arg, pint.Unit):
         pass
     elif arg is not None:  # should be impossible since _group_args checks type
@@ -292,7 +292,7 @@ def _while_converted(
             containers.append(container)
         for idx in dependent:
             container, unit = containers[idx], unit[idx]
-            if container.keys() <= independent.keys():
+            if not container.keys() <= independent.keys():
                 raise ValueError(f'Not all variables referenced in {unit} are defined.')
         categories.append((independent, dependent, constant))
 
