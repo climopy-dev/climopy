@@ -33,8 +33,8 @@ Parameters
 ----------
 units_in : unit-spec or str or sequence
     The units for the positional input arguments. Can be a `pint.Unit`, a unit
-    string specification like ``'cm'``, or a relational variable specification
-    like ``'=x'`` if the argument is not associated with any particular `pint.Unit`,
+    string specification like ``'cm'``, or a relational variable specification like
+    ``'=x'`` if the argument is not associated with any particular `pint.Unit`,
     for example ``while_%(descrip)s(('=x', '=y'), '=y / x')`` might be used
     for a function whose output units are the units of the second argument
     divided by the units of the first argument). Keyword arguments can be included
@@ -83,33 +83,22 @@ def _group_args(args_in, args_out):
     Parse specifications for input arguments and return values. Used for
     `while_quantified`, `while_dequantified`, and `register_derivation`.
     """
-    # Enforce list of input argument specs and list of return value specs.
-    # Note that register_derivation inputs can be CFVariable and quantified
-    # inputs can be arbitrary unit-specs.
+    # Enforce iterable input argument and return value specs
+    # NOTE: Type checking for decorators happens here first.
     from ..cfvariable import CFVariable  # depends on internals so import here
-    types = (str, dict, pint.Unit, pint.Quantity, putil.UnitsContainer, CFVariable)
-    is_scalar_out = False
-    if args_in is None:
-        args_in = ()
-    elif isinstance(args_in, types) or not np.iterable(args_in):
-        args_in = (args_in,)
-    if args_out is None:
-        args_out = (args_out,)
-        is_scalar_out = True
-    elif isinstance(args_out, types) or not np.iterable(args_out):
-        args_out = (args_out,)
-        is_scalar_out = True
+    if not np.iterable(args_in):
+        args_in = () if args_in is None else (args_in,)
+    if is_scalar_out := not np.iterable(args_out):
+        args_out = () if args_out is None else (args_out,)
 
-    # Split each spec into group of options (separated by |). Ensure same number of
-    # non-scalar options for each argument and return value options are non-scalar
-    # if and only if input arugment options are non-scalar.
+    # Split string specs into groups of options (separated by |). Ensure same
+    # number of non-scalar options for input arguments and return values.
     args = []
-    nout = len(args_out)
     sizes = set()
     for i, arg in enumerate((*args_in, *args_out)):
         if isinstance(arg, str):
             arg = [a.strip() for a in arg.split('|')]
-        elif isinstance(arg, types) or arg is None:
+        elif arg is None or isinstance(arg, (pint.Unit, CFVariable)):
             arg = [arg]
         else:
             raise TypeError(f'Input must be str, dict, Unit, or UnitsContainer. Instead got {arg!r}.')  # noqa: E501
@@ -121,41 +110,20 @@ def _group_args(args_in, args_out):
             raise TypeError('Non-scalar input name sequences require non-scalar output')
         args.append(arg)
 
-    # Split input argument specs and return value specs into lists for each option.
-    # For example _group_args(('a|b', 'c'), 'x|y') will return the input argument
-    # spec list [['a', 'c'], ['b', 'c']] and return value spec list [['x'], ['y']].
+    # Split input argument and return value specs into option groups. For example get
+    # [['a', 'c'], ['b', 'c']] and [['x'], ['y']] from _group_args(('a|b', 'c'), 'x|y').
     args = [arg * max(sizes, default=1) if len(arg) == 1 else arg for arg in args]
-    args_in = [arg[:-nout] for arg in zip(*args)]
-    args_out = [arg[-nout:] for arg in zip(*args)]
+    args_in = [arg[:-len(args_out)] for arg in zip(*args)]
+    args_out = [arg[-len(args_out):] for arg in zip(*args)]
     return args_in, args_out, is_scalar_out
-
-
-def _units_object(arg):
-    """
-    Get the pint units associated with the object argument. Used to compare units
-    from input arguments against unit specifications.
-    """
-    units = None
-    if isinstance(arg, str):
-        arg = ureg.parse_expression(arg)  # appends '1' to raw unit strings
-    if isinstance(arg, pint.Unit):
-        units = arg
-    if isinstance(arg, putil.UnitsContainer):
-        units = pint.Unit(arg)
-    if isinstance(arg, pint.Quantity):
-        units = arg.units
-    if isinstance(arg, xr.DataArray):
-        if 'units' in arg.attrs or arg.climo._is_quantity:
-            units = arg.climo.units
-    return units
 
 
 def _units_container(arg, **fmt_kwargs):
     """
-    Convert a pint unit type to a UnitsContainer, checking if it is a reference
-    (i.e. a string prefixed with an equal sign).
+    Convert a unit type to a UnitsContainer after checking if it is a reference.
     """
-    types = (str, dict, pint.Unit, pint.Quantity, putil.UnitsContainer)
+    # NOTE: This parses units when applying quantify decoraters and when
+    # standardizing return value units and dependent input argument units.
     is_ref = False
     if isinstance(arg, str):
         arg = arg.format(**fmt_kwargs)  # permit extra keyword arguments
@@ -163,13 +131,34 @@ def _units_container(arg, **fmt_kwargs):
             is_ref = True
         else:
             arg = _standardize_string(arg)  # support added climopy conventions
-    if arg is not None and not isinstance(arg, types):
-        raise ValueError(f'Invalid unit argument {arg}. Must be any of {types}.')
+    elif isinstance(arg, pint.Unit):
+        pass
+    elif arg is not None:  # should be impossible since _group_args checks type
+        raise ValueError(f'Unrecognized pint unit argument {arg}.')
     if is_ref:
         container = putil.to_units_container(arg.split('=', 1)[1])
     else:
         container = putil.to_units_container(arg, ureg)  # None returns None
     return container, is_ref
+
+
+def _units_object(arg):
+    """
+    Get the pint units associated with the object argument.
+    """
+    # NOTE: This parses units when comparing input argument units against the
+    # declared units in order to select the correct standardization group.
+    units = None
+    if isinstance(arg, str):
+        arg = ureg.parse_expression(arg)  # multiplies raw unit strings by '1'
+    elif isinstance(arg, pint.Unit):
+        units = arg
+    elif isinstance(arg, pint.Quantity):
+        units = arg.units
+    elif isinstance(arg, xr.DataArray):
+        if arg.climo._is_quantity or 'units' in arg.attrs:
+            units = arg.climo.units
+    return units
 
 
 def _standardize_independent(arg, quantify=False):
@@ -273,19 +262,20 @@ def _while_converted(
     Driver function for `while_quantified` and `while_dequantified`. See above
     for the full documentation.
     """
-    # Ensure input arguments are valid units or references
-    # NOTE: Items in units_in, units_out are lists containing units for all input
-    # arguments or all return values. Generally singleton unless | was used.
-    if not grouped:  # used by register_derivation
-        units_in, units_out, is_scalar_out = _group_args(units_in, units_out)
+    # Group and categorize the input argument units
+    # NOTE: Resulting units_in, units_out will be singleton lists unless | was used.
     categories = []
-    containers = []
+    containers = []  # check dependent against independent variables
+    if grouped:  # used by register_derivation
+        pass
+    else:
+        units_in, units_out, is_scalar_out = _group_args(units_in, units_out)
     for units in units_in:
         independent = {}
         dependent = set()
         constant = set()
         for idx, unit in enumerate(units):
-            container, is_ref = _units_container(unit, **fmt_defaults)
+            container, is_ref = _units_container(unit, **fmt_defaults)  # type checking
             if container is None:
                 pass
             elif is_ref:
@@ -296,14 +286,14 @@ def _while_converted(
                     else:
                         dependent.add(idx)
                 else:
-                    dependent.add(idx)  # definition found elsewhere
+                    dependent.add(idx)  # definition is found elsewhere
             else:
                 constant.add(idx)
-            containers.append((container, is_ref))
+            containers.append(container)
         for idx in dependent:
-            container, is_ref = containers[idx]
-            if isinstance(container, dict) and not container.keys() <= independent.keys():  # noqa: E501
-                raise ValueError(f'Not all variables referenced in {units_in[idx]} are defined.')  # noqa: E501
+            container, unit = containers[idx], unit[idx]
+            if container.keys() <= independent.keys():
+                raise ValueError(f'Not all variables referenced in {unit} are defined.')
         categories.append((independent, dependent, constant))
 
     # Declare decorator
