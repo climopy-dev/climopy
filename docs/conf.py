@@ -139,8 +139,9 @@ napoleon_preprocess_types = True
 napoleon_type_aliases = {
     # Python or inherited terms
     # NOTE: built-in types are automatically included
-    'callable': ':py:func:`callable`',
     'sequence': ':term:`sequence`',
+    'callable': ':py:func:`callable`',
+    'ndarray': ':py:class:`numpy.ndarray`',
     'dict-like': ':term:`dict-like <mapping>`',
     'path-like': ':term:`path-like <path-like object>`',
     'array-like': ':term:`array-like <array_like>`',

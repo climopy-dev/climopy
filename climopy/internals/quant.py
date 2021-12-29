@@ -49,15 +49,20 @@ units_in : unit-spec or str or sequence
     operations with different (but related) physical quantities.
 units_out : unit-spec or str or sequence
     As with `units_in`, but for the return values.
-strict : bool, default: False
-    Whether to forbid non-quantity input arguments. If ``False`` then these
-    are assumed to be in the correct units.
 convert : bool, default: True
     Whether to convert input argument and return value units to the specified
     units or merely assert compatibility with the specified units.
+strict : bool, default: False
+    Whether to forbid non-quantity input arguments. If ``False`` then these
+    are assumed to be in the correct units.
 **fmt_defaults
     Default values for the terms surrounded by curly braces in relational
     or string unit specifications.
+
+Returns
+-------
+callable
+    The function decorated by `~internals.quant.while_%(descrip)s`.
 
 Example
 -------
@@ -73,7 +78,7 @@ Here is a simple example for an nth derivative wrapper.
 docstring.snippets['quant.quantified'] = _quant_docstring
 
 
-def _parse_args(args_in, args_out):
+def _group_args(args_in, args_out):
     """
     Parse specifications for input arguments and return values. Used for
     `while_quantified`, `while_dequantified`, and `register_derivation`.
@@ -117,7 +122,7 @@ def _parse_args(args_in, args_out):
         args.append(arg)
 
     # Split input argument specs and return value specs into lists for each option.
-    # For example _parse_args(('a|b', 'c'), 'x|y') will return the input argument
+    # For example _group_args(('a|b', 'c'), 'x|y') will return the input argument
     # spec list [['a', 'c'], ['b', 'c']] and return value spec list [['x'], ['y']].
     args = [arg * max(sizes, default=1) if len(arg) == 1 else arg for arg in args]
     args_in = [arg[:-nout] for arg in zip(*args)]
@@ -127,7 +132,8 @@ def _parse_args(args_in, args_out):
 
 def _units_object(arg):
     """
-    Get the pint units associated with the input object.
+    Get the pint units associated with the object argument. Used to compare units
+    from input arguments against unit specifications.
     """
     units = None
     if isinstance(arg, str):
@@ -149,11 +155,13 @@ def _units_container(arg, **fmt_kwargs):
     Convert a pint unit type to a UnitsContainer, checking if it is a reference
     (i.e. a string prefixed with an equal sign).
     """
-    is_ref = isinstance(arg, str) and '=' in arg
     types = (str, dict, pint.Unit, pint.Quantity, putil.UnitsContainer)
+    is_ref = False
     if isinstance(arg, str):
         arg = arg.format(**fmt_kwargs)  # permit extra keyword arguments
-        if '=' not in arg:  # avoid reading numeric variable suffixes as exponents
+        if '=' in arg:  # avoid reading numeric variable suffixes as exponents
+            is_ref = True
+        else:
             arg = _standardize_string(arg)  # support added climopy conventions
     if arg is not None and not isinstance(arg, types):
         raise ValueError(f'Invalid unit argument {arg}. Must be any of {types}.')
@@ -191,7 +199,7 @@ def _standardize_independent(arg, quantify=False):
 
 
 def _standardize_dependent(
-    arg, unit=None, strict=False, quantify=False, convert=True, definitions=None,
+    arg, unit=None, convert=True, strict=False, quantify=False, definitions=None,
     **fmt_kwargs
 ):
     """
@@ -227,13 +235,13 @@ def _standardize_dependent(
         if convert:
             arg = arg.to(unit)
         else:
-            arg + 0 * unit  # trigger compatibility check and error
+            arg + 0 * unit  # trigger compatibility check
     elif isinstance(arg, xr.DataArray) and arg.climo._is_quantity:
         has_units = True
         if convert:
             arg = arg.climo.to(unit)
         else:
-            arg + 0 * unit
+            arg + 0 * unit  # trigger compatibility check
     elif not strict:
         has_units = False
         if isinstance(arg, xr.DataArray):
@@ -253,7 +261,13 @@ def _standardize_dependent(
 
 
 def _while_converted(
-    units_in=None, units_out=None, strict=False, quantify=False, convert=True, **fmt_defaults  # noqa: E501
+    units_in=None,
+    units_out=None,
+    convert=True,
+    strict=False,
+    grouped=False,
+    quantify=False,
+    **fmt_defaults  # noqa: E501
 ):
     """
     Driver function for `while_quantified` and `while_dequantified`. See above
@@ -262,7 +276,8 @@ def _while_converted(
     # Ensure input arguments are valid units or references
     # NOTE: Items in units_in, units_out are lists containing units for all input
     # arguments or all return values. Generally singleton unless | was used.
-    units_in, units_out, is_scalar_out = _parse_args(units_in, units_out)
+    if not grouped:  # used by register_derivation
+        units_in, units_out, is_scalar_out = _group_args(units_in, units_out)
     categories = []
     containers = []
     for units in units_in:

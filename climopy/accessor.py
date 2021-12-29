@@ -83,6 +83,15 @@ PARSEKEY_ARGS = (
     'search_registry'
 )
 
+
+# Regular expression compiled for speed
+REGEX_BOUNDS = re.compile(r'\A(.*?)(?:_(top|bot(?:tom)?|del(?:ta)?|b(?:ou)?nds))?\Z')  # coordinate suffixes implying changes  # noqa: E501
+REGEX_IGNORE = re.compile(r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z')  # variable suffixes to ignore  # noqa: E501
+REGEX_MODIFY = re.compile(r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|_ratio)?\Z')  # variable suffixes implying changes  # noqa: E501
+REGEX_REPR_COMMA = re.compile(r'\A(\w+),(\s*)(.*)\Z')  # content around first comma
+REGEX_REPR_PAREN = re.compile(r'\A.*?\((.*)\)\Z')  # content inside first parentheses
+
+
 # Expand regexes for automatic coordinate detection with standardize_coords
 if hasattr(_cf_accessor, 'regex'):
     _cf_accessor.regex = {
@@ -942,8 +951,7 @@ class _CoordsQuantified(object):
         # Interpret bounds specification
         if not isinstance(key, str):
             raise TypeError(f'Invalid key {key!r}. Must be string.')
-        m = re.match(r'\A(.*?)(?:_(top|bot(?:tom)?|del(?:ta)?|b(?:ou)?nds))?\Z', key)
-        key, flag = m.groups()  # fix bounds flag
+        key, flag = REGEX_BOUNDS.match(key).groups()
         flag = flag or ''
 
         # Find native coordinate
@@ -2827,17 +2835,17 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         except AttributeError:
             repr_ = self.data.name or 'unknown'
         else:
-            repr_ = re.match(r'\A.*?\((.*)\)\Z', repr(var)).group(1)
+            repr_ = REGEX_REPR_PAREN.match(repr(var)).group(1)
 
         # Align names and truncate key=value pairs
-        if varwidth is not None and (m := re.match(r'\A(\w+),\s*(.*)\Z', repr_)):
-            grp1, grp2 = m.groups()  # pad between canonical name and subsequent info
-            repr_ = grp1[:varwidth] + ',' + ' ' * (varwidth - len(grp1)) + grp2
+        if varwidth is not None and (m := REGEX_REPR_COMMA.match(repr_)):
+            name, _, info = m.groups()  # pad between canonical name + subsequent info
+            repr_ = name[:varwidth] + ',' + ' ' * (varwidth - len(name)) + info
         if maxlength is not None and len(repr_) > maxlength:
             repr_ = repr_[:maxlength - 4]
             repr_ = repr_[:repr_.rfind(' ')] + ' ...'
         if brackets:
-            repr_ = re.sub(r'\A(\w+),(\s*)(.*)\Z', r'\1\2<\3>', repr_)
+            repr_ = REGEX_REPR_COMMA.sub(r'\1\2<\3>', repr_)
 
         return repr_
 
@@ -4251,9 +4259,8 @@ class ClimoDatasetAccessor(ClimoAccessor):
             raise TypeError(f'Invalid key {key!r}. Must be string.')
         if search_vars:
             da = self.vars.get(key, search_registry=search_registry, **kwargs)
-            regex = r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z'
             if da is not None:  # noqa: E501
-                da.name = re.sub(regex, r'\1', da.name)
+                da.name = REGEX_IGNORE.sub(r'\1', da.name)
                 return 'var', da
 
         # Return a coord, transformation, or derivation
@@ -4304,8 +4311,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
     @_expand_variable_args  # standardize args are passed to lookup cache
     # @functools.lru_cache(maxsize=64)  # TODO: fix issue where recursion breaks cache
     def get(
-        self,
-        *keys,
+        self, key, *,
         quantify=None,
         standardize=False,
         units=None,
@@ -4324,9 +4330,9 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
         Parameters
         ----------
-        arg : var-spec or 2-tuple
-            The variable name. The following prefix and suffix shorthands
-            are supported:
+        key : var-spec or 2-tuple
+            The variable specification. See `~ClimoDatasetAccessor.__getitem__` for
+            details. The following prefix suffix shorthands are also supported:
 
             * Prepend ``abs_`` to return the absolute value of the result.
             * Append ``_latitude`` or ``_strength`` to return vertically and zonally
@@ -4382,33 +4388,31 @@ short_suffix : str, optional
         """
         # Get the variable, translating meta-variable actions and interpreting
         # CFVariable attributes passed as keyword arguments.
-        # TODO: Avoid name conflicts with functions and variables?
-        if len(keys) != 1:
-            raise TypeError(f'Expected one positional argument, got {len(keys)}.')
-        attrs = {key: kwargs.pop(key) for key in CFVARIABLE_ARGS if key in kwargs}
-        regex = r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|_ratio)?\Z'
-        abs, key, reduce, pair = re.match(regex, *keys).groups()
-        kw = {key: kwargs.pop(key) for key in tuple(kwargs) if key in PARSEKEY_ARGS}
-        data = self._get_item(key, **kw)
+        # TODO: Avoid name conflicts with derivations and variables?
+        flag_abs, key, flag_reduce, flag_pair = REGEX_MODIFY.match(key).groups()
+        kw_reduce = kwargs.copy()
+        kw_attrs = {k: kw_reduce.pop(k) for k in CFVARIABLE_ARGS if k in kw_reduce}
+        kw_getitem = {k: kw_reduce.pop(k) for k in PARSEKEY_ARGS if k in kw_reduce}
+        data = self._get_item(key, **kw_getitem)
 
         # Automatically determine 'reduce' kwargs for energy and momentum budget
         # WARNING: Flux convergence terms are subgroups of flux terms, not tendency
         reg = self.variable_registry
-        if reduce := reduce and reduce.strip('_'):
+        if flag_reduce := flag_reduce and flag_reduce.strip('_'):
             content = key in reg.energy or key in reg.momentum
             tendency = key in reg.energy_flux or key in reg.acceleration
             transport = key in reg.meridional_energy_flux or key in reg.meridional_momentum_flux  # noqa: E501
             if not content and not transport and not tendency:
                 raise ValueError(f'Invalid parameter {key!r}.')
             if data.climo.cf.sizes.get('vertical', 1) > 1:
-                kwargs['vertical'] = 'int'  # NOTE: order of reduction is important
-            kwargs['longitude'] = 'avg' if content or tendency else 'int'
-            kwargs['latitude'] = 'absmax' if reduce == 'strength' else 'absargmax'
+                kw_reduce['vertical'] = 'int'  # NOTE: order of reduction is important
+            kw_reduce['longitude'] = 'avg' if content or tendency else 'int'
+            kw_reduce['latitude'] = 'absmax' if flag_reduce == 'strength' else 'absargmax'  # noqa: E501
 
         # Reduce dimensionality using keyword args
         # WARNING: For timescale variables take inverse before and after possible
         # average. Should move this kludge away.
-        if kwargs:
+        if kw_reduce:
             invert = any(key in v for s in ('tau', 'timescale') if (v := reg.get(s)))
             if invert:
                 with xr.set_options(keep_attrs=True):
@@ -4431,13 +4435,13 @@ short_suffix : str, optional
             data = data.climo.runmean(time=runmean)
 
         # Take the absolute value, accounting for attribute-stripping xarray bug
-        if abs:
+        if flag_abs:
             data = quack._keep_cell_attrs(np.abs)(data)
 
         # Select pair only *after* doing all the math. This is a convenient way
         # to get difference between reduced values
-        if pair:
-            data = data.climo.sel_pair(pair.strip('_'))
+        if flag_pair:
+            data = data.climo.sel_pair(flag_pair.strip('_'))
 
         # Modify the variable. This was used to compare storm track intensity changes
         # under different temperature gradient adjustments.
@@ -4467,7 +4471,7 @@ short_suffix : str, optional
             else:
                 data = data.climo.dequantify()
 
-        data.attrs.update(attrs)
+        data.attrs.update(kw_attrs)
         return data
 
     def quantify(self):
