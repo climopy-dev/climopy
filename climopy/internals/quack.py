@@ -95,6 +95,98 @@ def _is_scalar(data):
     return data.ndim == 0
 
 
+def _keep_cell_attrs(func):
+    """
+    Preserve attributes for duration of function call with `update_cell_attrs`.
+    """
+    @functools.wraps(func)
+    def _wrapper(self, *args, no_keep_attrs=False, **kwargs):
+        result = func(self, *args, **kwargs)  # must return a DataArray
+        if no_keep_attrs:
+            return result
+        if not isinstance(result, (xr.DataArray, xr.Dataset)):
+            raise TypeError('Wrapped function must return a DataArray or Dataset.')
+        result.climo.update_cell_attrs(self)
+        return result
+
+    return _wrapper
+
+
+def _while_quantified(func):
+    """
+    Return a wrapper that temporarily quantifies the data.
+    Compare to `~.internals.quant.while_quantified`.
+    """
+    @functools.wraps(func)
+    def _wrapper(self, *args, **kwargs):
+        # Dequantify
+        data = self.data
+        if isinstance(data, xr.Dataset):
+            data = data.copy(deep=False)
+            quantified = set()
+            for da in data.values():
+                if not da.climo._is_quantity and not da.climo._is_bounds:
+                    da.climo._quantify()
+                    quantified.add(da.name)
+        elif not self._is_quantity:
+            data = data.climo.quantify()
+
+        # Main function
+        result = func(data.climo, *args, **kwargs)
+
+        # Requantify
+        if isinstance(data, xr.Dataset):
+            result = result.copy(deep=False)
+            for name in quantified:
+                result[name].climo._dequantify()
+        elif not self._is_quantity:
+            result = result.climo.dequantify()
+
+        return result
+
+    return _wrapper
+
+
+def _while_dequantified(func):
+    """
+    Return a wrapper that temporarily dequantifies the data.
+    Compare to `~.internals.quant.while_dequantified`.
+    """
+    @functools.wraps(func)
+    def _wrapper(self, *args, **kwargs):
+        # Dequantify
+        data = self.data
+        if isinstance(data, xr.Dataset):
+            data = data.copy(deep=False)
+            dequantified = {}
+            for da in data.values():
+                if da.climo._is_quantity:
+                    dequantified[da.name] = da.data.units
+                    da.climo._dequantify()
+        elif self._is_quantity:
+            units = data.data.units
+            data = data.climo.dequantify()
+
+        # Main function
+        result = func(data.climo, *args, **kwargs)
+
+        # Requantify
+        # NOTE: In _find_extrema, units actually change! Critical that we avoid
+        # overwriting (this is default behavior when passing units to quantify).
+        if isinstance(data, xr.Dataset):
+            result = result.copy(deep=False)
+            for name, units in dequantified.items():
+                units = None if 'units' in result[name].attrs else units
+                result[name].climo._quantify(units=units)
+        elif self._is_quantity:
+            units = None if 'units' in result.attrs else units
+            result.climo.quantify(units=units)
+
+        return result
+
+    return _wrapper
+
+
 def _dataarray_from(
     dataarray, data, name=None, dims=None, attrs=None, coords=None,
     dim_change=None, dim_coords=None, dim_drop=None, keep_attrs=False,

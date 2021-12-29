@@ -389,99 +389,6 @@ def _matching_function(key, func, name):
         return functools.partial(func, name=name)
 
 
-def _keep_cell_attrs(func):
-    """
-    Preserve attributes for duration of function call with `update_cell_attrs`.
-    """
-    @functools.wraps(func)
-    def _wrapper(self, *args, no_keep_attrs=False, **kwargs):
-        result = func(self, *args, **kwargs)  # must return a DataArray
-        if no_keep_attrs:
-            return result
-        if not isinstance(result, (xr.DataArray, xr.Dataset)):
-            raise TypeError('Wrapped function must return a DataArray or Dataset.')
-        result.climo.update_cell_attrs(self)
-        return result
-
-    return _wrapper
-
-
-def _while_quantified(func):
-    """
-    Return a wrapper that temporarily quantifies the data.
-    Compare to `~.internals.quant.while_quantified`.
-    """
-    @functools.wraps(func)
-    def _wrapper(self, *args, **kwargs):
-        # Dequantify
-        data = self.data
-        if isinstance(data, xr.Dataset):
-            data = data.copy(deep=False)
-            quantified = set()
-            for da in data.values():
-                if not da.climo._is_quantity and not da.climo._is_bounds:
-                    da.climo._quantify()
-                    quantified.add(da.name)
-        elif not self._is_quantity:
-            data = data.climo.quantify()
-
-        # Main function
-        result = func(data.climo, *args, **kwargs)
-
-        # Requantify
-        if isinstance(data, xr.Dataset):
-            result = result.copy(deep=False)
-            for name in quantified:
-                result[name].climo._dequantify()
-        elif not self._is_quantity:
-            result = result.climo.dequantify()
-
-        return result
-
-    return _wrapper
-
-
-def _while_dequantified(func):
-    """
-    Return a wrapper that temporarily dequantifies the data.
-    Compare to `~.internals.quant.while_dequantified`.
-    """
-    @functools.wraps(func)
-    def _wrapper(self, *args, **kwargs):
-        # Dequantify
-        data = self.data
-        if isinstance(data, xr.Dataset):
-            data = data.copy(deep=False)
-            dequantified = {}
-            for da in data.values():
-                if da.climo._is_quantity:
-                    dequantified[da.name] = encode_units(da.data.units)
-                    da.climo._dequantify()
-        elif self._is_quantity:
-            units = encode_units(data.data.units)
-            data = data.climo.dequantify()
-
-        # Main function
-        result = func(data.climo, *args, **kwargs)
-
-        # Requantify
-        # NOTE: In _find_extrema, units actually change! Critical that we use
-        # setdefault to prevent overwriting them!
-        if isinstance(data, xr.Dataset):
-            result = result.copy(deep=False)
-            for name, units in dequantified.items():
-                result[name].attrs.setdefault('units', units)
-                result[name].climo._quantify()
-        elif self._is_quantity:
-            result = result.copy(deep=False)
-            result.attrs.setdefault('units', units)
-            result.climo._quantify()
-
-        return result
-
-    return _wrapper
-
-
 class _CFAccessor(object):
     """
     CF accessor with cacheing to improve speed during iterative lookups.
@@ -1964,7 +1871,7 @@ class ClimoAccessor(object):
         """
         return self._cls_groupby(self.data, group, *args, **kwargs)
 
-    @_keep_cell_attrs
+    @quack._keep_cell_attrs
     def _mean_or_sum(self, method, dim=None, skipna=None, weight=None, **kwargs):
         """
         Return an average or summation.
@@ -2005,7 +1912,7 @@ class ClimoAccessor(object):
         return self._mean_or_sum('sum', dim, **kwargs)
 
     @_CFAccessor._clear_cache
-    @_while_dequantified
+    @quack._while_dequantified
     def interp(
         self,
         indexers=None,
@@ -2944,7 +2851,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return key
 
     @_CFAccessor._clear_cache
-    @_while_quantified
+    @quack._while_quantified
     def reduce(
         self, indexers=None, dataset=None, centroid=False, weight=None, mask=None,
         **kwargs
@@ -3166,8 +3073,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             data.name = name
         return data
 
-    @_while_quantified
-    @_keep_cell_attrs
+    @quack._while_quantified
+    @quack._keep_cell_attrs
     def _integral_or_average(
         self,
         dims,
@@ -3446,7 +3353,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             return self.data - self.cumaverage(*args, **kwargs)
 
     @_CFAccessor._clear_cache
-    @_keep_cell_attrs
+    @quack._keep_cell_attrs
     def runmean(self, indexers=None, **kwargs):
         """
         Return the running mean along different dimensions.
@@ -3474,8 +3381,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @_while_quantified
-    @_keep_cell_attrs
+    @quack._while_quantified
+    @quack._keep_cell_attrs
     def derivative(self, indexers=None, centered=True, **kwargs):
         """
         Take the nth order centered finite difference for the specified dimensions.
@@ -3523,8 +3430,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             return -1 * result
 
     @_CFAccessor._clear_cache
-    @_while_quantified
-    @_keep_cell_attrs
+    @quack._while_quantified
+    @quack._keep_cell_attrs
     @docstring.inject_snippets(operator='divergence')
     def divergence(self, cos_power=1, centered=True, **kwargs):
         """
@@ -3564,8 +3471,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return res
 
     @_CFAccessor._clear_cache
-    @_while_quantified
-    @_keep_cell_attrs
+    @quack._while_quantified
+    @quack._keep_cell_attrs
     @docstring.inject_snippets(operator='correlation', func='corr')
     def autocorr(self, dim, **kwargs):
         """
@@ -3580,8 +3487,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @_while_quantified
-    @_keep_cell_attrs
+    @quack._while_quantified
+    @quack._keep_cell_attrs
     @docstring.inject_snippets(operator='covariance', func='covar')
     def autocovar(self, dim, **kwargs):
         """
@@ -3596,7 +3503,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @_keep_cell_attrs
+    @quack._keep_cell_attrs
     def centroid(self, dataset=None, **kwargs):
         """
         Return the value-weighted average wavenumber.
@@ -3641,8 +3548,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         return data
 
-    @_while_dequantified
-    @_keep_cell_attrs
+    @quack._while_dequantified
+    @quack._keep_cell_attrs
     def _find_extrema(
         self, dim, abs=False, arg=False, which='max', dim_track=None, **kwargs
     ):
@@ -3825,7 +3732,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data.climo._find_extrema(dim, **kwargs)
 
     @_CFAccessor._clear_cache
-    @_keep_cell_attrs
+    @quack._keep_cell_attrs
     def hist(self, dim, bins=None):
         """
         Return the histogram along the given dimension.
@@ -3890,8 +3797,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @_while_dequantified
-    @_keep_cell_attrs
+    @quack._while_dequantified
+    @quack._keep_cell_attrs
     def normalize(self):
         """
         Return a copy of the data normalized with respect to time.
@@ -3904,8 +3811,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @_while_quantified
-    @_keep_cell_attrs
+    @quack._while_quantified
+    @quack._keep_cell_attrs
     def slope(self, dim):
         """
         Return the best-fit slope with respect to some dimension.
@@ -3924,8 +3831,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @_while_quantified
-    @_keep_cell_attrs
+    @quack._while_quantified
+    @quack._keep_cell_attrs
     def timescale(self, dim, maxlag=None, imaxlag=None, **kwargs):
         """
         Return a best-fit estimate of the autocorrelation timescale.
@@ -3949,7 +3856,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @_while_quantified
+    @quack._while_quantified
     def to_variable(self, dest, standardize=False, **kwargs):
         """
         Transform this variable to another variable using transformations
@@ -3978,7 +3885,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             param = param.climo.to_standard_units()
         return param
 
-    @_while_quantified
+    @quack._while_quantified
     def to_units(self, units, context='climo'):
         """
         Return a copy converted to the desired units.
@@ -4006,7 +3913,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             )
         return data
 
-    @_while_quantified
+    @quack._while_quantified
     def to_base_units(self, coords=False):
         """
         Return a copy with the underlying data converted to base units.
@@ -4022,7 +3929,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             })
         return data
 
-    @_while_quantified
+    @quack._while_quantified
     def to_compact_units(self, coords=False):
         """
         Return a copy with the underlying data converted to "compact" units.
@@ -4075,9 +3982,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # ipython %autoreload, was departure from metpy convention, was possibly
         # confusing for users, and not even sure if faster. So abandoned this.
         data = self.data.copy(deep=False)
-        if units is not None:
-            data.attrs['units'] = encode_units(units)
-        data.climo._quantify()
+        data.climo._quantify(units=units)
         return data
 
     def dequantify(self):
@@ -4092,15 +3997,18 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo._dequantify()
         return data
 
-    def _quantify(self):
+    def _quantify(self, units=None):
         """
         In-place version of `~ClimoDataArrayAccessor.quantify`.
         """
         # NOTE: This won't affect shallow DataArray or Dataset copy parents
         data = self.data
         if isinstance(data.data, pint.Quantity) or not quack._is_numeric(data.data):
-            pass
+            if units is not None:
+                warnings._warn_climopy(f'Ignoring {units=}. Data is non-numeric or already quantified.')  # noqa: E501
         else:
+            if units is not None:
+                data.attrs['units'] = encode_units(units)
             data.data = data.data * self.units  # may raise error
         data.attrs.pop('units', None)
 
@@ -4524,7 +4432,7 @@ short_suffix : str, optional
 
         # Take the absolute value, accounting for attribute-stripping xarray bug
         if abs:
-            data = _keep_cell_attrs(np.abs)(data)
+            data = quack._keep_cell_attrs(np.abs)(data)
 
         # Select pair only *after* doing all the math. This is a convenient way
         # to get difference between reduced values
@@ -4621,7 +4529,7 @@ def register_derivation(dest, /, *, assign_name=True):
         warnings._warn_climopy(f'Overriding existing derivation {dest!r}.')
 
     def _decorator(func):
-        @_keep_cell_attrs
+        @quack._keep_cell_attrs
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
             data = func(*args, **kwargs)
@@ -4678,7 +4586,7 @@ def register_transformation(src, dest, /, *, assign_name=True):
         warnings._warn_climopy(f'Overriding existing {src!r}->{dest!r} transformation.')  # noqa: E501
 
     def _decorator(func):
-        @_keep_cell_attrs
+        @quack._keep_cell_attrs
         @functools.wraps(func)
         def _wrapper(*args, **kwargs):
             data = func(*args, **kwargs)
