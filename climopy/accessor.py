@@ -474,31 +474,6 @@ class _CFAccessor(object):
         )
         return attr.strip()
 
-    def _encode_name(self, key, *attrs, search_registry=True):
-        """
-        Translate a dataset variable name or registry variable name or alias
-        into a standard CF name. Check only the specified attributes.
-        """
-        if not isinstance(key, str):
-            raise KeyError('Key must be string.')
-        if self._is_cfname(key):
-            return key
-        # Decode variable aliases into native dataset names used by CF accessor
-        if search_registry:
-            var = self._variable_registry.get(key, None)
-            for name in getattr(var, 'identifiers', ()):
-                if name in self._src:
-                    key = name
-                    break
-        # Check if key is present in CF accessor properties
-        attrs = attrs or ('axes', 'coordinates', 'cell_measures', 'standard_names')
-        for attr in attrs:
-            mapping = getattr(self, attr)
-            for coord, names in mapping.items():
-                if key in names:
-                    return coord
-        raise KeyError(f'Failed to find CF name for variable {key!r}.')
-
     @staticmethod
     def _decode_attr(attr):
         """
@@ -524,6 +499,31 @@ class _CFAccessor(object):
             value = substring[idx:].strip()
             parts.append((dims, value))
         return parts
+
+    def _encode_name(self, key, *attrs, search_registry=True):
+        """
+        Translate a dataset variable name or registry variable name or alias
+        into a standard CF name. Check only the specified attributes.
+        """
+        if not isinstance(key, str):
+            raise KeyError('Key must be string.')
+        if self._is_cfname(key):
+            return key
+        # Decode variable aliases into native dataset names used by CF accessor
+        if search_registry:
+            var = self._variable_registry.get(key, None)
+            for name in getattr(var, 'identifiers', ()):
+                if name in self._src:
+                    key = name
+                    break
+        # Check if key is present in CF accessor properties
+        attrs = attrs or ('axes', 'coordinates', 'cell_measures', 'standard_names')
+        for attr in attrs:
+            mapping = getattr(self, attr)
+            for coord, names in mapping.items():
+                if key in names:
+                    return coord
+        raise KeyError(f'Failed to find CF name for variable {key!r}.')
 
     def _decode_name(self, key, *attrs, search_registry=True, return_if_missing=False):
         """
