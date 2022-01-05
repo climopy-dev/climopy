@@ -131,9 +131,9 @@ def _units_container(arg, **fmt_kwargs):
             is_ref = True
         else:
             arg = _to_pint_string(arg)  # support conventions
-    elif isinstance(arg, pint.Unit):
+    elif arg is None or isinstance(arg, pint.Unit):
         pass
-    elif arg is not None:  # should be impossible since _group_args checks type
+    else:  # should be impossible since _group_args checks type
         raise ValueError(f'Unrecognized pint unit argument {arg}.')
     if is_ref:
         container = putil.to_units_container(arg.split('=', 1)[1])
@@ -156,7 +156,7 @@ def _units_object(arg):
     elif isinstance(arg, pint.Quantity):
         units = arg.units
     elif isinstance(arg, xr.DataArray):
-        if arg.climo._is_quantity or 'units' in arg.attrs:
+        if arg.climo._has_units:
             units = arg.climo.units
     return units
 
@@ -170,11 +170,13 @@ def _standardize_independent(arg, quantify=False):
     if isinstance(arg, str):  # parse expressions e.g. '5cm'
         arg = ureg.parse_expression(arg)
     if isinstance(arg, xr.DataArray):
-        if not (has_units := arg.climo._is_quantity):
+        is_quantity = arg.climo._is_quantity
+        if not is_quantity:
             arg = arg.climo.quantify(units=arg.attrs.get('units', 'dimensionless'))
         units = arg.data.units
     else:
-        if not (has_units := isinstance(arg, pint.Quantity)):
+        is_quantity = isinstance(arg, pint.Quantity)
+        if not is_quantity:
             arg = arg * ureg.dimensionless
         units = arg.units
 
@@ -184,7 +186,7 @@ def _standardize_independent(arg, quantify=False):
             arg = arg.climo.dequantify()
         else:
             arg = arg.magnitude
-    return arg, units, has_units
+    return arg, units, is_quantity
 
 
 def _standardize_dependent(
@@ -195,18 +197,12 @@ def _standardize_dependent(
     Return a quantified version of the input argument possibly applying the
     declared units or inferring them from the independent variable units.
     """
-    # Parse input argument
-    if unit is None:  # placeholder meaning 'do nothing'
-        return arg, False
-    if isinstance(arg, str):  # parse expressions e.g. '5cm'
-        arg = ureg.parse_expression(arg)
-    if isinstance(arg, xr.DataArray) and 'units' in arg.attrs:
-        arg = arg.climo.quantify()
-
     # Parse input units
     # NOTE: Here definitions are required if input is refernece
     container, is_ref = _units_container(unit, **fmt_kwargs)
-    if not is_ref:
+    if container is None:
+        return arg, False
+    elif not is_ref:
         unit = ureg.Unit(container)
     else:
         unit = ureg.dimensionless
@@ -219,26 +215,33 @@ def _standardize_dependent(
 
     # Enforce argument units
     # NOTE: Important to record whether we started with units
-    if isinstance(arg, pint.Quantity):
-        has_units = True
-        if convert:
-            arg = arg.to(unit)
+    if isinstance(arg, str):  # parse expressions e.g. '300 K'
+        arg = ureg.parse_expression(arg)
+    if isinstance(arg, xr.DataArray):
+        is_quantity = arg.climo._is_quantity
+        if arg.climo._has_units:
+            arg = arg.climo.quantify()
+        if arg.climo._is_quantity:
+            if convert:
+                arg = arg.climo.to(unit)
+            else:
+                arg + 0 * unit  # trigger compatibility check
         else:
-            arg + 0 * unit  # trigger compatibility check
-    elif isinstance(arg, xr.DataArray) and arg.climo._is_quantity:
-        has_units = True
-        if convert:
-            arg = arg.climo.to(unit)
-        else:
-            arg + 0 * unit  # trigger compatibility check
-    elif not strict:
-        has_units = False
-        if isinstance(arg, xr.DataArray):
-            arg = arg.climo.quantify(units=unit)
-        else:
-            arg = ureg.Quantity(arg, unit)
+            if not strict:
+                arg = arg.climo.quantify(units=unit)
+            else:
+                raise ValueError('Pint quantity data or units attributes are required in strict mode.')  # noqa: E501
     else:
-        raise ValueError('Pint quantities are required in strict mode.')
+        if is_quantity := isinstance(arg, pint.Quantity):
+            if convert:
+                arg = arg.to(unit)
+            else:
+                arg + 0 * unit  # trigger compatibility check
+        else:
+            if not strict:
+                arg = ureg.Quantity(arg, unit)
+            else:
+                raise ValueError('Pint quantity data are required in strict mode.')
 
     # Optionally dequantify result after converting
     if not quantify:
@@ -246,7 +249,7 @@ def _standardize_dependent(
             arg = arg.climo.dequantify()
         else:
             arg = arg.magnitude
-    return arg, has_units
+    return arg, is_quantity
 
 
 def _while_converted(
@@ -329,20 +332,20 @@ def _while_converted(
             definitions = {}
             quantify_results = False
             for key, idx in independents.items():
-                arg, unit, has_units = _standardize_independent(
+                arg, unit, is_quantity = _standardize_independent(
                     args[idx],
                     quantify=quantify
                 )
                 args_new[idx] = arg
                 definitions[key] = unit
-                quantify_results = has_units or quantify_results
+                quantify_results = is_quantity or quantify_results
 
             # Quantify remaining arguments using recorded units
             fmt_kwargs = {key: val for key, val in kwargs.items() if key in fmt_defaults}  # noqa: E501
             for key, val in fmt_defaults.items():
                 fmt_kwargs.setdefault(key, value)
             for idx in (*dependents, *constants):
-                arg, has_units = _standardize_dependent(
+                arg, is_quantity = _standardize_dependent(
                     args[idx],
                     units_in[grp][idx],
                     strict=strict,
@@ -352,7 +355,7 @@ def _while_converted(
                     **fmt_kwargs
                 )
                 args_new[idx] = arg
-                quantify_results = has_units or quantify_results
+                quantify_results = is_quantity or quantify_results
 
             # Call main function and standardize results. Bypass extra values
             results = func(*args_new, **kwargs)
