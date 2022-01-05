@@ -458,14 +458,15 @@ class _CFAccessor(object):
                 cf._stale_cache = True
         return _wrapper
 
-    def _encode_attr(self, *parts):
+    @staticmethod
+    def _encode_attr(*parts):
         """
         Merge and encode parts into CF `cell_methods`-like attribute.
         """
         seen = set()
         parts = tuple(
             ((dims,) if isinstance(dims, str) else tuple(dims), value)
-            for attr in parts for dims, value in self._decode_attr(attr) if dims
+            for attr in parts for dims, value in _CFAccessor._decode_attr(attr) if dims
         )
         attr = ' '.join(
             ': '.join(dims) + ': ' + value for dims, value in parts
@@ -498,7 +499,8 @@ class _CFAccessor(object):
                     return coord
         raise KeyError(f'Failed to find CF name for variable {key!r}.')
 
-    def _decode_attr(self, attr):
+    @staticmethod
+    def _decode_attr(attr):
         """
         Expand CF `cell_methods`-like attribute into parts.
         """
@@ -555,7 +557,7 @@ class _CFAccessor(object):
                 return var.name  # return *standard* registered name
         raise KeyError(f'Failed to find dataset or registry name for CF name {key!r}.')
 
-    def _get_attr(self, attr):
+    def _get_cache_attr(self, attr):
         """
         Return attribute, deferring to cache if it exists and creating cache if not.
         """
@@ -582,10 +584,10 @@ class _CFAccessor(object):
     # WARNING: CF accessor .axes, .coordinates, etc. is extremely slow due simply to
     # repeated lookups of modestly sized dictionaries and nested loops. Try to avoid
     # repeatedly re-generating CF properties in loops using simple cacheing.
-    axes = property(functools.partial(_get_attr, attr='axes'))
-    coordinates = property(functools.partial(_get_attr, attr='coordinates'))
-    cell_measures = property(functools.partial(_get_attr, attr='cell_measures'))
-    standard_names = property(functools.partial(_get_attr, attr='standard_names'))
+    axes = property(functools.partial(_get_cache_attr, attr='axes'))
+    coordinates = property(functools.partial(_get_cache_attr, attr='coordinates'))
+    cell_measures = property(functools.partial(_get_cache_attr, attr='cell_measures'))
+    standard_names = property(functools.partial(_get_cache_attr, attr='standard_names'))
 
     @property
     def vertical_type(self):
@@ -2151,7 +2153,7 @@ class ClimoAccessor(object):
             if coord.size == 1:
                 continue
             try:
-                cfvariable = coord.climo._cf_variable(use_methods=False)
+                cfvariable = coord.climo._cf_variable(use_cell_methods=False)  # fast
                 reference = cfvariable.reference
             except AttributeError:
                 continue
@@ -2624,7 +2626,7 @@ class ClimoAccessor(object):
         """
         for dim, coord in self.data.coords.items():
             try:
-                cfvariable = coord.climo._cf_variable(use_methods=False)
+                cfvariable = coord.climo._cf_variable(use_cell_methods=False)  # fast
                 reference = cfvariable.reference
             except AttributeError:
                 continue
@@ -2752,10 +2754,35 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             value = np.atleast_1d(value)  # fix assignment of scalar pint quantities
         data[...] = value
 
-    def _cf_variable(self, use_attrs=True, use_methods=True):
+    def _cf_repr(self, brackets=True, varwidth=None, maxlength=None, **kwargs):
         """
-        Return a `CFVariable`, optionally including `cell_methods`.
+        Get representation even if `cfvariable` is not present.
         """
+        # Get content inside CFVariable(...) repr
+        try:
+            var = self._cf_variable(**kwargs)
+        except AttributeError:
+            repr_ = self.data.name or 'unknown'
+        else:
+            repr_ = REGEX_REPR_PAREN.match(repr(var)).group(1)
+
+        # Align names and truncate key=value pairs
+        if varwidth is not None and (m := REGEX_REPR_COMMA.match(repr_)):
+            name, _, info = m.groups()  # pad between canonical name + subsequent info
+            repr_ = name[:varwidth] + ',' + ' ' * (varwidth - len(name)) + info
+        if maxlength is not None and len(repr_) > maxlength:
+            repr_ = repr_[:maxlength - 4]
+            repr_ = repr_[:repr_.rfind(' ')] + ' ...'
+        if brackets:
+            repr_ = REGEX_REPR_COMMA.sub(r'\1\2<\3>', repr_)
+
+        return repr_
+
+    def _cf_variable(self, use_attrs=True, use_cell_methods=True):
+        """
+        Return a `CFVariable` with options for excluding information.
+        """
+        # Get the name
         data = self.data
         name = data.name
         if name is None:
@@ -2769,9 +2796,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     kwargs[key] = val
 
         # Get modifying cell methods
-        if use_methods:
+        # WARNING: Using cell methods can be slow since coordinates have to be
+        # translated which requires cf property defintiions (see _CFAccessor above).
+        if use_cell_methods:
             # Get methods dictionary by reading cell_methods and scalar coordinates
-            # NOTE: Include *this* array in case it is coordinate, e.g. lat='argmax'
+            # Include *this* array in case it is coordinate, e.g. lat='argmax'.
             # Also, in that case, disable the 'point selection' mode.
             meta = data.copy(deep=False)
             meta.coords[meta.name] = meta  # whoa dude... this is so CF searches self
@@ -2824,30 +2853,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 except KeyError:
                     pass
         raise AttributeError(f'CFVariable not found for name {name!r}.')
-
-    def _cf_repr(self, brackets=True, maxlength=None, varwidth=None, **kwargs):
-        """
-        Get representation even if `cfvariable` is not present.
-        """
-        # Get content inside CFVariable(...) repr
-        try:
-            var = self._cf_variable(**kwargs)
-        except AttributeError:
-            repr_ = self.data.name or 'unknown'
-        else:
-            repr_ = REGEX_REPR_PAREN.match(repr(var)).group(1)
-
-        # Align names and truncate key=value pairs
-        if varwidth is not None and (m := REGEX_REPR_COMMA.match(repr_)):
-            name, _, info = m.groups()  # pad between canonical name + subsequent info
-            repr_ = name[:varwidth] + ',' + ' ' * (varwidth - len(name)) + info
-        if maxlength is not None and len(repr_) > maxlength:
-            repr_ = repr_[:maxlength - 4]
-            repr_ = repr_[:repr_.rfind(' ')] + ' ...'
-        if brackets:
-            repr_ = REGEX_REPR_COMMA.sub(r'\1\2<\3>', repr_)
-
-        return repr_
 
     def _expand_ellipsis(self, key):
         """
@@ -4012,6 +4017,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # NOTE: This won't affect shallow DataArray or Dataset copy parents
         data = self.data
         if isinstance(data.data, pint.Quantity) or not quack._is_numeric(data.data):
+            if units is None:
+                units = data.attrs.get('units', None)
             if units is not None:
                 warnings._warn_climopy(f'Ignoring {units=}. Data is non-numeric or already quantified.')  # noqa: E501
         else:
@@ -4049,7 +4056,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         The magnitude of the data values of this `~xarray.DataArray`
         (i.e., without units).
         """
-        if isinstance(self.data.data, pint.Quantity):
+        if self._is_quantity:
             return self.data.data.magnitude
         else:
             return self.data.data
@@ -4059,7 +4066,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         The data values of this `~xarray.DataArray` as a `pint.Quantity`.
         """
-        if isinstance(self.data.data, pint.Quantity):
+        if self._is_quantity:
             return self.data.data
         else:
             return ureg.Quantity(self.data.data, self.units)
@@ -4071,7 +4078,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         underlying `pint.Quantity` or the ``'units'`` attribute. Unit strings are
         parsed with `~.unit.decode_units`.
         """
-        if isinstance(self.data.data, pint.Quantity):
+        if self._is_quantity:
             return self.data.data.units
         elif 'units' in self.data.attrs:
             return decode_units(self.data.attrs['units'])
@@ -4106,7 +4113,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Return whether 'units' attribute exists or data is quantified.
         """
-        return 'units' in self.data.attrs or self._is_quantity
+        return self._is_quantity or 'units' in self.data.attrs
 
     @property
     def _is_quantity(self):
