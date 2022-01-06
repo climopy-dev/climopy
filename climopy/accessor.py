@@ -84,7 +84,7 @@ PARSEKEY_ARGS = (
 )
 
 
-# Regular expression compiled for speed
+# Regular expressions compiled for speed
 REGEX_BOUNDS = re.compile(r'\A(.*?)(?:_(top|bot(?:tom)?|del(?:ta)?|b(?:ou)?nds))?\Z')  # coordinate suffixes implying changes  # noqa: E501
 REGEX_IGNORE = re.compile(r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z')  # variable suffixes to ignore  # noqa: E501
 REGEX_MODIFY = re.compile(r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|_ratio)?\Z')  # variable suffixes implying changes  # noqa: E501
@@ -93,19 +93,37 @@ REGEX_REPR_PAREN = re.compile(r'\A.*?\((.*)\)\Z')  # content inside first parent
 
 
 # Expand regexes for automatic coordinate detection with standardize_coords
-if hasattr(_cf_accessor, 'regex'):
-    _cf_accessor.regex = {
-        'time': 'lag[0-9]*|date[0-9]*|time[0-9]*|datetime[0-9]*|min|hour|day|week|month|year',  # noqa: E501
-        'vertical': '([a-z]*le?v|bottom_top|sigma|h(ei)?ght|altitude|depth|isobaric|pres|isotherm)[a-z0-9_]*',  # noqa: E501
-        'latitude': 'y?lat[a-z0-9_]*',
-        'longitude': 'x?lon[a-z0-9_]*',
-        'X': 'xc?',
-        'Y': 'yc?',
-    }
-    _cf_accessor.regex['Z'] = _cf_accessor.regex['vertical']
-    _cf_accessor.regex['T'] = _cf_accessor.regex['time']
-else:
+# NOTE: The vertical regex covers old matches 'nav_lev', 'gdep', 'lv_', '[o]*lev',
+# 'depth' and the time regex includes new matches 'date', 'datetime', 'lag'.
+# NOTE: There is also a 'coordinate_criteria' dictionary but these are official
+# objective criteria recognized by CF convention. Should leave these alone.
+# NOTE: Suffixes are irrelevant because we only test re.match without end word
+# or end string atoms. Original CF xarray dictionary needlessly includes suffixes.
+_cf_regex = getattr(_cf_accessor, 'regex', None)
+_cf_compile = None
+if _cf_regex and all(isinstance(_, re.Pattern) for _ in _cf_regex.values()):
+    _cf_compile = True
+if _cf_regex and all(isinstance(_, str) for _ in _cf_regex.values()):
+    _cf_compile = False
+if _cf_regex is None or _cf_compile is None:
     warnings._warn_climopy('cf_xarray API changed. Cannot update regexes.')
+else:
+    _cf_regex = {
+        'longitude': '(?:x|nav_)?(?:lon|g?lam)',
+        'latitude': '(?:y|nav_)?(?:lat|g?phi)',
+        'vertical': (
+            r'z\Z|(?:[a-z_]+)?(?:le?v|g?dep)|pres|sigma|h(?:ei)?ght|altitude'
+            r'|isobar(?:ic)?|isotherm(?:al)?|isentrop(?:e|ic)|top_bottom|bottom_top'
+        ),
+        'time': r't\Z|time|date|datetime|lag|min|hour|day|week|month|year',
+        'X': r'x\Z|i\Z|n(?:lon|phi|i)',
+        'Y': r'y\Z|j\Z|n(?:lat|phi|j)',
+    }
+    _cf_regex['Z'] = _cf_regex['vertical']
+    _cf_regex['T'] = _cf_regex['time']
+if _cf_compile:
+    _cf_regex = {key: re.compile(value) for key, value in _cf_regex.items()}
+
 
 # Mean and average templates
 _template_meansum = """
