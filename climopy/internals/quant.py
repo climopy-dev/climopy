@@ -49,12 +49,15 @@ units_in : unit-spec or str or sequence
     operations with different (but related) physical quantities.
 units_out : unit-spec or str or sequence
     As with `units_in`, but for the return values.
-convert : bool, default: True
+convert_units : bool, default: True
     Whether to convert input argument and return value units to the specified
     units or merely assert compatibility with the specified units.
-strict : bool, default: False
-    Whether to forbid non-quantity input arguments. If ``False`` then these
-    are assumed to be in the correct units.
+require_quantity : bool, default: False
+    Whether to forbid input arguments that are not pint quantities and have no units
+    attribures. If ``False`` then these arguments are assumed to have correct units.
+require_xarray : bool, default: False
+    Whether to forbid input arguments that are not `xarray.DataArray`\\ s.
+    Useful for derivations that require selections.
 **fmt_defaults
     Default values for the terms surrounded by curly braces in relational
     or string unit specifications.
@@ -161,7 +164,9 @@ def _units_object(arg):
     return units
 
 
-def _standardize_independent(arg, quantify=False):
+def _standardize_independent(
+    arg, quantify=False, require_quantity=False, require_xarray=False
+):
     """
     Return a quantified version of the input argument using its own units. If it
     has no units then assign dimensionless units.
@@ -171,14 +176,24 @@ def _standardize_independent(arg, quantify=False):
         arg = ureg.parse_expression(arg)
     if isinstance(arg, xr.DataArray):
         is_quantity = arg.climo._is_quantity
-        if not is_quantity:
-            arg = arg.climo.quantify(units=arg.attrs.get('units', 'dimensionless'))
+        if arg.climo._has_units:
+            arg = arg.climo.quantify()
+        if not arg.climo._is_quantity:
+            if not require_quantity:
+                arg = arg.climo.quantify(units='dimensionless')
+            else:
+                raise TypeError('Pint quantity data or units attributes are required.')
         units = arg.data.units
-    else:
+    elif not require_xarray:
         is_quantity = isinstance(arg, pint.Quantity)
         if not is_quantity:
-            arg = arg * ureg.dimensionless
+            if not require_quantity:
+                arg = arg * ureg.dimensionless
+            else:
+                raise TypeError('Pint quantity data are required.')
         units = arg.units
+    else:
+        raise TypeError('Xarray DataArrays are required.')
 
     # Optionally dequantify result after converting
     if not quantify:
@@ -190,8 +205,8 @@ def _standardize_independent(arg, quantify=False):
 
 
 def _standardize_dependent(
-    arg, unit=None, convert=True, strict=False, quantify=False, definitions=None,
-    **fmt_kwargs
+    arg, unit=None, quantify=False, definitions=None,
+    convert_units=True, require_quantity=False, require_xarray=False, **fmt_kwargs
 ):
     """
     Return a quantified version of the input argument possibly applying the
@@ -222,26 +237,28 @@ def _standardize_dependent(
         if arg.climo._has_units:
             arg = arg.climo.quantify()
         if arg.climo._is_quantity:
-            if convert:
+            if convert_units:
                 arg = arg.climo.to(unit)
             else:
                 arg + 0 * unit  # trigger compatibility check
         else:
-            if not strict:
+            if not require_quantity:
                 arg = arg.climo.quantify(units=unit)
             else:
-                raise ValueError('Pint quantity data or units attributes are required in strict mode.')  # noqa: E501
-    else:
+                raise TypeError('Pint quantity data or units attributes are required.')
+    elif not require_xarray:
         if is_quantity := isinstance(arg, pint.Quantity):
-            if convert:
+            if convert_units:
                 arg = arg.to(unit)
             else:
                 arg + 0 * unit  # trigger compatibility check
         else:
-            if not strict:
+            if not require_quantity:
                 arg = ureg.Quantity(arg, unit)
             else:
-                raise ValueError('Pint quantity data are required in strict mode.')
+                raise TypeError('Pint quantity data are required.')
+    else:
+        raise TypeError('Xarray DataArrays are required.')
 
     # Optionally dequantify result after converting
     if not quantify:
@@ -255,10 +272,11 @@ def _standardize_dependent(
 def _while_converted(
     units_in=None,
     units_out=None,
-    convert=True,
-    strict=False,
     grouped=False,
     quantify=False,
+    convert_units=True,
+    require_quantity=False,
+    require_xarray=False,
     **fmt_defaults  # noqa: E501
 ):
     """
@@ -334,7 +352,9 @@ def _while_converted(
             for key, idx in independents.items():
                 arg, unit, is_quantity = _standardize_independent(
                     args[idx],
-                    quantify=quantify
+                    quantify=quantify,
+                    require_quantity=require_quantity,
+                    require_xarray=require_xarray,
                 )
                 args_new[idx] = arg
                 definitions[key] = unit
@@ -348,10 +368,11 @@ def _while_converted(
                 arg, is_quantity = _standardize_dependent(
                     args[idx],
                     units_in[grp][idx],
-                    strict=strict,
-                    convert=convert,
-                    quantify=quantify,
                     definitions=definitions,
+                    quantify=quantify,
+                    convert_units=convert_units,
+                    require_quantity=require_quantity,
+                    require_xarray=require_xarray,
                     **fmt_kwargs
                 )
                 args_new[idx] = arg
@@ -371,9 +392,9 @@ def _while_converted(
                 res, _ = _standardize_dependent(
                     results[idx],
                     units_out[grp][idx],
-                    convert=convert,
-                    quantify=quantify_results,
                     definitions=definitions,
+                    quantify=quantify_results,
+                    convert_units=convert_units,
                     **fmt_kwargs
                 )
                 results_new[idx] = res
