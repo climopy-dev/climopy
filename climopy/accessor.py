@@ -2871,7 +2871,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 continue
             try:
                 return self.variable_registry(identifier, accessor=self, **kwargs)
-            except (KeyError, TypeError):
+            except KeyError:
                 pass
         raise AttributeError(f'CFVariable not found for name {name!r}.')
 

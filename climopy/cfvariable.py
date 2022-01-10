@@ -66,13 +66,6 @@ class CFVariable(object):
             string += f', aliases={aliases!r}'
         return f'CFVariable({string})'
 
-    def __new__(cls, *args, **kwargs):
-        # Initialize with a registry always declared.
-        obj = object.__new__(cls, *args, **kwargs)
-        if not hasattr(obj, '_registry'):  # use the 'app' registry
-            obj._registry = vreg
-        return obj
-
     def __init__(self, name, *args, **kwargs):
         """
         Parameters
@@ -91,6 +84,8 @@ class CFVariable(object):
         self._parents = []
         self._children = []
         self._accessor = None
+        if not hasattr(self, '_registry'):  # then use the 'app' registry
+            self._registry = vreg
         self.update(*args, **kwargs)
 
     def __contains__(self, other):
@@ -280,9 +275,9 @@ class CFVariable(object):
             short_name = _modify_name(short_name, short_prefix, short_suffix)
         if standard_name is None and long_name is not None:
             standard_name = re.sub(r'\W+', '_', long_name).strip('_').lower()
-        if axis_formatter is False and (default_axis_formatter := 'auto'):
+        if (default_axis_formatter := 'auto') and axis_formatter is False:
             axis_formatter = default_axis_formatter
-        if scalar_formatter is False and (default_scalar_formatter := ('sigfig', 2)):
+        if (default_scalar_formatter := ('sigfig', 2)) and scalar_formatter is False:
             scalar_formatter = default_scalar_formatter
         self._standard_units = standard_units
         self._long_name = long_name
