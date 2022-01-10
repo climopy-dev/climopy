@@ -1690,7 +1690,7 @@ class ClimoAccessor(object):
                 if da.name is None:
                     raise ValueError('Input cell measures must have names.')
                 data.coords[da.name] = da.climo.dequantify()
-                if isinstance(obj, xr.DataArray) and obj.climo._is_bounds:
+                if isinstance(obj, xr.DataArray) and obj.climo._is_coordinate_bounds:
                     continue
                 measures_new.append((measure, da.name))
             obj.attrs['cell_measures'] = cf._encode_attr(measures_new)
@@ -2196,7 +2196,7 @@ class ClimoAccessor(object):
             if coord.size == 1:
                 continue
             try:
-                cfvariable = coord.climo._cf_variable(use_cell_methods=False)  # fast
+                cfvariable = coord.climo._cf_variable(use_cf_attrs=False)  # fast
                 reference = cfvariable.reference
             except AttributeError:
                 continue
@@ -2605,7 +2605,7 @@ class ClimoAccessor(object):
         if not methods:
             return
         for da in self._iter_data_vars():
-            if da.climo._is_bounds:
+            if da.climo._is_coordinate_bounds:
                 continue
             da.attrs['cell_methods'] = self.cf._encode_attr(
                 da.attrs.get('cell_methods', None), methods.items()
@@ -2669,7 +2669,7 @@ class ClimoAccessor(object):
         """
         for dim, coord in self.data.coords.items():
             try:
-                cfvariable = coord.climo._cf_variable(use_cell_methods=False)  # fast
+                cfvariable = coord.climo._cf_variable(use_cf_attrs=False)  # fast
                 reference = cfvariable.reference
             except AttributeError:
                 continue
@@ -2797,7 +2797,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             value = np.atleast_1d(value)  # fix assignment of scalar pint quantities
         data[...] = value
 
-    def _cf_repr(self, brackets=True, varwidth=None, maxlength=None, **kwargs):
+    def _cf_repr(self, brackets=True, varwidth=None, maxlength=None, padlength=None, **kwargs):  # noqa: E501
         """
         Get representation even if `cfvariable` is not present.
         """
@@ -2810,90 +2810,99 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             repr_ = REGEX_REPR_PAREN.match(repr(var)).group(1)
 
         # Align names and truncate key=value pairs
+        padlength = padlength or 0
         if varwidth is not None and (m := REGEX_REPR_COMMA.match(repr_)):
             name, _, info = m.groups()  # pad between canonical name + subsequent info
             repr_ = name[:varwidth] + ',' + ' ' * (varwidth - len(name)) + info
-        if maxlength is not None and len(repr_) > maxlength:
-            repr_ = repr_[:maxlength - 4]
+        if maxlength is not None and len(repr_) > maxlength - padlength:
+            repr_ = repr_[:maxlength - padlength - 4]
             repr_ = repr_[:repr_.rfind(' ')] + ' ...'
         if brackets:
             repr_ = REGEX_REPR_COMMA.sub(r'\1\2<\3>', repr_)
+        return ' ' * padlength + repr_
 
-        return repr_
-
-    def _cf_variable(self, use_attrs=True, use_cell_methods=True):
+    def _cf_variable(self, use_kw_attrs=True, use_cf_attrs=True):
         """
         Return a `CFVariable` with options for excluding information.
         """
         # Get the name
-        data = self.data
+        data = self.data.copy(deep=False)
+        data.coords[data.name] = data  # whoa dude... this is so CF searches self
+        self = data.climo
         name = data.name
-        if name is None:
-            raise AttributeError('DataArray name is empty. Cannot get CFVariable.')
 
         # Get override attributes
         kwargs = {}
-        if use_attrs:
+        if use_kw_attrs:
             for key, val in data.attrs.items():
                 if key in CFVARIABLE_ARGS:
                     kwargs[key] = val
 
         # Get cell methods that modify descriptive names
-        # WARNING: Using cell methods can be slow since coordinates have to be
-        # translated which requires cf property defintiions (see _CFAccessor above).
-        if use_cell_methods:
+        if use_cf_attrs:
             # Get methods applied to each coordinate by reading cell_methods and
-            # scalar coordinates. Also include *this* array in the .coords attribute
-            # in case it is a coordinate e.g. with 'argmax' (see below).
-            meta = data.copy(deep=False)
-            meta.coords[meta.name] = meta  # whoa dude... this is so CF searches self
-            methods = meta.climo.cf._decode_attr(meta.attrs.get('cell_methods', ''))
-            for coord, da in meta.coords.items():
-                coordinate = None
+            # scalar coordinates. Apply units if it can be done safely.
+            # WARNING: Looking up cf attributes can be slow when looping over dataset
+            # variables so optionally skip this (see _CFAccessor above).
+            # WARNING: To detect e.g. latitude='argmax' reductions in the cell methods
+            # list this requires the data array to match the original coordinate name.
+            # For example you cannot change the name from 'latitude' to 'jet_latitude'.
+            methods = self.cf._decode_attr(data.attrs.get('cell_methods', ''))
+            cf_name = None
+            for coord, da in data.coords.items():
+                if coord == name:
+                    attrs = ('coordinates', 'cell_measures')
+                else:
+                    attrs = ('coordinates',)
                 try:
-                    coordinate = meta.climo.cf._encode_name(coord, 'coordinates')
+                    key = self.cf._encode_name(coord, *attrs)
                 except KeyError:
                     continue
                 if coord == name:
-                    continue
+                    cf_name = key
                 if any(coord in dims for dims, _ in methods):
-                    kwargs[coordinate] = [m for dims, m in methods if coord in dims]
-                if da.size == 1 and not da.isnull():
+                    kwargs[key] = [m for dims, m in methods if coord in dims]
+                elif da.size > 1 or da.isnull():
+                    pass
+                else:
                     value = da.item()
                     if 'units' in da.attrs and np.issubdtype(da.data.dtype, np.number):
                         value *= decode_units(da.attrs['units'])
-                    kwargs[coordinate] = [value]  # exact coordinate
+                    kwargs[key] = [value]  # exact coordinate
 
-            # Find if DataArray corresponds to a variable but its values and name
-            # correspond to a coordinate. This happens e.g. with 'argmax'. Also try
-            # to avoid e.g. name='ehf' combined with long_name='latitude'.
+            # Find if DataArray corresponds to a standard coordinate or cell measure,
+            # with corresponding standard cfvariables registered by climopy. For
+            # example this will return CFVariable('latitude') for a variable with
+            # deg_E units or CFVariable('cell_area') for a variable defined as the
+            # cell area even if their name and standard_name do not match. This also
+            # handles e.g. latitude='argmax' reduction methods in which the DataArray
+            # corresponds to some coordinate measure of a different physical variable.
             parent_name = data.attrs.get('parent_name', None)
-            try:
-                coordinate = meta.climo.cf._encode_name(meta.name, 'coordinates')
-            except KeyError:
-                coordinate = None
-            if coordinate in kwargs and name not in data.coords and not data.climo._is_bounds:  # noqa: E501
+            if cf_name in kwargs and not self._is_coordinate_bounds:
                 if parent_name is None:
                     raise RuntimeError(f'Unknown parent name for coordinate {name!r}.')
                 if parent_name not in data.coords:
                     raise RuntimeError(f'Parent coordinate {parent_name!r} not found.')
                 name = parent_name
                 parent = data.coords[name]
-                for attr in ('long_name', 'short_name', 'standard_name'):
-                    if attr in parent.attrs:
-                        kwargs[attr] = parent.attrs[attr]
+                for key in ('long_name', 'short_name', 'standard_name'):
+                    if key in parent.attrs:
+                        kwargs[key] = parent.attrs[key]
                     else:
-                        kwargs.pop(attr, None)
-            elif parent_name is not None:
-                raise RuntimeError(f'Parent variable {parent_name!r}')
+                        kwargs.pop(key, None)
+            elif cf_name is None:  # this is a physical variable
+                pass
+            else:  # this is a coordinate or cell measure
+                name = cf_name
 
         # Create the CFVariable
         for identifier in (name, kwargs.pop('standard_name', None)):
-            if identifier is not None:
-                try:
-                    return self.variable_registry(identifier, accessor=self, **kwargs)
-                except KeyError:
-                    pass
+            if identifier is None:
+                continue
+            try:
+                return self.variable_registry(identifier, accessor=self, **kwargs)
+            except (KeyError, TypeError):
+                pass
         raise AttributeError(f'CFVariable not found for name {name!r}.')
 
     def _expand_ellipsis(self, key):
@@ -4153,21 +4162,21 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @property
     def _has_units(self):
         """
-        Return whether 'units' attribute exists or data is quantified.
+        Boolean indiating whether 'units' attribute exists or data is quantified.
         """
         return self._is_quantity or 'units' in self.data.attrs
 
     @property
     def _is_quantity(self):
         """
-        Return whether data is quantified.
+        Boolean indiating whether data is quantified.
         """
         return isinstance(self.data.data, pint.Quantity)
 
     @property
-    def _is_bounds(self):
+    def _is_coordinate_bounds(self):
         """
-        Return whether data is a coordinate bounds.
+        Boolean indiating whether data is a coordinate bounds.
         """
         key = self.data.name
         coords = self.data.coords
@@ -4192,7 +4201,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
     @_CFAccessor._clear_cache
     def __repr__(self):
-        pad = 4
         data = self.data
         rows = ['<climopy.ClimoDatasetAccessor>']
         width = max(
@@ -4201,12 +4209,12 @@ class ClimoDatasetAccessor(ClimoAccessor):
                 if isinstance(da.name, str)
             ), default=10
         )
-        for row, src in zip(('Coordinates:', 'Data variables:'), (data.coords, data)):
+        for start, src in zip(('Coordinates:', 'Data variables:'), (data.coords, data)):
             if not src:
                 continue
-            rows.append(row)
+            rows.append(start)
             rows.extend(
-                pad * ' ' + da.climo._cf_repr(varwidth=width + 2, maxlength=88 - pad)
+                da.climo._cf_repr(maxlength=88, padlength=4, varwidth=width + 2)
                 for da in src.values()
             )
         return '\n'.join(rows)
@@ -4280,7 +4288,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         if 'k' in data.dims:
             dims = ('lev', 'k', 'lat', 'c')
         else:
-            dims = _first_unique(dim for da in self.data.values() for dim in da.dims if not da.climo._is_bounds)  # noqa: E501
+            dims = _first_unique(dim for da in self.data.values() for dim in da.dims if not da.climo._is_coordinate_bounds)  # noqa: E501
         data = data.transpose(..., *(dim for dim in dims if dim in data.dims))
 
         return data
@@ -4529,7 +4537,7 @@ short_suffix : str, optional
         converted to `pint.Quantity` using the ``'units'`` attributes. Coordinate bounds
         variables are excluded. Already-quantified data is left alone.
         """
-        return self.data.map(lambda d: d if d.climo._is_bounds else d.climo.quantify())
+        return self.data.map(lambda d: d if d.climo._is_coordinate_bounds else d.climo.quantify())  # noqa: E501
 
     def dequantify(self):
         """
