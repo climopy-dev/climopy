@@ -22,6 +22,7 @@ from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
 from .internals import _first_unique, docstring, quack, warnings
+from .unit import _longitude_units, _latitude_units
 from .unit import decode_units, encode_units, format_units, ureg
 
 __all__ = [
@@ -83,7 +84,6 @@ PARSEKEY_ARGS = (
     'search_registry'
 )
 
-
 # Regular expressions compiled for speed
 REGEX_BOUNDS = re.compile(r'\A(.*?)(?:_(top|bot(?:tom)?|del(?:ta)?|b(?:ou)?nds))?\Z')  # coordinate suffixes implying changes  # noqa: E501
 REGEX_IGNORE = re.compile(r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z')  # variable suffixes to ignore  # noqa: E501
@@ -91,24 +91,25 @@ REGEX_MODIFY = re.compile(r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|
 REGEX_REPR_COMMA = re.compile(r'\A(\w+),(\s*)(.*)\Z')  # content around first comma
 REGEX_REPR_PAREN = re.compile(r'\A.*?\((.*)\)\Z')  # content inside first parentheses
 
+# Expand regexes for coordinate detection
+# NOTE: The default criteria only sees 'degree_E' not 'deg_E', 'degree_east' not
+# 'degree_East'. This is annoying so we make it as flexible as custom unit definition.
+_cf_criteria = getattr(_cf_accessor, 'coordinate_criteria', None)
+if _cf_criteria:
+    for key, opt in zip(('longitude', 'latitude'), (_longitude_units, _latitude_units)):
+        values = [s.strip() for i, s in enumerate(opt.split('=')) if i not in (1, 2)]
+        _cf_criteria[key]['units'] = tuple(values)  # skips definition and abbreviation
+if not _cf_criteria:
+    warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate criteria.')
 
 # Expand regexes for automatic coordinate detection with standardize_coords
-# NOTE: The vertical regex covers old matches 'nav_lev', 'gdep', 'lv_', '[o]*lev',
+# NOTE: The new 'vertical' regex covers old options 'nav_lev', 'gdep', 'lv_', '[o]*lev',
 # 'depth' and the time regex includes new matches 'date', 'datetime', 'lag'.
-# NOTE: There is also a 'coordinate_criteria' dictionary but these are official
-# objective criteria recognized by CF convention. Should leave these alone.
 # NOTE: Suffixes are irrelevant because we only test re.match without end word
-# or end string atoms. Original CF xarray dictionary needlessly includes suffixes.
+# or end string atoms. The old regex dictionary needlessly includes suffixes.
 _cf_regex = getattr(_cf_accessor, 'regex', None)
-_cf_compile = None
-if _cf_regex and all(isinstance(_, re.Pattern) for _ in _cf_regex.values()):
-    _cf_compile = True
-if _cf_regex and all(isinstance(_, str) for _ in _cf_regex.values()):
-    _cf_compile = False
-if _cf_regex is None or _cf_compile is None:
-    warnings._warn_climopy('cf_xarray API changed. Cannot update regexes.')
-else:
-    _cf_regex = {
+if _cf_regex:
+    _cf_regex.update({
         'longitude': '(?:x|nav_)?(?:lon|g?lam)',
         'latitude': '(?:y|nav_)?(?:lat|g?phi)',
         'vertical': (
@@ -118,11 +119,35 @@ else:
         'time': r't\Z|time|date|datetime|lag|min|hour|day|week|month|year',
         'X': r'x\Z|i\Z|n(?:lon|phi|i)',
         'Y': r'y\Z|j\Z|n(?:lat|phi|j)',
-    }
+    })
     _cf_regex['Z'] = _cf_regex['vertical']
     _cf_regex['T'] = _cf_regex['time']
-if _cf_compile:
-    _cf_regex = {key: re.compile(value) for key, value in _cf_regex.items()}
+    if all(isinstance(_, re.Pattern) for _ in _cf_accessor.regex.values()):
+        _cf_regex.update({key: re.compile(value) for key, value in _cf_regex.items()})
+    elif not all(isinstance(_, str) for _ in _cf_regex.values()):
+        _cf_regex = None
+if not _cf_regex:
+    warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate regexes.')
+
+# Custom cell measures and associated coordinates. Naming conventions are consistent
+# with existing 'cell' style names and avoid conflicts with axes names / standard names.
+# NOTE: width * depth = area and width * depth * height = volume
+# NOTE: height should generally be a mass-per-unit-area weighting rather than distance
+CELL_MEASURE_COORDS = {
+    'width': ('longitude',),
+    'depth': ('latitude',),
+    'height': ('vertical',),
+    'duration': ('time',),
+    'area': ('longitude', 'latitude'),
+    'volume': ('longitude', 'latitude', 'vertical'),
+}
+COORD_CELL_MEASURE = {
+    coords[0]: m for m, coords in CELL_MEASURE_COORDS.items() if len(coords) == 1
+}
+if hasattr(_cf_accessor, '_CELL_MEASURES'):
+    _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
+else:
+    warnings._warn_climopy('cf_xarray API changed. Cannot update cell measures.')
 
 
 # Mean and average templates
@@ -1360,7 +1385,7 @@ class ClimoAccessor(object):
                         coordinate = self.cf._encode_name(dim, 'coordinates')
                     except KeyError:
                         continue
-                    measure = CELL_MEASURE_BY_COORD[coordinate]
+                    measure = COORD_CELL_MEASURE[coordinate]
                     try:
                         measure = self.cf._decode_name(measure, 'cell_measures', search_registry=False)  # noqa: E501
                     except KeyError:
@@ -1614,7 +1639,7 @@ class ClimoAccessor(object):
                 # NOTE: This catches RuntimeErrors emitted from _get_bounds if fail to
                 # calculate bounds and NotImplementedErrors from the definitions e.g.
                 # if there is no algorithm for cell height (child of RuntimeError)
-                name = CELL_MEASURE_NAMES[measure]
+                name = 'cell_' + measure
                 with warnings.catch_warnings():
                     warnings.simplefilter(action)  # possibly ignore warnings
                     try:
@@ -3171,7 +3196,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dims = []
         measures = set()
         for dim in dims_orig:
-            is_coord = dim in CELL_MEASURE_BY_COORD
+            is_coord = dim in COORD_CELL_MEASURE
             is_measure = dim in CELL_MEASURE_COORDS
             if not is_coord and not is_measure:
                 try:
@@ -3179,11 +3204,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 except KeyError:
                     raise ValueError(f'Missing {cell_method} dimension {dim!r}.')
                 names = (dim,)
-                measure = CELL_MEASURE_BY_COORD[coordinate]
+                measure = COORD_CELL_MEASURE[coordinate]
                 coordinates = (coordinate,)
             else:
                 names = ()
-                measure = dim if is_measure else CELL_MEASURE_BY_COORD[dim]
+                measure = dim if is_measure else COORD_CELL_MEASURE[dim]
                 coordinates = (dim,) if is_coord else CELL_MEASURE_COORDS[dim]
                 for name in coordinates:
                     try:

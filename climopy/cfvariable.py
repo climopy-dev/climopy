@@ -307,8 +307,8 @@ class CFVariable(object):
     @property
     def identifiers(self):
         """
-        Tuple of unique variable identifiers (the `~CFVariable.name`,
-        the `~CFVariable.standard_name`, and the `~CFVariable.aliases`).
+        Tuple of the unique variable identifiers, i.e. the `~CFVariable.name`,
+        the `~CFVariable.standard_name`, and the `~CFVariable.aliases`.
         """
         names = (self.name,)
         if self.standard_name:
@@ -683,45 +683,44 @@ class CFVariableRegistry(object):
         args = latitude & {'argmin', 'argmax', 'argzero'}
         if args:
             var.update(
-                short_name='latitude',
                 standard_units='deg_north',
-                symbol=fr'\phi_{{{var.symbol}}}',
-                axis_formatter='deg',
+                short_name='latitude',
                 long_suffix=f'{args.pop()[3:]} latitude',  # use the first one
-                # long_suffix='latitude',
+                axis_formatter='deg',
+                symbol=fr'\phi_{{{var.symbol}}}',
             )
 
         # Centroid reduction
         if 'centroid' in latitude:
             var.update(
-                long_suffix='centroid',
-                short_name='centroid',
                 standard_units='km',
+                short_name='centroid',
+                long_suffix='centroid',
                 axis_formatter=False,
             )
 
         # Time dimension reductions of variable in question
         if 'timescale' in time:
             var.update(  # modify existing
-                long_suffix='e-folding timescale',
-                short_name='timesale',
                 standard_units='day',
-                symbol=fr'T_e({var.symbol})',
+                short_name='timesale',
+                long_suffix='e-folding timescale',
                 axis_formatter=False,
+                symbol=fr'T_e({var.symbol})',
             )
         elif 'autocorr' in time:
             var.update(  # modify existing
-                long_suffix='autocorrelation',
-                short_name='autocorrelation',
                 standard_units='',
-                symbol=fr'\rho({var.symbol})',
+                short_name='autocorrelation',
+                long_suffix='autocorrelation',
                 axis_formatter=False,
+                symbol=fr'\rho({var.symbol})',
             )
         elif 'hist' in time:
             var.update(
-                long_suffix='histogram',
-                short_name='count',
                 standard_units='',
+                short_name='count',
+                long_suffix='histogram',
                 axis_formatter=False,
             )
 

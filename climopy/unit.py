@@ -105,16 +105,19 @@ ureg.define('arcminute = degree / 60 = ′ = arcmin = arc_minute = angular_minut
 ureg.define('arcsecond = arcminute / 60 = ″ = arcsec = arc_second = angular_second')
 
 # Coordinate degree definitions
-ureg.define(
-    'degree_North = degree = °N = degree_north = degrees_North = degrees_north = '
-    'degree_N = degrees_N = deg_North = deg_north = deg_N = '
-    'degN = degreeN = degreesN = degNorth = degreeNorth = degreesNorth'
-)
-ureg.define(
+# NOTE: These are also used in cf xarray accessor modifications.
+_longitude_units = (
     'degree_East = degree = °E = degree_east = degrees_East = degrees_east = '
     'degree_E = degrees_E = deg_East = deg_east = deg_E = '
     'degE = degreeE = degreesE = degEast = degreeEast = degreesEast'
 )
+_latitude_units = (
+    'degree_North = degree = °N = degree_north = degrees_North = degrees_north = '
+    'degree_N = degrees_N = deg_North = deg_north = deg_N = '
+    'degN = degreeN = degreesN = degNorth = degreeNorth = degreesNorth'
+)
+ureg.define(_longitude_units)
+ureg.define(_latitude_units)
 
 # Temperature aliases
 ureg.define(
