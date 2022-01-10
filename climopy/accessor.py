@@ -2813,13 +2813,13 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 if key in CFVARIABLE_ARGS:
                     kwargs[key] = val
 
-        # Get modifying cell methods
+        # Get cell methods that modify descriptive names
         # WARNING: Using cell methods can be slow since coordinates have to be
         # translated which requires cf property defintiions (see _CFAccessor above).
         if use_cell_methods:
-            # Get methods dictionary by reading cell_methods and scalar coordinates
-            # Include *this* array in case it is coordinate, e.g. lat='argmax'.
-            # Also, in that case, disable the 'point selection' mode.
+            # Get methods applied to each coordinate by reading cell_methods and
+            # scalar coordinates. Also include *this* array in the .coords attribute
+            # in case it is a coordinate e.g. with 'argmax' (see below).
             meta = data.copy(deep=False)
             meta.coords[meta.name] = meta  # whoa dude... this is so CF searches self
             methods = meta.climo.cf._decode_attr(meta.attrs.get('cell_methods', ''))
@@ -2830,15 +2830,14 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 except KeyError:
                     continue
                 if coord == name:
-                    pass
-                elif da.size == 1 and not da.isnull():
-                    units = decode_units(da.attrs['units']) if 'units' in da.attrs else 1  # noqa: E501
-                    if np.issubdtype(da.data.dtype, np.str):  # noqa: E501
-                        kwargs['label'] = [da.item()]
-                    else:
-                        kwargs[coordinate] = [units * da.item()]
-                elif any(coord in dims for dims, _ in methods):
+                    continue
+                if any(coord in dims for dims, _ in methods):
                     kwargs[coordinate] = [m for dims, m in methods if coord in dims]
+                if da.size == 1 and not da.isnull():
+                    value = da.item()
+                    if 'units' in da.attrs and np.issubdtype(da.data.dtype, np.number):
+                        value *= decode_units(da.attrs['units'])
+                    kwargs[coordinate] = [value]  # exact coordinate
 
             # Find if DataArray corresponds to a variable but its values and name
             # correspond to a coordinate. This happens e.g. with 'argmax'. Also try
