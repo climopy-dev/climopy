@@ -18,7 +18,6 @@ from .var import *  # noqa: F401, F403
 from .waves import *  # noqa: F401, F403
 from .spectral import *  # noqa: F401, F403
 from .spherical import *  # noqa: F401, F403
-from .downloads import *  # noqa: F401, F403
 from .accessor import *  # noqa: F401, F403
 from .internals.quack import *  # noqa: F401, F403
 from .internals.quant import *  # noqa: F401, F403
