@@ -18,9 +18,19 @@ from .unit import ureg
 with warnings.catch_warnings():
     warnings.simplefilter('ignore', category=ClimoPyWarning)
 
-    # Coordinates
-    vreg.define('latitude', 'latitude', 'degrees_north', axis_scale='sine', axis_formatter='deg')  # noqa: E501
-    vreg.define('longitude', 'longitude', 'degrees_east', axis_formatter='deg')
+    # Coordinates and cell methods
+    # NOTE: Vertical and time units are so varied that we do not include them.
+    vreg.define('latitude', 'latitude', 'degN', axis_scale='sine', axis_formatter='deg')  # noqa: E501
+    vreg.define('longitude', 'longitude', 'degE', axis_formatter='deg')
+    vreg.define('cell_width', 'cell width', 'km')
+    vreg.define('cell_depth', 'cell depth', 'km')
+    vreg.define('cell_height', 'cell height', 'kg m^-2')
+    vreg.define('cell_duration', 'cell duration', 'days')
+    vreg.define('cell_area', 'cell area', 'km^2')
+    vreg.define('cell_volume', 'cell volume', 'kg')
+
+    # Coordinate derivations
+    # TODO: Add to these
     vreg.define('meridional_coordinate', 'meridional coordinate', 'km')
     vreg.define('cosine_latitude', 'cosine latitude', '')
     vreg.define('coriolis_parameter', 'Coriolis parameter', 's^-1')
@@ -29,7 +39,7 @@ with warnings.catch_warnings():
     vreg.define('reference_density', 'reference density', 'kg m^-3')
     vreg.define('reference_potential_temperature', 'reference potential temperature', 'K')  # noqa: E501
 
-    # Physical variables
+    # Variable derivations
     # TODO: Add to these
     vreg.define('energy', 'energy', 'MJ m^-2 100hPa^-1')  # static/kinetic
     vreg.define('energy_flux', 'vertical energy flux', 'W m^-2 100hPa^-1')
