@@ -33,36 +33,6 @@ __all__ = [
     'register_transformation',
 ]
 
-# Custom cell measures and associated coordinates. Naming conventions are consistent
-# with existing 'cell' style names and avoid conflicts with axes names / standard names.
-# NOTE: width * depth = area and width * depth * height = volume
-# NOTE: height should generally be a mass-per-unit-area weighting rather than distance
-CELL_MEASURE_COORDS = {
-    'width': ('longitude',),
-    'depth': ('latitude',),
-    'height': ('vertical',),
-    'duration': ('time',),
-    'area': ('longitude', 'latitude'),
-    'volume': ('longitude', 'latitude', 'vertical'),
-}
-
-# One-to-one coordinate-cell measure relationships
-CELL_MEASURE_BY_COORD = {
-    coords[0]: measure for measure, coords in CELL_MEASURE_COORDS.items()
-    if len(coords) == 1
-}
-
-# Cell measure names added in calc.py
-CELL_MEASURE_NAMES = {
-    measure: 'cell_' + measure for measure in CELL_MEASURE_COORDS
-}
-
-# Add cell measures as valid cf-detected variables
-if hasattr(_cf_accessor, '_CELL_MEASURES'):
-    _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
-else:
-    warnings._warn_climopy('cf_xarray API changed. Cannot update cell measures.')
-
 # Attributes passed to cfvariable
 CFVARIABLE_ARGS = (
     'long_name',
