@@ -10,8 +10,8 @@ import re
 
 import numpy as np
 import pint
-import pint.util as putil
 import xarray as xr
+from pint.util import to_units_container
 
 from ..unit import _to_pint_string, ureg
 from . import docstring
@@ -24,22 +24,23 @@ REGEX_FORMAT = re.compile(r'\{[a-zA-Z_]\w*\}')  # valid identifiers
 # Docstring snippets
 _quant_docstring = """
 A decorator that executes functions with %(descrip)s data values and enforces the
-specified input and output units. Pint quantities passed to the function will
-result in quantities returned by the function. Non-pint quantiites passed to
-the function are assumed to be in the correct units and will result in
-non-quantities returned by the function.
+specified input and output units or dimensionalities. Comapre to `pint.wraps` and
+`pint.check`. Pint quantities passed to the function will result in quantities returned
+by the function. Non-pint quantiites passed to the function are assumed to be in the
+correct units and will result in non-quantities returned by the function.
 
 Parameters
 ----------
 units_in : unit-spec or str or sequence
     The units for the positional input arguments. Can be a `pint.Unit`, a unit
-    string specification like ``'cm'``, or a relational variable specification like
-    ``'=x'`` if the argument is not associated with any particular `pint.Unit`,
-    for example ``while_%(descrip)s(('=x', '=y'), '=y / x')`` might be used
+    string specification like ``'cm'``, a dimensionality string specification
+    like ``'[length]'``, or a relational variable specification like ``'=x'``.
+    if the argument is not associated with any particular unit or dimensionality
+    (for example ``while_%(descrip)s(('=x', '=y'), '=y / x')`` might be used
     for a function whose output units are the units of the second argument
     divided by the units of the first argument). Keyword arguments can be included
-    in the variable specification using curly brace `str.format` notation
-    after providing the default value via keyword argument, for example
+    in the variable specification using curly brace `str.format` notation after
+    providing the default value via keyword argument to the decorator, for example
     ``while_%(descrip)s(('=x', '=y'), '=y / x^{{order}}', order=1)`` might be
     used for a function that takes the nth derivative using the keyword `order`.
     Vertical bars can be used to allow multiple incompatible units, for
@@ -51,13 +52,14 @@ units_out : unit-spec or str or sequence
     As with `units_in`, but for the return values.
 convert_units : bool, default: True
     Whether to convert input argument and return value units to the specified
-    units or merely assert compatibility with the specified units.
+    units or merely assert compatibility with the specified units. This can be
+    used as an alternative to dimensionality specifications like ``'[length]'.
 require_quantity : bool, default: False
     Whether to forbid input arguments that are not pint quantities and have no units
     attribures. If ``False`` then these arguments are assumed to have correct units.
-require_xarray : bool, default: False
+require_metadata : bool, default: False
     Whether to forbid input arguments that are not `xarray.DataArray`\\ s.
-    Useful for derivations that require selections.
+    Useful for derivations that require operations along CF coordinates.
 **fmt_defaults
     Default values for the terms surrounded by curly braces in relational
     or string unit specifications.
@@ -79,6 +81,70 @@ Here is a simple example for an nth derivative wrapper.
 <Quantity(1.0, 'second / meter ** 2')>
 """
 docstring.snippets['quant.quantified'] = _quant_docstring
+
+
+def _as_units_container(arg, **fmt_kwargs):
+    """
+    Convert a unit type to a UnitsContainer after checking if it is a reference.
+    """
+    # NOTE: This parses units when applying quantify decorators, standardizing return
+    # value units, and standardizing dependent input argument units. Also validates
+    # input units and dimensions when decorator is defined rather than when used.
+    category = 0  # unit spec (0), dimensionality string (1), or reference string (2)
+    if isinstance(arg, str):
+        arg = arg.format(**fmt_kwargs)  # permit extra keyword arguments
+        if '[' in arg and ']' in arg:
+            category = 1
+        elif '=' in arg:
+            category = 2
+        else:
+            arg = _to_pint_string(arg)  # support conventions, possible error later
+    elif arg is None or isinstance(arg, pint.Unit):
+        pass
+    else:  # should be impossible since _group_args checks type
+        raise ValueError(f'Unrecognized pint unit argument {arg}.')
+    if category == 0:
+        container = to_units_container(arg, ureg)  # validates string units
+    elif category == 1:
+        container = ureg.get_dimensionality(arg)  # validates dimensions
+    elif category == 2:
+        container = to_units_container(arg.split('=', 1)[1])  # skips validation
+    else:
+        raise RuntimeError(f'Invalid {category=}.')
+    return container, category
+
+
+def _enforce_dimensionality(arg, dimensionality):
+    """
+    Ensure quantity conforms to specified dimensionality.
+    """
+    # WARNING: Error has to be raised manually because is_compatible_with does not
+    # accept dimensionality containers and no other public methods are available.
+    if not isinstance(arg, (pint.Unit, pint.Quantity)):
+        raise RuntimeError(f'Invalid input argument {arg!r}.')
+    dimensionality = ureg.get_dimensionality(dimensionality)
+    arg_dimensionality = ureg.get_dimensionality(arg)
+    if arg_dimensionality != dimensionality:
+        raise pint.DimensionalityError(
+            arg, 'a quantity of', arg_dimensionality, dimensionality
+        )
+
+
+def _get_pint_units(arg):
+    """
+    Get the pint units associated with the object argument.
+    """
+    # NOTE: This parses units when comparing input argument units against the
+    # declared units in order to select the correct standardization group.
+    units = None
+    if isinstance(arg, str):
+        arg = ureg.parse_expression(arg)  # multiplies raw unit strings by '1'
+    elif isinstance(arg, pint.Quantity):
+        units = arg.units
+    elif isinstance(arg, xr.DataArray):
+        if arg.climo._has_units:
+            units = arg.climo.units
+    return units
 
 
 def _group_args(args_in, args_out):
@@ -121,51 +187,8 @@ def _group_args(args_in, args_out):
     return args_in, args_out, is_scalar_out
 
 
-def _units_container(arg, **fmt_kwargs):
-    """
-    Convert a unit type to a UnitsContainer after checking if it is a reference.
-    """
-    # NOTE: This parses units when applying quantify decoraters and when
-    # standardizing return value units and dependent input argument units.
-    is_ref = False
-    if isinstance(arg, str):
-        arg = arg.format(**fmt_kwargs)  # permit extra keyword arguments
-        if '=' in arg:  # avoid reading numeric variable suffixes as exponents
-            is_ref = True
-        else:
-            arg = _to_pint_string(arg)  # support conventions
-    elif arg is None or isinstance(arg, pint.Unit):
-        pass
-    else:  # should be impossible since _group_args checks type
-        raise ValueError(f'Unrecognized pint unit argument {arg}.')
-    if is_ref:
-        container = putil.to_units_container(arg.split('=', 1)[1])
-    else:
-        container = putil.to_units_container(arg, ureg)  # None returns None
-    return container, is_ref
-
-
-def _units_object(arg):
-    """
-    Get the pint units associated with the object argument.
-    """
-    # NOTE: This parses units when comparing input argument units against the
-    # declared units in order to select the correct standardization group.
-    units = None
-    if isinstance(arg, str):
-        arg = ureg.parse_expression(arg)  # multiplies raw unit strings by '1'
-    elif isinstance(arg, pint.Unit):
-        units = arg
-    elif isinstance(arg, pint.Quantity):
-        units = arg.units
-    elif isinstance(arg, xr.DataArray):
-        if arg.climo._has_units:
-            units = arg.climo.units
-    return units
-
-
 def _standardize_independent(
-    arg, quantify=False, require_quantity=False, require_xarray=False
+    arg, quantify=False, require_quantity=False, require_metadata=False
 ):
     """
     Return a quantified version of the input argument using its own units. If it
@@ -184,7 +207,7 @@ def _standardize_independent(
             else:
                 raise TypeError('Pint quantity data or units attributes are required.')
         units = arg.data.units
-    elif not require_xarray:
+    elif not require_metadata:
         is_quantity = isinstance(arg, pint.Quantity)
         if not is_quantity:
             if not require_quantity:
@@ -206,25 +229,28 @@ def _standardize_independent(
 
 def _standardize_dependent(
     arg, unit=None, quantify=False, definitions=None,
-    convert_units=True, require_quantity=False, require_xarray=False, **fmt_kwargs
+    convert_units=True, require_quantity=False, require_metadata=False, **fmt_kwargs
 ):
     """
     Return a quantified version of the input argument possibly applying the
     declared units or inferring them from the independent variable units.
     """
     # Parse input units
-    # NOTE: Here definitions are required if input is refernece
-    container, is_ref = _units_container(unit, **fmt_kwargs)
+    container, category = _as_units_container(unit, **fmt_kwargs)
     if container is None:
         return arg, False
-    elif not is_ref:
-        unit = ureg.Unit(container)
+
+    # Apply units definitions
+    if category == 0:
+        dest = pint.Unit(container)
+    elif category == 1:
+        dest = container  # keep the raw dimensionality container
     else:
-        unit = ureg.dimensionless
+        dest = ureg.dimensionless
         definitions = definitions or {}
         for name, exponent in container.items():
             if name in definitions:
-                unit *= definitions[name] ** exponent
+                dest *= definitions[name] ** exponent
             else:
                 raise RuntimeError(f'Missing unit definition for variable {name!r}.')
 
@@ -237,23 +263,23 @@ def _standardize_dependent(
         if arg.climo._has_units:
             arg = arg.climo.quantify()
         if arg.climo._is_quantity:
-            if convert_units:
-                arg = arg.climo.to(unit)
+            if not convert_units or category == 1:
+                _enforce_dimensionality(arg.data, dest)
             else:
-                arg + 0 * unit  # trigger compatibility check
+                arg = arg.climo.to(dest)
         else:
-            if not require_quantity:
+            if not require_quantity and category != 1:
                 arg = arg.climo.quantify(units=unit)
             else:
                 raise TypeError('Pint quantity data or units attributes are required.')
-    elif not require_xarray:
+    elif not require_metadata:
         if is_quantity := isinstance(arg, pint.Quantity):
-            if convert_units:
-                arg = arg.to(unit)
+            if not convert_units or category == 1:
+                _enforce_dimensionality(arg, dest)
             else:
-                arg + 0 * unit  # trigger compatibility check
+                arg = arg.to(dest)
         else:
-            if not require_quantity:
+            if not require_quantity and category != 1:
                 arg = ureg.Quantity(arg, unit)
             else:
                 raise TypeError('Pint quantity data are required.')
@@ -276,7 +302,7 @@ def _while_converted(
     quantify=False,
     convert_units=True,
     require_quantity=False,
-    require_xarray=False,
+    require_metadata=False,
     **fmt_defaults  # noqa: E501
 ):
     """
@@ -296,10 +322,10 @@ def _while_converted(
         dependent = set()
         constant = set()
         for idx, unit in enumerate(units):
-            container, is_ref = _units_container(unit, **fmt_defaults)  # type checking
+            container, category = _as_units_container(unit, **fmt_defaults)
             if container is None:
                 pass
-            elif is_ref:
+            elif category == 2:
                 if len(container) == 1:
                     (key, value), = container.items()
                     if value == 1 and key not in independent:
@@ -335,12 +361,12 @@ def _while_converted(
             # are compatible with the declared units. If this fails we use the final
             # grouping by default and an error will be raised down the line.
             for grp, (independents, dependents, constants) in enumerate(categories):
-                units_input = [_units_object(args[idx]) for idx in constants]
-                units_expect = [_units_object(units_in[grp][idx]) for idx in constants]
+                units_input = [_get_pint_units(args[idx]) for idx in constants]
+                units_expect = [units_in[grp][idx] for idx in constants]
                 if all(
                     unit_input is None
                     or unit_expect is None
-                    or unit_input.is_compatible_with(unit_expect)
+                    or unit_input.dimensionality == ureg.get_dimensionality(unit_expect)
                     for unit_input, unit_expect in zip(units_input, units_expect)
                 ):
                     break
@@ -350,14 +376,14 @@ def _while_converted(
             definitions = {}
             quantify_results = False
             for key, idx in independents.items():
-                arg, unit, is_quantity = _standardize_independent(
+                arg, units, is_quantity = _standardize_independent(
                     args[idx],
                     quantify=quantify,
                     require_quantity=require_quantity,
-                    require_xarray=require_xarray,
+                    require_metadata=require_metadata,
                 )
                 args_new[idx] = arg
-                definitions[key] = unit
+                definitions[key] = units
                 quantify_results = is_quantity or quantify_results
 
             # Quantify remaining arguments using recorded units
@@ -372,7 +398,7 @@ def _while_converted(
                     quantify=quantify,
                     convert_units=convert_units,
                     require_quantity=require_quantity,
-                    require_xarray=require_xarray,
+                    require_metadata=require_metadata,
                     **fmt_kwargs
                 )
                 args_new[idx] = arg
