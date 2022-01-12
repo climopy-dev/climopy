@@ -43,27 +43,27 @@ class CFVariable(object):
     Lightweight CF-style representation of physical variables. Integrated
     with the xarray accessor via `~.accessor.ClimoDataArrayAccessor.cfvariable`.
     """
+    def __hash__(self):
+        string = '_'.join(self.identifiers)
+        return hash(string)
+
     def __str__(self):
-        names = ', '.join(self.identifiers)  # name, standard_name, aliases
-        return f'CFVariable({names})'
+        seen = set()
+        string = ', '.join(s for s in self.identifiers if s not in seen and not seen.add(s))  # noqa: E501
+        return f'CFVariable({string})'
 
     def __repr__(self):
-        standard_units = self.standard_units
+        seen = set()
+        string = ', '.join(s for s in self.identifiers if s not in seen and not seen.add(s))  # noqa: E501
         long_name = self.long_name
         short_name = self.short_name
-        standard_name = self.standard_name
-        aliases = self.aliases
-        string = self.name
+        standard_units = self.standard_units
         if long_name:
             string += f', {long_name=}'
-        if standard_units is not None:
-            string += f', {standard_units=}'
         if short_name and short_name != long_name:
             string += f', {short_name=}'
-        if standard_name:
-            string += f', {standard_name=}'
-        if aliases:
-            string += f', aliases={aliases!r}'
+        if standard_units is not None:
+            string += f', {standard_units=}'
         return f'CFVariable({string})'
 
     def __init__(self, name, *args, **kwargs):
@@ -80,10 +80,10 @@ class CFVariable(object):
         # ad hoc copy. The 'reference' variables in general should be conceptually
         # isolated and separate from any particular data.
         self._name = name
+        self._climo = None
         self._aliases = []  # manged through variable registry
         self._parents = []
         self._children = []
-        self._accessor = None
         if not hasattr(self, '_registry'):  # then use the 'app' registry
             self._registry = vreg
         self.update(*args, **kwargs)
@@ -117,16 +117,10 @@ class CFVariable(object):
                 raise ValueError('Cannot operate with CFVariables of different registries.')  # noqa: E501
         else:
             raise ValueError('Other object must be string or CFVariable.')
-        self_names = [self.name]
-        other_names = [other.name]
-        for var, names in zip((self, other), (self_names, other_names)):
-            if name := var.standard_name:
-                names.append(name)
-            names.extend(sorted(var.aliases))
         b = True
-        if self_names == other_names:
+        if self.identifiers == other.identifiers:
             pass
-        elif any(s == o for s, o in zip(self_names, other_names)):
+        elif any(s == o for s, o in zip(self.identifiers, other.identifiers)):
             warnings._warn_climopy(f'Partial overlap between {self} and {other}.')
         else:
             b = False
@@ -305,23 +299,24 @@ class CFVariable(object):
         Tuple of the unique variable identifiers, i.e. the `~CFVariable.name`,
         the `~CFVariable.standard_name`, and the `~CFVariable.aliases`.
         """
-        names = (self.name,)
+        names = [self.name]
         if self.standard_name:
-            names += (self.standard_name,)
-        names += self.aliases
+            names.append(self.standard_name)
+        names.extend(self.aliases)
         return names
 
     @property
     def aliases(self):
         """
-        Aliases for the variable name.
+        Tuple of sorted aliases for the variable name.
         """
+        # NOTE: Aliases are sorted when modified in CFVariableRegistry.
         return tuple(self._aliases)  # return an unmodifiable copy
 
     @property
     def long_name(self):
         """
-        The plot-friendly variable name.
+        The longer plot-friendly variable name.
         """
         return self._long_name
 
@@ -461,7 +456,7 @@ class CFVariable(object):
         """
         units = self.units_label.strip('$')
         symbol = self.symbol
-        accessor = self._accessor
+        accessor = self._climo
         formatter = self.scalar_formatter
         value = accessor.to_standard_units()
         value = value.climo.dequantify()
@@ -479,7 +474,21 @@ class CFVariable(object):
         return string
 
     @property
-    def units_pint(self):
+    def units_label(self):
+        """
+        The active accessor units formatted for matplotlib labels. If they are
+        equivalent to the `~CFVariable.standard_units` then this string is used
+        in order to preserve numerator and denominator grouping implied by the
+        forward slashes in the string. See `~.unit.format_units` for details.
+        """
+        if self.standard_units is None or self.units_object != self.climo.units:
+            units = self.climo.units
+        else:
+            units = self.standard_units
+        return format_units(units)  # format, retaining slashes and whatnot
+
+    @property
+    def units_object(self):
         """
         The standard unit string translated to `pint.Unit`.
         """
@@ -489,24 +498,13 @@ class CFVariable(object):
             return decode_units(self.standard_units)
 
     @property
-    def units_label(self):
+    def climo(self):
         """
-        The active accessor units or the standard units formatted for matplotlib
-        labels. When they are equivalent (as determined by `pint`), the
-        `~CFVariable.standard_units` string is used rather than the `pint.Unit` object.
-        This permits specifying a numerator and denominator by the position of the
-        forward slash in the standard units string. See `~.unit.format_units` for
-        details.
+        The `~climopy.accessor.ClimoAccessor` associated with this variable.
         """
-        if self.standard_units is None:
-            if not self._accessor:
-                raise RuntimeError(f'Accessor required for variable with no default units {self!r}.')  # noqa: E501
-            units = self._accessor.units
-        elif self._accessor and self.units_pint != self._accessor.units:
-            units = self._accessor.units
-        else:
-            units = self.standard_units
-        return format_units(units)  # format, retaining slashes and whatnot
+        if self._climo is None:
+            raise RuntimeError('ClimoAccessor missing from this CFVariable.')
+        return self._climo
 
 
 class CFVariableRegistry(object):
@@ -561,8 +559,8 @@ class CFVariableRegistry(object):
         **kwargs
     ):
         """
-        Return a copy of a variable with optional name and unit modifications based
-        on the coordinate reduction methods and optional pairing to an existing
+        Return a copy of a `CFVariable` with optional name and unit modifications
+        based on the coordinate reduction methods and optional pairing to an existing
         `~.accessor.ClimoDataArrayAccessor`. Inspired by `pint.UnitRegistry.__call__`.
 
         Parameters
@@ -570,9 +568,9 @@ class CFVariableRegistry(object):
         name : str
             The variable name
         accessor : `~.accessor.ClimoDataArrayAccessor`
-            The accessor (required for certain labels). Automatically passed
-            when requesting the accessor property
-            `~.accessor.ClimoDataArrayAccessor.cfvariable`
+            The accessor (required for certain labels). Automatically
+            supplied when requesting the accessor property
+            `~.accessor.ClimoDataArrayAccessor.cfvariable`.
         longitude, latitude, vertical, time : optional
             Reduction method(s) for standard CF coordinate axes. Taken from
             corresponding dimensions in the `cell_methods` attribute when requesting
@@ -622,7 +620,7 @@ class CFVariableRegistry(object):
         if var.name[0] == 'c' and 'convergence' in var.long_name and _pop_integral(latitude):  # noqa: E501
             var = self._get_item(name[1:])  # Green's theorem; e.g. cehf --> ehf
         var = copy.copy(var)
-        var._accessor = accessor
+        var._climo = accessor
 
         # Apply basic overrides
         kwmod = {  # update later!
@@ -788,6 +786,7 @@ class CFVariableRegistry(object):
             raise ValueError(f'Multiple variables found with {args=}: {tuple(map(str, vars))}')  # noqa: E501
         var = vars[0]
         var._aliases.extend(arg for arg in args if arg not in var.identifiers)
+        var._aliases.sort()
 
     def define(self, name, *args, aliases=None, parents=None, **kwargs):
         """
@@ -835,6 +834,7 @@ class CFVariableRegistry(object):
         if isinstance(aliases, str):
             aliases = (aliases,)
         var._aliases.extend(aliases)
+        var._aliases.sort()
 
         # Delete old variables and children, ensuring zero conflict between sets
         # of unique identifiers and forbidding deletion of parent variables.
