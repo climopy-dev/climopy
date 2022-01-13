@@ -23,9 +23,9 @@ __all__ = [
     'eot',
     'reof',
     'hist',
-    'linefit',
     'rednoise',
-    'rednoisefit',
+    'slope',
+    'timescale',
     'wilks',
 ]
 
@@ -615,7 +615,7 @@ def hist(bins, y, /, axis=0):
 
 @quack._lls_metadata
 @quant.while_dequantified(('=x', '=y'), ('=y / x', '=y / x', '=y'))
-def linefit(x, y, /, axis=0):
+def slope(x, y, /, axis=0):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
 
@@ -697,7 +697,7 @@ def linefit(x, y, /, axis=0):
 
 @quack._lls_metadata
 @quant.while_dequantified(('=t', ''), ('=t', '=t', ''))
-def rednoisefit(
+def timescale(
     dt, a, /, maxlag=None, imaxlag=None, maxlag_fit=None, imaxlag_fit=None, axis=0
 ):
     r"""
