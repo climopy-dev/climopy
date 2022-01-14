@@ -112,29 +112,36 @@ def _keep_cell_attrs(func):
     return _wrapper
 
 
-def _while_quantified(func):
+def _while_quantified(func, always_quantify=False):
     """
     Return a wrapper that temporarily quantifies the data.
     Compare to `~.internals.quant.while_quantified`.
     """
     @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
-        # Dequantify
+        # Quantify
         data = self.data
         if isinstance(data, xr.Dataset):
             data = data.copy(deep=False)
             quantified = set()
             for da in data.values():
-                if not da.climo._is_quantity and not da.climo._is_bounds:
-                    da.climo._quantify()
-                    quantified.add(da.name)
+                if da.climo._is_coordinate_bounds:  # i.e. missing attributes
+                    pass
+                elif da.climo._has_units:
+                    if not da.climo._is_quantity:
+                        da.climo._quantify()
+                        quantified.add(da.name)
+                else:
+                    if always_quantify:
+                        msg = f'Cannot quantify DataArray with no units {da.name!r}.'
+                        raise RuntimeError(msg)
         elif not self._is_quantity:
             data = data.climo.quantify()
 
         # Main function
         result = func(data.climo, *args, **kwargs)
 
-        # Requantify
+        # Dequantify
         if isinstance(data, xr.Dataset):
             result = result.copy(deep=False)
             for name in quantified:
@@ -170,7 +177,7 @@ def _while_dequantified(func):
         # Main function
         result = func(data.climo, *args, **kwargs)
 
-        # Requantify
+        # Quantify
         # NOTE: In _find_extrema, units actually change! Critical that we avoid
         # overwriting (this is default behavior when passing units to quantify).
         if isinstance(data, xr.Dataset):
