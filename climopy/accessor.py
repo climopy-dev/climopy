@@ -61,16 +61,26 @@ REGEX_MODIFY = re.compile(r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|
 REGEX_REPR_COMMA = re.compile(r'\A(\w+),(\s*)(.*)\Z')  # content around first comma
 REGEX_REPR_PAREN = re.compile(r'\A.*?\((.*)\)\Z')  # content inside first parentheses
 
-# Expand regexes for coordinate detection
-# NOTE: The default criteria only sees 'degree_E' not 'deg_E', 'degree_east' not
-# 'degree_East'. This is annoying so we make it as flexible as custom unit definition.
-_cf_criteria = getattr(_cf_accessor, 'coordinate_criteria', None)
-if _cf_criteria:
-    for key, opt in zip(('longitude', 'latitude'), (_longitude_units, _latitude_units)):
-        values = [s.strip() for i, s in enumerate(opt.split('=')) if i not in (1, 2)]
-        _cf_criteria[key]['units'] = tuple(values)  # skips definition and abbreviation
-if not _cf_criteria:
-    warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate criteria.')
+# Custom cell measures and associated coordinates. Naming conventions are consistent
+# with existing 'cell' style names and avoid conflicts with axes names / standard names.
+# NOTE: The width * depth = area and width * depth * height = volume
+# TODO: The height cell measures are generally mass-per-unit-area implying volume
+# is more like mass but may want to support actual volume and height in future.
+CELL_MEASURE_COORDS = {
+    'length': ('longitude',),
+    'width': ('latitude',),
+    'height': ('vertical',),
+    'duration': ('time',),
+    'area': ('longitude', 'latitude'),
+    'volume': ('longitude', 'latitude', 'vertical'),
+}
+COORD_CELL_MEASURE = {
+    coords[0]: m for m, coords in CELL_MEASURE_COORDS.items() if len(coords) == 1
+}
+if hasattr(_cf_accessor, '_CELL_MEASURES'):
+    _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
+else:
+    warnings._warn_climopy('cf_xarray API changed. Cannot update cell measures.')
 
 # Expand regexes for automatic coordinate detection with standardize_coords
 # NOTE: The new 'vertical' regex covers old options 'nav_lev', 'gdep', 'lv_', '[o]*lev',
@@ -99,25 +109,16 @@ if _cf_regex:
 if not _cf_regex:
     warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate regexes.')
 
-# Custom cell measures and associated coordinates. Naming conventions are consistent
-# with existing 'cell' style names and avoid conflicts with axes names / standard names.
-# NOTE: width * depth = area and width * depth * height = volume
-# NOTE: height should generally be a mass-per-unit-area weighting rather than distance
-CELL_MEASURE_COORDS = {
-    'width': ('longitude',),
-    'depth': ('latitude',),
-    'height': ('vertical',),
-    'duration': ('time',),
-    'area': ('longitude', 'latitude'),
-    'volume': ('longitude', 'latitude', 'vertical'),
-}
-COORD_CELL_MEASURE = {
-    coords[0]: m for m, coords in CELL_MEASURE_COORDS.items() if len(coords) == 1
-}
-if hasattr(_cf_accessor, '_CELL_MEASURES'):
-    _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
-else:
-    warnings._warn_climopy('cf_xarray API changed. Cannot update cell measures.')
+# Expand regexes for coordinate detection
+# NOTE: The default criteria only sees 'degree_E' not 'deg_E', 'degree_east' not
+# 'degree_East'. This is annoying so we make it as flexible as custom unit definition.
+_cf_criteria = getattr(_cf_accessor, 'coordinate_criteria', None)
+if _cf_criteria:
+    for key, opt in zip(('longitude', 'latitude'), (_longitude_units, _latitude_units)):
+        values = [s.strip() for i, s in enumerate(opt.split('=')) if i not in (1, 2)]
+        _cf_criteria[key]['units'] = tuple(values)  # skips definition and abbreviation
+if not _cf_criteria:
+    warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate criteria.')
 
 
 # Mean and average templates
@@ -1594,7 +1595,7 @@ class ClimoAccessor(object):
         # Add default cell measures
         if not measures:
             stopwatch('init')
-            for measure in ('width', 'depth', 'height', 'duration'):
+            for measure in ('length', 'width', 'height', 'duration'):
                 # Skip measures that already exist in coordinates and measures that
                 # aren't subset of existing spatial coordinates
                 if (
@@ -1626,7 +1627,7 @@ class ClimoAccessor(object):
                         continue
                     else:
                         if weight.sizes.keys() - data.sizes.keys():
-                            continue  # e.g. 'width' for data with no latitude dim
+                            continue  # e.g. 'length' for data with no latitude dim
                         if verbose:
                             print(f'Added cell measure {measure!r} with name {name!r}.')
                         weight.name = name  # just in case
@@ -2388,7 +2389,7 @@ class ClimoAccessor(object):
         return data
 
     @_CFAccessor._clear_cache
-    def truncate(self, bounds=None, *, ignore_extra=False, dataset=None, **kwargs):
+    def truncate(self, bounds=None, *, source=None, ignore_extra=False, **kwargs):
         """
         Restrict the coordinate range using `ClimoAccessor.interp`. Conceptually,
         inserts conincident centers and boundaries that mark the new edges of the
@@ -2397,11 +2398,12 @@ class ClimoAccessor(object):
         Parameters
         ----------
         bounds : dict-like, optional
-            The bounds specifications. For e.g. latitude dimension `lat`, the entries
-            should look like ``lat_min=min_value``, ``lat_max=max_value``,
+            The bounds specifications. For e.g. the latitude dimension `lat`, the
+            entries should look like ``lat_min=min_value``, ``lat_max=max_value``,
             ``lat_lim=(min, max)``, or the shorthand ``lat=(min, max)``.
-        dataset : xarray.Dataset, optional
-            The associated dataset. Used to retrieve coordinate bounds if available.
+        source : xarray.Dataset, optional
+            The associated dataset. Required to retrieve coordinate bounds in order
+            to adjust cell measure weights.
         **kwargs
             The bounds specifications passed as keyword args.
 
@@ -2418,10 +2420,10 @@ class ClimoAccessor(object):
         # NOTE: This uses the unit-friendly accessor sel method. Range is limited
         # *exactly* by interpolating onto requested bounds.
         data = self.data
-        src = dataset or data
+        source = source or data
         bounds = bounds or {}
         bounds.update(kwargs)
-        bounds, kwargs = src.climo._parse_truncate_args(**bounds)
+        bounds, kwargs = source.climo._parse_truncate_args(**bounds)
         if kwargs and not ignore_extra:
             raise ValueError(f'truncate() got unexpected keyword args {kwargs}.')
         if any(_.size > 2 for _ in bounds.values()):
@@ -2433,7 +2435,7 @@ class ClimoAccessor(object):
             dim = re.sub(r'_lim\Z', '', dim)
             data_orig = data
             coord_orig = data.coords[dim]  # must be unquantified
-            bnds_orig = src.climo.coords._get_bounds(coord_orig, sharp_cutoff=True)
+            bnds_orig = source.climo.coords._get_bounds(coord_orig, sharp_cutoff=True)
             attrs = coord_orig.attrs.copy()
 
             # Interpolate to new edges. When 'truncating' outside the coordinate range,

@@ -20,17 +20,17 @@ with warnings.catch_warnings():
 
     # Coordinates and cell methods
     # NOTE: Vertical and time units are so varied that we do not include them.
-    vreg.define('latitude', 'latitude', 'degN', axis_scale='sine', axis_formatter='deg')  # noqa: E501
     vreg.define('longitude', 'longitude', 'degE', axis_formatter='deg')
-    vreg.define('cell_width', 'cell width', 'km')
-    vreg.define('cell_depth', 'cell depth', 'km')
+    vreg.define('latitude', 'latitude', 'degN', axis_scale='sine', axis_formatter='deg')  # noqa: E501
+    vreg.define('cell_length', 'cell length', 'km')  # longitude
+    vreg.define('cell_width', 'cell depth', 'km')  # latitude
     vreg.define('cell_height', 'cell height', 'kg m^-2')
     vreg.define('cell_duration', 'cell duration', 'days')
     vreg.define('cell_area', 'cell area', 'km^2')
     vreg.define('cell_volume', 'cell volume', 'kg')
 
     # Coordinate derivations
-    # TODO: Add to these
+    # TODO: Rely on default standard name construction
     vreg.define('meridional_coordinate', 'meridional coordinate', 'km')
     vreg.define('cosine_latitude', 'cosine latitude', '')
     vreg.define('coriolis_parameter', 'Coriolis parameter', 's^-1')
@@ -77,24 +77,24 @@ with warnings.catch_warnings():
     def reference_potential_temperature(da):
         return ureg('300K') * (const.p0 / da).climo.to_units('') ** const.kappa
 
-    @register_derivation('cell_width')
-    def cell_width(self):
-        # NOTE: Add measures as coords to be consistent with result of ds['cell_width']
+    @register_derivation('cell_length')
+    def cell_length(self):
+        # NOTE: Add measures as coords to be consistent with result of ds['cell_length']
         # for datasets with measures already present in coordinates, while preventing
-        # recalculation of exact same measures.
+        # the recalculation of exact same measures.
         data = const.a * self.coords['cosine_latitude'] * self.coords['longitude_delta']  # noqa: E501
         data = data.climo.to_units('km')  # removes 'deg'
-        data.name = 'cell_width'  # avoids calculation of other measures
-        return data.climo.add_cell_measures(width=data)
+        data.name = 'cell_length'  # avoids calculation of other measures
+        return data.climo.add_cell_measures(length=data)
 
-    @register_derivation('cell_depth')
-    def cell_depth(self):
-        # NOTE: Depth is interpreted as if looking northward at 3D cell rectangle.
-        # Think of depth as 'into the distance' instead of 'into the ground'.
+    @register_derivation('cell_width')
+    def cell_width(self):
+        # NOTE: Width is interpreted as if looking northward at 3D cell rectangle.
+        # Think of width as 'into the back' instead of 'across the front'
         data = const.a * self.coords['latitude_delta']
         data = data.climo.to_units('km')  # removes 'deg'
-        data.name = 'cell_depth'
-        return data.climo.add_cell_measures(depth=data)
+        data.name = 'cell_width'
+        return data.climo.add_cell_measures(width=data)
 
     @register_derivation('cell_duration')
     def cell_duration(self):
