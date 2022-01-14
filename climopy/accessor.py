@@ -1275,7 +1275,7 @@ class ClimoAccessor(object):
             if outer := self._find_this_transformation(idest, dest):  # noqa: E501
                 return lambda da, **kwargs: outer(transformation(da, **kwargs))
 
-    def _iter_data_vars(self, dataset=False):
+    def _iter_data_vars(self, include_dataset=False):
         """
         Iterate over non-coordinate DataArrays. If this is a DataArray just yield it.
         """
@@ -1283,7 +1283,7 @@ class ClimoAccessor(object):
         if isinstance(data, xr.DataArray):
             yield data
         else:
-            if dataset:
+            if include_dataset:
                 yield data
             yield from data.values()
 
@@ -1644,7 +1644,7 @@ class ClimoAccessor(object):
             raise ValueError('Input cell measures must be DataArrays.')
         if any(da.name is None for da in measures.values()):
             raise ValueError('Input cell measures must have names.')
-        for obj in data.climo._iter_data_vars(dataset=True):
+        for obj in data.climo._iter_data_vars(include_dataset=True):
             measures_old = cf._decode_attr(obj.attrs.get('cell_measures', ''))
             for key in measures_old:
                 (measure,), name = key
@@ -1900,8 +1900,8 @@ class ClimoAccessor(object):
         """
         Return an average or summation.
         """
-        # NOTE: Unweighted mean or sum along scalar coordinate conceptually is an
-        # identity operation, so ignore them. This is also important when running
+        # NOTE: Unweighted mean or sum along scalar coords conceptually is an identity
+        # operation, so ignore scalar coords. This is also important when running
         # integral() and _manage_coord_reductions adjusted the cell methods.
         data = self.truncate(**kwargs)
         dims = data.dims if dim is None else self._parse_dims(
@@ -2300,8 +2300,8 @@ class ClimoAccessor(object):
                 if verbose:
                     print(f'Set {coord} coordinate {da.name!r} axis type to {axis!r}.')
 
-        # Manage all Z axis units and interpret 'positive' direction if not set
-        # (guess_coord_axis does not otherwise detect 'positive' attribute)
+        # Manage all Z axis units and interpret 'positive' direction if unset.
+        # Otherwise guess_coord_axis does not detect the 'positive' attribute.
         for name in data.climo.cf.axes.get('Z', []):
             da = data.climo.coords[name]  # climopy makes unit-transformable copy
             units = data.coords[name].attrs.get('units', None)
@@ -2310,7 +2310,7 @@ class ClimoAccessor(object):
             if units is None:
                 pass
             elif units == 'level' or units == 'layer':  # ureg.__eq__ handles strings
-                positive = 'up'  # +ve vertical direction is increasing vals
+                positive = 'up'  # positive vertical direction is increasing values
             elif units == 'sigma_level':  # special CF unit
                 positive = 'down'
             elif units.is_compatible_with('Pa'):
@@ -2886,10 +2886,41 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             key = dict(zip(self._data.dims, labels))
         return key
 
+    def _budget_reduce_kwargs(self, method):
+        """
+        Automatically determine reduction keyword arguments for the ``'latitude'``
+        or ``'strength``' of an energy or momentum budget term.
+        """
+        # WARNING: Flux convergence terms are subgroups of flux terms, not tendency
+        kw = {}
+        reg = self.variable_registry
+        name = self.data.name
+        content = name in reg.energy or name in reg.momentum
+        tendency = name in reg.energy_flux or name in reg.acceleration
+        transport = name in reg.meridional_energy_flux or name in reg.meridional_momentum_flux  # noqa: E501
+        if not content and not transport and not tendency:
+            raise ValueError(f'Invalid parameter {name!r}.')
+        if self.cf.sizes.get('vertical', 1) > 1:
+            kw['vertical'] = 'int'  # NOTE: order of reduction is important
+        kw['longitude'] = 'avg' if content or tendency else 'int'
+        if method == 'strength':
+            kw['latitude'] = 'absmax'
+        elif method == 'latitude':
+            kw['latitude'] = 'absargmax'
+        else:
+            raise ValueError(f'Invalid energy or momentum reduce method {method!r}.')
+        return kw
+
     @_CFAccessor._clear_cache
     @quack._while_quantified
+    @quack._while_inverted
     def reduce(
-        self, indexers=None, dataset=None, centroid=False, weight=None, mask=None,
+        self,
+        indexers=None,
+        source=None,
+        invert=False,
+        weight=None,
+        mask=None,
         **kwargs
     ):
         """
@@ -2899,13 +2930,17 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         ----------
         indexers : dict, optional
             A dict with keys matching dimensions and values representing the
-            "reduction modes" for the dimensions. Values can be any of the following:
+            "reduction methods" for the dimensions. Options are as follows:
 
-            ===============  =========================================================
+            ===============  ==========================================================
             Reduction mode   Description
-            ===============  =========================================================
+            ===============  ==========================================================
             array-like       The value(s) at this location using ``self.interp``.
-            param-spec       Parameter name passed to ``self.get``, e.g. ``'trop'``.
+            var-spec         Variable name passed to ``self.get``, e.g. ``'trop'``.
+            ``'autocorr'``   Autocorrelation along the dimension.
+            ``'autocovar'``  Autocovariance along the dimension.
+            ``'centroid'``   The centroid. Note dimension could be e.g. ``'volume'``.
+            ``'hist'``       Histogram along the dimension.
             ``'int'``        Integral along the dimension.
             ``'avg'``        Weighted mean along the dimension.
             ``'anom'``       Weighted anomaly along the dimension.
@@ -2919,25 +2954,24 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             ``'sum'``        Simple arithmetic sum.
             ``'min'``        Local minima along the dimension.
             ``'max'``        Local maxima along the dimension.
+            ``'absmin'``     Global minimum along the dimension.
+            ``'absmax'``     Global maximum along the dimension.
             ``'argmin'``     Location(s) of local minima along the dimension.
             ``'argmax'``     Location(s) of local maxima along the dimension.
             ``'argzero'``    Location(s) of zeros along the dimension.
-            ``'absmin'``     Global minimum along the dimension.
-            ``'absmax'``     Global maximum along the dimension.
             ``'absargmin'``  Location of global minimum along the dimension.
             ``'absargmax'``  Location of global maximum along the dimension.
-            ``'timescale'``  *For time dimension only.* The e-folding timescale.
-            ``'autocorr'``   *For time dimension only.* The autocorrelation.
-            ``'hist'``       *For time dimension only.* The histogram.
-            ===============  =========================================================
+            ``'slope'``      Least-squares fit linear slope along the dimension.
+            ``'timescale'``  Least-squares fit e-folding timescale along the dimension.
+            ===============  ==========================================================
 
-        dataset : `xarray.Dataset`, optional
-            The associated dataset. This is needed for 2D reduction
-            of isentropic data, and may also be needed for 2D reduction
-            of horizontal data with 2D latitude/longitude coords in the future.
-        centroid : bool, optional
-            Get the value-weighted average wavenumber using
-            `~ClimoDataArrayAccessor.centroid`. Units are distance.
+        source : `xarray.Dataset`, optional
+            The source dataset. Required for complex dimension reduction methods,
+            e.g. interpolating to the tropopause with ``lev='trop'``. Also required
+            for retrieving averaging weights, e.g. coordinate bounds ``lev_bnds``.
+        invert : bool, optional
+            Whether to invert the data before and after the reduction. Can be
+            useful for e.g. averages of timescales or wavelengths.
         weight : str or `xarray.DataArray`, optional
             Additional weighting parameter name or `xarray.DataArray`, used for
             averages and integrations. Mass weighting is applied automatically.
@@ -2967,39 +3001,47 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # Initial stuff
         data = self.data
+        if invert:
+            with xr.set_options(keep_attrs=True):
+                data = 1.0 / data
         name = data.name
         dims = data.dims
-        src = dataset or data
-        find_names = (
-            'min', 'max', 'absmin', 'absmax', 'argmax', 'argmin',
-            'absargmin', 'absargmax', 'argzero',
-        )
-        average_names = {
-            'int': ('integral', {}),
-            'avg': ('average', {}),
-            'anom': ('anomaly', {}),
-            'lcumint': ('cumintegral', {}),
-            'rcumint': ('cumintegral', {'reverse': True}),
-            'lcumavg': ('cumaverage', {}),
-            'rcumavg': ('cumaverage', {'reverse': True}),
-            'lcumanom': ('cumanomaly', {}),
-            'rcumanom': ('cumanomaly', {'reverse': True}),
-            'mean': ('mean', {}),
-            'sum': ('sum', {}),
-        }
-        method_keys = {  # keyword args that can be passed to different methods
-            'autocorr': ('lag', 'ilag', 'maxlag', 'imaxlag'),
-            'autocovar': ('lag', 'ilag', 'maxlag', 'imaxlag'),
-            'average': ('skipna',),
-            'find': ('diff', 'which', 'centered', 'sep', 'seed', 'ntrack', 'dim_track'),
-            'hist': ('bins',),
-            'slope': (),
-            'timescale': ('maxlag', 'imaxlag', 'maxlag_fit', 'imaxlag_fit'),
+        source = source or data
+        hist_keys = ('bins',)
+        avg_keys = ('skipna', 'weight')
+        cov_keys = ('lag', 'ilag', 'maxlag', 'imaxlag')
+        fit_keys = ('maxlag', 'imaxlag', 'maxlag_fit', 'imaxlag_fit')
+        find_keys = ('diff', 'which', 'centered', 'sep', 'seed', 'ntrack', 'dim_track')
+        reduce_methods = {
+            'autocorr': ('autocorr', cov_keys, {}),
+            'autocovar': ('autocovar', cov_keys, {}),
+            'centroid': ('centroid', (), {}),
+            'hist': ('hist', hist_keys, {}),
+            'int': ('integral', avg_keys, {}),
+            'avg': ('average', avg_keys, {}),
+            'anom': ('anomaly', avg_keys, {}),
+            'lcumint': ('cumintegral', avg_keys, {}),
+            'rcumint': ('cumintegral', avg_keys, {'reverse': True}),
+            'lcumavg': ('cumaverage', avg_keys, {}),
+            'rcumavg': ('cumaverage', avg_keys, {'reverse': True}),
+            'lcumanom': ('cumanomaly', avg_keys, {}),
+            'rcumanom': ('cumanomaly', avg_keys, {'reverse': True}),
+            'mean': ('mean', avg_keys, {}),
+            'sum': ('sum', avg_keys, {}),
+            'min': ('min', find_keys, {}),
+            'max': ('max', find_keys, {}),
+            'absmin': ('absmin', find_keys, {}),
+            'absmax': ('absmax', find_keys, {}),
+            'argmin': ('argmin', find_keys, {}),
+            'argmax': ('argmax', find_keys, {}),
+            'argzero': ('argloc', find_keys, {'value': 0}),
+            'absargmin': ('absargmin', find_keys, {}),
+            'absargmax': ('absargmax', find_keys, {}),
+            'slope': ('slope', (), {}),
+            'timescale': ('timescale', fit_keys, {}),
         }
         if mask is not None:
             raise NotImplementedError('Mask application not yet implemented')
-        if centroid:
-            raise NotImplementedError('Centroid calculation not yet implemented')
 
         # Parse indexers
         # NOTE: Prefer dataset here to allow for things like lat_min='ehf_lat'
@@ -3008,12 +3050,12 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             indexers, include_scalar=True, include_pseudo=True, **kwargs
         )
         if isinstance(weight, str):
-            if dataset is None:  # supplied by get
+            if not isinstance(source, xr.Dataset):  # supplied by get
                 raise ValueError(f'Dataset required to infer weighting {weight!r}.')
-            weight = dataset.climo[weight]
+            weight = source.climo[weight]
 
         # Parse truncation args
-        kw_trunc, kwargs = src.climo._parse_truncate_args(**kwargs)
+        kw_trunc, kwargs = source.climo._parse_truncate_args(**kwargs)
         if kw_trunc:
             sample = tuple(kw_trunc.values())[0]
             dims_sample = sample.dims[1:]  # exclude 'startstop'
@@ -3036,10 +3078,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             isel_trunc = dict(zip(dims_sample, idx))
             isel_data = {dim: i for dim, i in zip(dims_sample, idx) if dim != 'track'}
             ikw_trunc = {k: tuple(v.isel(isel_trunc).data) for k, v in kw_trunc.items()}
-            idata = data.isel(isel_data).climo.truncate(dataset=dataset, **ikw_trunc)
+            idata = data.isel(isel_data).climo.truncate(source=source, **ikw_trunc)
             iweight = weight
             if iweight is not None:
-                iweight = data.isel(isel_data).climo.truncate(dataset=dataset, **ikw_trunc)  # noqa: E501
+                iweight = data.isel(isel_data).climo.truncate(source=source, **ikw_trunc)  # noqa: E501
 
             # Single dimension reductions
             # WARNING: Need to include *coords* so we can 'reduce' singleton lon
@@ -3049,26 +3091,17 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 # integrating unknown dimensions; attenuated spatial ones earlier.
                 # TODO: Add '_hist' entry to __getitem__ that (1) gets jet latitudes
                 # with argmax and (2) calls hist on the resulting latitudes.
-                if isinstance(method, str) and (
-                    method in method_keys
-                    or method in find_names
-                    or method in average_names
-                ):
-                    kw = {}
-                    if method in find_names:
-                        keys = method_keys['find']
-                        if method == 'argzero':
-                            method = 'argloc'  # with default value=0
-                    elif method in average_names:
-                        method, kw = average_names[method]
-                        keys = method_keys['average']
-                        kw.update({'weight': iweight})
-                    kw.update({k: kwargs[k] for k in kwargs.keys() & set(keys)})
+                if isinstance(method, str) and method in reduce_methods:
+                    method, keys, kw = reduce_methods[method]
+                    for key in set(keys) & set(kwargs):
+                        kw[key] = kwargs[key]
+                    if 'weight' in keys:
+                        kw['weight'] = iweight
                     idata = getattr(idata.climo, method)(dim, **kw)
                     used_kw |= kw.keys()
 
                 # Select single or multiple points with interpolation
-                # For example: climo.get('dtdy', lev='avg', lat='ehf_lat')
+                # For example: climo.get('dtdy', lat='ehf_lat')
                 else:
                     loc = getattr(method, 'magnitude', method)
                     if dim in self.cf.coordinates.get('time', ()):
@@ -3076,17 +3109,32 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     elif quack._is_numeric(loc):  # i.e. not datetime, string, etc.
                         idata = idata.climo.interp({dim: loc})
                     else:
+                        msg = (
+                            f'Invalid reduce method or variable spec {loc!r}. Valid '
+                            'reduce methods are: ' + ', '.join(reduce_methods) + '.'
+                        )
+                        if not isinstance(source, xr.Dataset):
+                            raise ValueError(
+                                msg + ' Variable specs require a source dataset.'
+                            )
                         try:
-                            loc = dataset.climo.get(loc)
+                            loc = source.climo.get(loc)
+                        except KeyError:
+                            raise ValueError(
+                                msg + ' Failed to treat {loc!r} as variable spec.'
+                            )
+                        try:
                             idata = idata.climo.interp({dim: loc})
-                        except (KeyError, ValueError, AttributeError):
-                            raise ValueError(f'Invalid {method=}.')
+                        except ValueError:
+                            raise ValueError(
+                                'Falied to interpolate to variable spec {loc!r}.'
+                            )
 
             # Add to list of reductions along different subselections
             datas[idx] = idata
 
         # Detect invalid kwargs
-        extra_kw = kwargs.keys() - used_kw
+        extra_kw = set(kwargs) - used_kw
         if extra_kw:
             raise ValueError('Unexpected kwargs: ' + ', '.join(map(repr, extra_kw)))
 
@@ -3107,6 +3155,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # TODO: Figure out which functions remove the name!
         if data.name is None:
             data.name = name
+        if invert:
+            with xr.set_options(keep_attrs=True):
+                data = 1.0 / data
         return data
 
     @quack._while_quantified
@@ -4324,9 +4375,9 @@ class ClimoDatasetAccessor(ClimoAccessor):
                 ):
                     return tup
 
-    def add_variable(self, *args, **kwargs):
+    def add(self, *args, **kwargs):
         """
-        Call `get` and add the result to a copy of the dataset.
+        Call `get` and return a copy of the dataset with the result added to it.
         """
         data = self.data.copy(deep=False)
         kwargs.setdefault('add_cell_measures', False)
@@ -4424,36 +4475,16 @@ short_suffix : str, optional
         kw_getitem = {k: kw_reduce.pop(k) for k in PARSEKEY_ARGS if k in kw_reduce}
         data = self._get_item(key, **kw_getitem)
 
-        # Automatically determine 'reduce' kwargs for energy and momentum budget
-        # WARNING: Flux convergence terms are subgroups of flux terms, not tendency
-        reg = self.variable_registry
-        if flag_reduce := flag_reduce and flag_reduce.strip('_'):
-            content = key in reg.energy or key in reg.momentum
-            tendency = key in reg.energy_flux or key in reg.acceleration
-            transport = key in reg.meridional_energy_flux or key in reg.meridional_momentum_flux  # noqa: E501
-            if not content and not transport and not tendency:
-                raise ValueError(f'Invalid parameter {key!r}.')
-            if data.climo.cf.sizes.get('vertical', 1) > 1:
-                kw_reduce['vertical'] = 'int'  # NOTE: order of reduction is important
-            kw_reduce['longitude'] = 'avg' if content or tendency else 'int'
-            kw_reduce['latitude'] = 'absmax' if flag_reduce == 'strength' else 'absargmax'  # noqa: E501
-
         # Reduce dimensionality using keyword args
         # WARNING: For timescale variables take inverse before and after possible
         # average. Should move this kludge away.
+        if flag_reduce := flag_reduce and flag_reduce.strip('_'):
+            kw_reduce.update(data.climo._budget_reduce_kwargs(flag_reduce))
         if kw_reduce:
-            invert = any(key in v for s in ('tau', 'timescale') if (v := reg.get(s)))
-            if invert:
-                with xr.set_options(keep_attrs=True):
-                    data = 1.0 / data
-                warnings._warn_climopy(f'Taking inverse reduced inverse of {key!r}.')
             try:
-                data = data.climo.reduce(dataset=self.data, **kwargs)
+                data = data.climo.reduce(source=self.data, **kw_reduce)
             except Exception:
-                raise ValueError(f'Failed to reduce data {key!r} with kwargs {kwargs}.')
-            if invert:
-                with xr.set_options(keep_attrs=True):
-                    data = 1.0 / data
+                raise ValueError(f'Failed to reduce data {key!r} with {kw_reduce}.')
 
         # Normalize the data
         if normalize:
@@ -4482,10 +4513,7 @@ short_suffix : str, optional
                 if isinstance(other, (str, tuple)):
                     other = self.get(other)
                 with xr.set_options(keep_attrs=True):
-                    data = getattr(data, '__' + method + '__')(other)
-                if isinstance(other, xr.DataArray):
-                    data.name = other.name
-                    data.attrs.update(other.attrs)
+                    data = getattr(data, f'__{method}__')(other)  # should keep name
 
         # Change the units
         if units is not None:  # permit units='' to translate to dimensionless
