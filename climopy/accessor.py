@@ -596,8 +596,8 @@ class _CFAccessor(object):
     # Properties
     # NOTE: CF accessor only looks for .axes and coordinates in the .coords object
     # WARNING: CF accessor .axes, .coordinates, etc. is extremely slow due simply to
-    # repeated lookups of modestly sized dictionaries and nested loops. Try to avoid
-    # repeatedly re-generating CF properties in loops using simple cacheing.
+    # repeated generation and lookups of modestly sized dictionaries in nested loops.
+    # Try to avoid this using simple cacheing approach.
     axes = property(functools.partial(_get_cache_attr, attr='axes'))
     coordinates = property(functools.partial(_get_cache_attr, attr='coordinates'))
     cell_measures = property(functools.partial(_get_cache_attr, attr='cell_measures'))
@@ -1564,7 +1564,7 @@ class ClimoAccessor(object):
         ----------
         measures : dict-like, optional
             Dictionary of cell measures. If none are provided, the default `width`,
-            `depth`, `height`, and `duration` measures are automatically calculated.
+            `depth`, `height`, and `period` measures are automatically calculated.
             If this is a DataArray, surface pressure will not be taken into account
             and isentropic grids will error out.
         dataset : xarray.Dataset, optional
@@ -2402,7 +2402,7 @@ class ClimoAccessor(object):
             entries should look like ``lat_min=min_value``, ``lat_max=max_value``,
             ``lat_lim=(min, max)``, or the shorthand ``lat=(min, max)``.
         source : xarray.Dataset, optional
-            The associated dataset. Required to retrieve coordinate bounds in order
+            The source dataset. Required to retrieve coordinate bounds in order
             to adjust cell measure weights.
         **kwargs
             The bounds specifications passed as keyword args.
@@ -3591,49 +3591,53 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_CFAccessor._clear_cache
     @quack._keep_cell_attrs
-    def centroid(self, dataset=None, **kwargs):
+    def centroid(self, dim, source=None, **kwargs):
         """
         Return the value-weighted average wavenumber.
 
         Parameters
         ----------
-        dataset : `xarray.Dataset`, optional
-            The dataset.
+        dim : str
+            The dimension(s) along which centroid is computed. Might be
+            a pseudo dimension e.g. ``'area'`` or ``'volume``'.
+        source : `xarray.Dataset`
+            The source dataset. Required for retrieving averaging weights, e.g.
+            coordinate bounds ``lev_bnds``.
         **kwargs
             Passed to `~ClimoAccessor.truncate`. Used to limit the bounds of the
             calculation.
         """
         # Multi-dimensional reduction: power-weighted centroid (wavenumber)
         # Mask region for taking power-weighted average
+        # NOTE: Previously this included a default truncation between
+        # latitudes 25 and 75. Now this should be done manually.
         # NOTE: Wavenumber dimension scaling bug is fixed in newer files
         # Need to rerun spectral decompositions on all experiments
-        data = self.data.truncate(**kwargs)
-        lat = self.coords['latitude']
-        k = self.coords['wavenumber']
-        if np.all(k < 1):
-            k /= (k[1] - k[0])
-        kmask = k.climo.magnitude >= 1.5
-        latmask = (lat.climo.magnitude >= 25) & (lat.climo.magnitude <= 70)
+        power = self.data.truncate(source=source, **kwargs)
+        source = source or power
+        wavenum = power.climo.coords['wavenumber']
+        if np.all(wavenum < 1):
+            wavenum /= (wavenum[1] - wavenum[0])
+        mask = wavenum.climo.magnitude >= 1.5  # at least 2 cycles per circle
+        circum = 2 * np.pi * const.a * power.climo.coords['cosine_latitude']
+        wavenum = wavenum / circum  # cycles per latitude circle to cycles per meter
 
         # Get centroid as the *power-weighted average*. This prevents
         # recording big discrete jumps in wavelength.
-        if dataset is None:
-            raise ValueError('Dataset is required.')  # TODO: loosen restriction
-        power = data.isel(k=kmask, lat=latmask)
-        weight = dataset.climo['depth'] * dataset.climo['height'] * power
-        denom = weight.sum()  # over all dims
-        data = (k[kmask] * weight).sum() / denom
-        lat = (lat[latmask] * weight).sum() / denom
-
-        # Now convert to *physical* wavenumber. Start with circles per wave,
-        # times mteres per circle, times 0.25 to get *quarter* wavelength.
+        # NOTE: This should correctly handle 'volume' dimension as a simple
+        # latitude-height average. The 'longitude' addition does band scaling.
+        # TODO: Support integral or average weight dimensions that exceed
+        # dimensions of data being integrated.
         # TODO: Check Frierson et al 2006, make sure this is what people use
         # data.data[data.data >= 10e3 * ureg.km] = np.nan * ureg.km
-        circum = 2 * np.pi * const.a * np.cos(np.pi * lat / 180)
-        data = 0.25 * (circum / data)  # from dimensionless to meters
-        data.climo.update_cell_methods({('lat', 'k'): 'centroid'})
+        power = power.isel(wavenumber=mask)
+        source = source.isel(wavenumber=mask)  # e.g. for vertical weights
+        wavenum = wavenum.isel(wavenumber=mask)
+        wavenum = wavenum.climo._integral_or_average(dim, source=source, weight=power)
+        wavelen = 0.25 / wavenum  # radius of given wave crest
+        wavelen.climo.update_cell_methods({dim: 'centroid'})
 
-        return data
+        return wavelen
 
     @quack._while_dequantified
     @quack._keep_cell_attrs
@@ -3987,9 +3991,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         if not self._is_quantity:
             raise ValueError('Data should be quantified.')
+        units = decode_units(units)
         data = self.data.copy(deep=False)
-        if isinstance(units, str):
-            units = decode_units(units)
         args = (context,) if context else ()
         try:
             data.data = data.data.to(units, *args)  # NOTE: not ito()
