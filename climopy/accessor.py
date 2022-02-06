@@ -1344,6 +1344,23 @@ class ClimoAccessor(object):
             if outer := self._find_this_transformation(idest, dest):  # noqa: E501
                 return lambda da, **kwargs: outer(transformation(da, **kwargs))
 
+    def _find_params(self, allow_empty=False, return_reference=False):
+        """
+        Iterte over parameter coordinates (identified as cfvariables with references).
+        """
+        coords = {}
+        for dim, coord in self.data.coords.items():
+            try:
+                cfvariable = coord.climo._cf_variable(use_methods=False)
+                reference = cfvariable.reference
+            except AttributeError:
+                continue
+            if reference is not None:
+                coords[dim] = reference if return_reference else coord
+        if not allow_empty and not coords:
+            raise RuntimeError('No parameter dimensions found.')
+        return coords
+
     def _iter_data_vars(self, dataset=False):
         """
         Iterate over non-coordinate DataArrays. If this is a DataArray just yield it.
@@ -2225,26 +2242,16 @@ class ClimoAccessor(object):
             `~xarray.DataArray`\\ (s). Default is ``False`` for variable(s) containing
             the substrings ``'force'`` or ``'forcing'`` and ``True`` otherwise.
         """
-        key = str(key)
-        if key not in ('1', '2', 'anomaly', 'ratio'):
-            raise ValueError(f'Invalid pair spec {key!r}.')
-
-        # Find all non-reduced parametric axes
-        data = self.data
-        dims_param = {}
-        for dim, coord in data.coords.items():
-            if coord.size == 1:
-                continue
-            try:
-                cfvariable = coord.climo._cf_variable(use_methods=False)
-                reference = cfvariable.reference
-            except AttributeError:
-                continue
-            if reference is not None:
-                dims_param[dim] = reference
-
         # Find "anomaly-pair" axes and parametric axes
-        dims_pair = tuple(dim for dim in dims_param if data.sizes[dim] == 2)
+        # NOTE: This behavior differently depending on available parameters. If
+        # pair is present then always select second minus first (either may or may not
+        # be reference). Otherwise select value minus reference.
+        key = str(key)
+        if key not in ('1', '2', 'anom', 'anomaly', 'ratio'):
+            raise ValueError(f'Invalid pair spec {key!r}.')
+        data = self.data
+        dims_param = self._find_params(return_reference=True)
+        dims_pair = tuple(dim for dim in dims_param if data.sizes.get(dim, 0) == 2)
         if dims_pair:
             if len(dims_pair) > 1:
                 warnings._warn_climopy(
@@ -2256,15 +2263,15 @@ class ClimoAccessor(object):
         elif dims_param:
             if len(dims_param) > 1:
                 warnings._warn_climopy(
-                    f'Ambiguous parameter dimensions {tuple(dims_param)}. Using first.'
+                    f'Ambiguous parameter dimensions {tuple(dims_param)}. Using first.'  # noqa: E501
                 )
             sels = (dims_param, {})
         else:
-            raise ValueError('No parameter dimensions found.')
+            raise ValueError('No anomaly-pair dimensions found.')
 
         # Make selection and repair cfvariable
         # NOTE: We are careful here to track parent_name variables found in
-        # coordinates, i.e. variables associated with _find_extrema.
+        # coordinates, i.e. variables to which we applied _find_extrema.
         prefix = suffix = None
         if key == '1':
             prefix = 'unforced'
@@ -2276,15 +2283,15 @@ class ClimoAccessor(object):
             suffix = 'anomaly'
             with xr.set_options(keep_attrs=True):
                 name = data.attrs.get('parent_name', None)
-                if key == 'anomaly':
-                    result = data.climo.sel(sels[1]) - data.climo.sel(sels[0])
-                else:
-                    result = data.climo.sel(sels[1]) / data.climo.sel(sels[0])
-                if name and name in data.coords:
-                    result = result.climo.replace_coords(name=result)
+                data0 = data.climo.sel(sels[0])
+                data1 = data.climo.sel(sels[1])
+                result = data1 / data0 if key == 'ratio' else data1 - data0
+                if name and name in data.coords and name not in result.coords:
+                    coord = 0.5 * (data0.coords[name] + data1.coords[name])
+                    result.coords[name] = coord
 
         # Add prefixes and suffixes
-        for da in result.climo._iter_data_vars:
+        for da in result.climo._iter_data_vars():
             attrs = da.attrs
             combine = lambda *args: ' '.join(filter(None, args))  # noqa: E731
             if modify is None:
@@ -2703,19 +2710,26 @@ class ClimoAccessor(object):
     @_CFAccessor._clear_cache
     def parameter(self):
         """
-        The coordinate `~xarray.DataArray` for the "parameter sweep" axis. Detected as
-        the first coordinate whose `~ClimoDataArrayAccessor.cfvariable` has a non-empty
+        The coordinate `~xarray.DataArray` for the "parameter" axis. Detected as the
+        first coordinate whose `~ClimoDataArrayAccessor.cfvariable` has a non-empty
         ``reference`` attribute.
         """
-        for dim, coord in self.data.coords.items():
-            try:
-                cfvariable = coord.climo._cf_variable(use_methods=False)
-                reference = cfvariable.reference
-            except AttributeError:
-                continue
-            if reference is not None:
-                return coord
-        raise RuntimeError('No parameter dimensions found.')
+        coords = self._find_params()
+        if len(coords) > 1:
+            warnings._warn_climopy(
+                f'Ambiguous parameter dimensions {tuple(coords)}. Using first.'
+            )
+        return coords[tuple(coords)[0]]
+
+    @property
+    @_CFAccessor._clear_cache
+    def parameters(self):
+        """
+        A tuple of the coordinate `~xarray.DataArray`\\ s for "parameter" axes.
+        Detected as coordinates whose `~climoDataArrayAccessor.cfvariable`\\ s
+        have non-empty ``reference`` attributes.
+        """
+        return tuple(self._find_params(allow_empty=True).values())
 
     @property
     def variable_registry(self):
