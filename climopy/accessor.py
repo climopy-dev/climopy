@@ -17,7 +17,7 @@ import pint
 import xarray as xr
 from cf_xarray import accessor as _cf_accessor
 
-from . import DERIVATIONS, TRANSFORMATIONS, const, diff, utils, var
+from . import DERIVATIONS, TRANSFORMATIONS, const, diff, spectral, utils, var
 from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
@@ -3481,10 +3481,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         for dim, window in indexers.items():
             if isinstance(window, ureg.Quantity):
                 coords = data.climo.coords[dim]
-                window = int(np.round(window / (coords[1] - coords[0])).magnitude)
+                window = np.round(window / (coords[1] - coords[0]))
+                window = int(window.climo.magnitude)
                 if window <= 0:
                     raise ValueError('Invalid window length.')
-            data = var.runmean(data, window, dim=dim)
+            data = spectral.runmean(data, window, dim=dim)
         return data
 
     @_CFAccessor._clear_cache
