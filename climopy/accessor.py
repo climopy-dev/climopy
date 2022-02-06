@@ -3434,16 +3434,16 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     def cumanomaly(self, *args, **kwargs):
         """
-        Anomaly relative to cumulative mass-weighted average.
+        Anomaly of cumulative to full mass-weighted average.
 
         Parameters
         ----------
         *args, **kwargs
             Passed to `ClimoDataArrayAccessor.cumaverage`.
         """
-        # TODO: Indicate anomalous data with cell method
+        # TODO: Indicate anomalous data with a cell method
         with xr.set_options(keep_attrs=True):
-            return self.data - self.cumaverage(*args, **kwargs)
+            return self.average(*args, **kwargs) - self.cumaverage(*args, **kwargs)
 
     @_CFAccessor._clear_cache
     @_keep_cell_attrs
