@@ -2881,7 +2881,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     coordinate = meta.climo.cf._encode_name(coord, 'coordinates')
                 except KeyError:
                     continue
-                if coord == name:
+                if any(coord in dims for dims, _ in methods):
+                    kwargs[coordinate] = [m for dims, m in methods if coord in dims]
+                elif coord == name:
                     pass
                 elif da.size == 1 and not da.isnull():
                     units = parse_units(da.attrs['units']) if 'units' in da.attrs else 1
@@ -2889,8 +2891,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                         kwargs['label'] = [da.item()]
                     else:
                         kwargs[coordinate] = [units * da.item()]
-                elif any(coord in dims for dims, _ in methods):
-                    kwargs[coordinate] = [m for dims, m in methods if coord in dims]
 
             # Find if DataArray corresponds to a variable but its values and name
             # correspond to a coordinate. This happens e.g. with 'argmax'. Also try
@@ -3262,26 +3262,26 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 names = ()
                 measure = dim if is_measure else CELL_MEASURE_BY_COORD[dim]
                 coordinates = (dim,) if is_coord else CELL_MEASURE_COORDS[dim]
-                for name in coordinates:
+                for coord in coordinates:
                     try:
-                        names += (self.cf._decode_name(name, 'coordinates'),)
+                        names += (self.cf._decode_name(coord, 'coordinates'),)
                     except KeyError:
                         raise ValueError(
                             f'Missing {cell_method} coordinate {{!r}}. If data is '
                             'already reduced you may need to call add_scalar_coords.'
                         )
             try:  # is cell measure missing from dictionary?
-                name = self.cf._decode_name(measure, 'cell_measures', search_registry=False, return_if_missing=True)  # noqa: E501
+                key = self.cf._decode_name(measure, 'cell_measures', search_registry=False, return_if_missing=True)  # noqa: E501
             except KeyError:
                 raise ValueError(
                     f'Missing cell measure {measure!r} for {cell_method} dimension '
                     f'{dim!r}. You may need to call add_cell_measures.'
                 )
             try:  # is cell measure missing from coords? (common for external source)
-                weight = self.cf._src[name]
+                weight = self.cf._src[key]
             except KeyError:
                 raise ValueError(
-                    f'Missing cell measure {measure!r} variable {name!r} for '
+                    f'Missing cell measure {measure!r} variable {key!r} for '
                     f'{cell_method} dimension {dim!r}.'
                 )
             dims.extend(names)
