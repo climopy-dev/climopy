@@ -3649,6 +3649,25 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Find local or global extrema or their locations.
         """
+        # Helper function for converting local extrema to global extrema. Appends
+        # source array (i.e. data or coordinates) to extrema data (i.e. values or
+        # locations). Also adds an all-NaN dummy slice.
+        def _concatenate_edges(data, source):
+            datas = [data]
+            for idx in (0, -1):
+                isel = source.isel({dim: idx}, drop=True)
+                datas.append(isel.expand_dims('track'))
+            datas.append(xr.full_like(datas[-1], np.nan))  # dummy slice final position
+            data = xr.concat(
+                datas,
+                dim='track',
+                coords='minimal',
+                compat='override',
+                combine_attrs='override'
+            )
+            data.coords['track'] = np.arange(data.sizes['track'])
+            return data
+
         # Parse and truncate
         dim = self._parse_dims(dim, single=True)
         trunc, kwargs = self._parse_truncate_args(**kwargs)
@@ -3688,36 +3707,24 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         locs = locs.climo.dequantify()
         values = values.climo.dequantify()
 
-        # Get global extrema. If none were found (e.g. there are only extrema on edges)
-        # revert to native min max functions.
+        # Get global extrema. If none were found (e.g. there are only extrema
+        # on edges) revert to native min max functions.
+        # WARNING: Need xarray >= 0.16.0 'idxmin' and 'idxmax' to avoid all-NaN
+        # slice errors. See: https://github.com/pydata/xarray/issues/4481
         if abs and locs.sizes['track'] == 0:
-            # Get both locations and values
-            locs = getattr(data, 'arg' + which)(dim)
-            locs = coord[locs].drop_vars(dim)
+            locs = getattr(data, 'idx' + which)(dim, fill_value=np.nan).drop_vars(dim)
             values = getattr(data, which)(dim).drop_vars(dim)
 
         # Otherwise select from the identified 'sandwiched' extrema and possible
         # extrema on the array edges. We merge find values with array edges
+        # NOTE: Here 'idxmin' and 'idxmax' followed by 'sel' probably more expensive
+        # then 'argmin' and 'argmax' but needed to set fill_value to dummy positoin
         elif abs:
-            # Get array edges
-            locs = [locs]
-            values = [values]
-            for cat, src in zip((locs, values), (coord, data)):
-                for idx in (0, -1):
-                    cat.append(src.isel({dim: idx}, drop=True).expand_dims('track'))
-            # Select location of largest minimum or maximum
-            concatenate = functools.partial(
-                xr.concat,
-                dim='track',
-                coords='minimal',
-                compat='override',
-                combine_attrs='override'
-            )
-            locs = concatenate(locs)
-            values = concatenate(values)
-            isel = {'track': getattr(values, 'arg' + which)('track')}
-            locs = locs.isel(isel, drop=True)
-            values = values.isel(isel, drop=True)
+            locs = _concatenate_edges(locs, coord)
+            values = _concatenate_edges(values, data)
+            sel = getattr(values, 'idx' + which)('track', fill_value=locs['track'][-1])
+            locs = locs.sel(track=sel, drop=True)
+            values = values.sel(track=sel, drop=True)
 
         # Use either actual locations or interpolated values. Restore attributes
         # NOTE: Add locs to coordinates for 'min', 'max', etc. and add values to
