@@ -459,24 +459,29 @@ class CFVariable(object):
         """
         Scalar label. This *always* shows the standardized form.
         """
+        from proplot import SigFigFormatter
         units = self.units_label.strip('$')
-        symbol = self.symbol
+        symbol = self.symbol.strip('$')
         accessor = self._accessor
         formatter = self.scalar_formatter
         value = accessor.to_standard_units()
         value = value.climo.dequantify()
         value = value.item()
         if np.isnan(value):
-            value = 'NaN'
+            string = 'NaN'
         else:
-            value = formatter(value)
-        if '.' in value:
-            if value[-1] == '1':  # close enough
-                value = value[:-1]
-            value = value.rstrip('0').rstrip('.')
-        string = rf'{symbol} = {value}$ \, {units}$'
-        string = ' ' * pad + string
-        return string
+            string = formatter(value)
+        if isinstance(formatter, SigFigFormatter) and float(string) != value:
+            equals = r'\approx'
+        else:
+            equals = '='
+        if '.' in string:
+            if string[-1] == '1':  # close enough
+                string = string[:-1]
+            string = string.rstrip('0').rstrip('.')
+        label = rf'${symbol} {equals} {string} \, {units}$'
+        label = ' ' * pad + label
+        return label
 
     @property
     def units_pint(self):
