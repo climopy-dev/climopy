@@ -17,13 +17,19 @@ import pint
 import xarray as xr
 from cf_xarray import accessor as _cf_accessor
 
-from . import DERIVATIONS, TRANSFORMATIONS, const, diff, utils, var
+from . import DERIVATIONS, TRANSFORMATIONS, const, diff, spectral, utils, var
 from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
 from .internals import _first_unique, docstring, quack, warnings
-from .unit import _longitude_units, _latitude_units
-from .unit import decode_units, encode_units, format_units, ureg
+from .unit import (
+    _latitude_units,
+    _longitude_units,
+    decode_units,
+    encode_units,
+    format_units,
+    ureg,
+)
 
 __all__ = [
     'ClimoAccessor',
@@ -1275,6 +1281,23 @@ class ClimoAccessor(object):
             if outer := self._find_this_transformation(idest, dest):  # noqa: E501
                 return lambda da, **kwargs: outer(transformation(da, **kwargs))
 
+    def _find_params(self, allow_empty=False, return_reference=False):
+        """
+        Iterte over parameter coordinates (identified as cfvariables with references).
+        """
+        coords = {}
+        for dim, coord in self.data.coords.items():
+            try:
+                cfvariable = coord.climo._cf_variable(use_cf_attrs=False)
+                reference = cfvariable.reference
+            except AttributeError:
+                continue
+            if reference is not None:
+                coords[dim] = reference if return_reference else coord
+        if not allow_empty and not coords:
+            raise RuntimeError('No parameter dimensions found.')
+        return coords
+
     def _iter_data_vars(self, include_dataset=False):
         """
         Iterate over non-coordinate DataArrays. If this is a DataArray just yield it.
@@ -2156,26 +2179,16 @@ class ClimoAccessor(object):
             `~xarray.DataArray`\\ (s). Default is ``False`` for variable(s) containing
             the substrings ``'force'`` or ``'forcing'`` and ``True`` otherwise.
         """
-        key = str(key)
-        if key not in ('1', '2', 'anomaly', 'ratio'):
-            raise ValueError(f'Invalid pair spec {key!r}.')
-
-        # Find all non-reduced parametric axes
-        data = self.data
-        dims_param = {}
-        for dim, coord in data.coords.items():
-            if coord.size == 1:
-                continue
-            try:
-                cfvariable = coord.climo._cf_variable(use_cf_attrs=False)  # fast
-                reference = cfvariable.reference
-            except AttributeError:
-                continue
-            if reference is not None:
-                dims_param[dim] = reference
-
         # Find "anomaly-pair" axes and parametric axes
-        dims_pair = tuple(dim for dim in dims_param if data.sizes[dim] == 2)
+        # NOTE: This behavior differently depending on available parameters. If
+        # pair is present then always select second minus first (either may or may not
+        # be reference). Otherwise select value minus reference.
+        key = str(key)
+        if key not in ('1', '2', 'anom', 'anomaly', 'ratio'):
+            raise ValueError(f'Invalid pair spec {key!r}.')
+        data = self.data
+        dims_param = self._find_params(return_reference=True)
+        dims_pair = tuple(dim for dim in dims_param if data.sizes.get(dim, 0) == 2)
         if dims_pair:
             if len(dims_pair) > 1:
                 warnings._warn_climopy(
@@ -2187,15 +2200,15 @@ class ClimoAccessor(object):
         elif dims_param:
             if len(dims_param) > 1:
                 warnings._warn_climopy(
-                    f'Ambiguous parameter dimensions {tuple(dims_param)}. Using first.'
+                    f'Ambiguous parameter dimensions {tuple(dims_param)}. Using first.'  # noqa: E501
                 )
             sels = (dims_param, {})
         else:
-            raise ValueError('No parameter dimensions found.')
+            raise ValueError('No anomaly-pair dimensions found.')
 
         # Make selection and repair cfvariable
         # NOTE: We are careful here to track parent_name variables found in
-        # coordinates, i.e. variables associated with _find_extrema.
+        # coordinates, i.e. variables to which we applied _find_extrema.
         prefix = suffix = None
         if key == '1':
             prefix = 'unforced'
@@ -2207,15 +2220,15 @@ class ClimoAccessor(object):
             suffix = 'anomaly'
             with xr.set_options(keep_attrs=True):
                 name = data.attrs.get('parent_name', None)
-                if key == 'anomaly':
-                    result = data.climo.sel(sels[1]) - data.climo.sel(sels[0])
-                else:
-                    result = data.climo.sel(sels[1]) / data.climo.sel(sels[0])
-                if name and name in data.coords:
-                    result = result.climo.replace_coords(name=result)
+                data0 = data.climo.sel(sels[0])
+                data1 = data.climo.sel(sels[1])
+                result = data1 / data0 if key == 'ratio' else data1 - data0
+                if name and name in data.coords and name not in result.coords:
+                    coord = 0.5 * (data0.coords[name] + data1.coords[name])
+                    result.coords[name] = coord
 
         # Add prefixes and suffixes
-        for da in result.climo._iter_data_vars:
+        for da in result.climo._iter_data_vars():
             attrs = da.attrs
             combine = lambda *args: ' '.join(filter(None, args))  # noqa: E731
             if modify is None:
@@ -2271,15 +2284,16 @@ class ClimoAccessor(object):
           and ``degrees_north`` units to detected ``X`` and ``Y`` axes.
         * Ensures detected longitude and latitude coordinates are designated
           as ``X`` and ``Y`` axes if none are present.
-        * Ensures unique ``Z`` axis is also detected as ``vertical`` and transforms
-          height-like, pressure-like, and temperature-like vertical coordinate units
-          to kilometers, hectopascals, and kelvin, respectively.
+        * Adds ``positive`` direction attribute to detected ``Z`` axes so they
+          are also interpted as ``vertical`` coordinates.
+        * Enforces vertical coordinate units of kilometers, hectopascals, and kelvin,
+          for height-like, pressure-like, and temperature-like data, respectively.
         * Renames longitude, latitude, vertical, and time coordinate names
           to ``'lon'``, ``'lat'``, ``'lev'``, and ``'time'``, respectively.
         * Renames coordinate bounds to the coordinate names followed by a
           ``'_bnds'`` suffix and removes all attributes from bounds variables.
 
-        Existing attributes are not overwritten.
+        Note that this function never overwrites existing attributes.
 
         Parameters
         ----------
@@ -2635,19 +2649,26 @@ class ClimoAccessor(object):
     @_CFAccessor._clear_cache
     def parameter(self):
         """
-        The coordinate `~xarray.DataArray` for the "parameter sweep" axis. Detected as
-        the first coordinate whose `~ClimoDataArrayAccessor.cfvariable` has a non-empty
+        The coordinate `~xarray.DataArray` for the "parameter" axis. Detected as the
+        first coordinate whose `~ClimoDataArrayAccessor.cfvariable` has a non-empty
         ``reference`` attribute.
         """
-        for dim, coord in self.data.coords.items():
-            try:
-                cfvariable = coord.climo._cf_variable(use_cf_attrs=False)  # fast
-                reference = cfvariable.reference
-            except AttributeError:
-                continue
-            if reference is not None:
-                return coord
-        raise RuntimeError('No parameter dimensions found.')
+        coords = self._find_params()
+        if len(coords) > 1:
+            warnings._warn_climopy(
+                f'Ambiguous parameter dimensions {tuple(coords)}. Using first.'
+            )
+        return coords[tuple(coords)[0]]
+
+    @property
+    @_CFAccessor._clear_cache
+    def parameters(self):
+        """
+        A tuple of the coordinate `~xarray.DataArray`\\ s for "parameter" axes.
+        Detected as coordinates whose `~climoDataArrayAccessor.cfvariable`\\ s
+        have non-empty ``reference`` attributes.
+        """
+        return tuple(self._find_params(allow_empty=True).values())
 
     @property
     def variable_registry(self):
@@ -2834,9 +2855,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     cf_name = key
                 if any(coord in dims for dims, _ in methods):
                     kwargs[key] = [m for dims, m in methods if coord in dims]
-                elif da.size > 1 or da.isnull():
-                    pass
-                else:
+                elif da.size == 1 and not da.isnull():
                     value = da.item()
                     if 'units' in da.attrs and np.issubdtype(da.data.dtype, np.number):
                         value *= decode_units(da.attrs['units'])
@@ -3242,26 +3261,26 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 names = ()
                 measure = dim if is_measure else COORD_CELL_MEASURE[dim]
                 coordinates = (dim,) if is_coord else CELL_MEASURE_COORDS[dim]
-                for name in coordinates:
+                for coord in coordinates:
                     try:
-                        names += (self.cf._decode_name(name, 'coordinates'),)
+                        names += (self.cf._decode_name(coord, 'coordinates'),)
                     except KeyError:
                         raise ValueError(
                             f'Missing {cell_method} coordinate {{!r}}. If data is '
                             'already reduced you may need to call add_scalar_coords.'
                         )
             try:  # is cell measure missing from dictionary?
-                name = self.cf._decode_name(measure, 'cell_measures', search_registry=False, return_if_missing=True)  # noqa: E501
+                key = self.cf._decode_name(measure, 'cell_measures', search_registry=False, return_if_missing=True)  # noqa: E501
             except KeyError:
                 raise ValueError(
                     f'Missing cell measure {measure!r} for {cell_method} dimension '
                     f'{dim!r}. You may need to call add_cell_measures.'
                 )
             try:  # is cell measure missing from coords? (common for external source)
-                weight = self.cf._src[name]
+                weight = self.cf._src[key]
             except KeyError:
                 raise ValueError(
-                    f'Missing cell measure {measure!r} variable {name!r} for '
+                    f'Missing cell measure {measure!r} variable {key!r} for '
                     f'{cell_method} dimension {dim!r}.'
                 )
             dims.extend(names)
@@ -3428,16 +3447,16 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     def cumanomaly(self, *args, **kwargs):
         """
-        Anomaly relative to cumulative mass-weighted average.
+        Anomaly of cumulative to full mass-weighted average.
 
         Parameters
         ----------
         *args, **kwargs
             Passed to `ClimoDataArrayAccessor.cumaverage`.
         """
-        # TODO: Indicate anomalous data with cell method
+        # TODO: Indicate anomalous data with a cell method
         with xr.set_options(keep_attrs=True):
-            return self.data - self.cumaverage(*args, **kwargs)
+            return self.average(*args, **kwargs) - self.cumaverage(*args, **kwargs)
 
     @_CFAccessor._clear_cache
     @quack._keep_cell_attrs
@@ -3461,10 +3480,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         for dim, window in indexers.items():
             if isinstance(window, ureg.Quantity):
                 coords = data.climo.coords[dim]
-                window = int(np.round(window / (coords[1] - coords[0])).magnitude)
+                window = np.round(window / (coords[1] - coords[0]))
+                window = int(window.climo.magnitude)
                 if window <= 0:
                     raise ValueError('Invalid window length.')
-            data = var.runmean(data, window, dim=dim)
+            data = spectral.runmean(data, window, dim=dim)
         return data
 
     @_CFAccessor._clear_cache
@@ -3647,6 +3667,25 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Find local or global extrema or their locations.
         """
+        # Helper function for converting local extrema to global extrema. Appends
+        # source array (i.e. data or coordinates) to extrema data (i.e. values or
+        # locations). Also adds an all-NaN dummy slice.
+        def _concatenate_edges(data, source):
+            datas = [data]
+            for idx in (0, -1):
+                isel = source.isel({dim: idx}, drop=True)
+                datas.append(isel.expand_dims('track'))
+            datas.append(xr.full_like(datas[-1], np.nan))  # dummy slice final position
+            data = xr.concat(
+                datas,
+                dim='track',
+                coords='minimal',
+                compat='override',
+                combine_attrs='override'
+            )
+            data.coords['track'] = np.arange(data.sizes['track'])
+            return data
+
         # Parse and truncate
         dim = self._parse_dims(dim, single=True)
         trunc, kwargs = self._parse_truncate_args(**kwargs)
@@ -3686,36 +3725,24 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         locs = locs.climo.dequantify()
         values = values.climo.dequantify()
 
-        # Get global extrema. If none were found (e.g. there are only extrema on edges)
-        # revert to native min max functions.
+        # Get global extrema. If none were found (e.g. there are only extrema
+        # on edges) revert to native min max functions.
+        # WARNING: Need xarray >= 0.16.0 'idxmin' and 'idxmax' to avoid all-NaN
+        # slice errors. See: https://github.com/pydata/xarray/issues/4481
         if abs and locs.sizes['track'] == 0:
-            # Get both locations and values
-            locs = getattr(data, 'arg' + which)(dim)
-            locs = coord[locs].drop_vars(dim)
+            locs = getattr(data, 'idx' + which)(dim, fill_value=np.nan).drop_vars(dim)
             values = getattr(data, which)(dim).drop_vars(dim)
 
         # Otherwise select from the identified 'sandwiched' extrema and possible
         # extrema on the array edges. We merge find values with array edges
+        # NOTE: Here 'idxmin' and 'idxmax' followed by 'sel' probably more expensive
+        # then 'argmin' and 'argmax' but needed to set fill_value to dummy positoin
         elif abs:
-            # Get array edges
-            locs = [locs]
-            values = [values]
-            for cat, src in zip((locs, values), (coord, data)):
-                for idx in (0, -1):
-                    cat.append(src.isel({dim: idx}, drop=True).expand_dims('track'))
-            # Select location of largest minimum or maximum
-            concatenate = functools.partial(
-                xr.concat,
-                dim='track',
-                coords='minimal',
-                compat='override',
-                combine_attrs='override'
-            )
-            locs = concatenate(locs)
-            values = concatenate(values)
-            isel = {'track': getattr(values, 'arg' + which)('track')}
-            locs = locs.isel(isel, drop=True)
-            values = values.isel(isel, drop=True)
+            locs = _concatenate_edges(locs, coord)
+            values = _concatenate_edges(values, data)
+            sel = getattr(values, 'idx' + which)('track', fill_value=locs['track'][-1])
+            locs = locs.sel(track=sel, drop=True)
+            values = values.sel(track=sel, drop=True)
 
         # Use either actual locations or interpolated values. Restore attributes
         # NOTE: Add locs to coordinates for 'min', 'max', etc. and add values to

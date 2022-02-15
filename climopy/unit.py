@@ -89,6 +89,7 @@ ureg.define('sigma_level = 1')
 ureg.define('_10km = 10 * km = 10km')
 ureg.define('_100km = 100 * km = 100km')
 ureg.define('_1000km = 1000 * km = 1000km')
+ureg.define('_100mb = 100 * mb = 100mb')
 ureg.define('_100hPa = 100 * hPa = 100hPa')
 
 # Pressure definitions (replace 'barn' with 'bar' as default 'b' unit)
