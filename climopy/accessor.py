@@ -2347,15 +2347,16 @@ class ClimoAccessor(object):
           and ``degrees_north`` units to detected ``X`` and ``Y`` axes.
         * Ensures detected longitude and latitude coordinates are designated
           as ``X`` and ``Y`` axes if none are present.
-        * Ensures unique ``Z`` axis is also detected as ``vertical`` and transforms
-          height-like, pressure-like, and temperature-like vertical coordinate units
-          to kilometers, hectopascals, and kelvin, respectively.
+        * Adds ``positive`` direction attribute to detected ``Z`` axes so they
+          are also interpted as ``vertical`` coordinates.
+        * Enforces vertical coordinate units of kilometers, hectopascals, and kelvin,
+          for height-like, pressure-like, and temperature-like data, respectively.
         * Renames longitude, latitude, vertical, and time coordinate names
           to ``'lon'``, ``'lat'``, ``'lev'``, and ``'time'``, respectively.
         * Renames coordinate bounds to the coordinate names followed by a
           ``'_bnds'`` suffix and removes all attributes from bounds variables.
 
-        Existing attributes are not overwritten.
+        Note that this function never overwrites existing attributes.
 
         Parameters
         ----------
