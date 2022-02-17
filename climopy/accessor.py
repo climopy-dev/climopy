@@ -133,7 +133,7 @@ Return the %(operator)s along dimension(s), preserving attributes and coordinate
 
 Parameters
 ----------
-dim : str or list of str, optional
+dim : str or sequence of str, optional
     The dimensions.
 skipna : bool, optional
     Whether to skip NaN values.
@@ -1768,11 +1768,11 @@ class ClimoAccessor(object):
         vertical : bool, optional
             Whether to enforce pressure level coverage from 0 hectoPascals to
             1013.25 hectoPascals (mean sea-level pressure). Default is ``False``.
-        zero : bool or list of str, optional
-            If this is a `DataArray` accessor, should be boolean indicating whether
-            data at the pole coordinates should be zeroed (as should be the case for
-            wind variables and extensive properties like eddy fluxes). If this is a
-            `Dataset` accessor, should be list of variables that should be zeroed.
+        zero : bool or sequence of str, optional
+            If this is a `~ClimoDataArrayAccessor`, should be boolean indicating whether
+            data at the pole coordinates should be zeroed (e.g. wind variables and
+            extensive properties like fluxes). If this is a `~ClimoDatasetAccessor`,
+            should be sequence of variables that should be zeroed.
 
         Examples
         --------
@@ -2106,12 +2106,12 @@ class ClimoAccessor(object):
             The hemisphere. May be the globe, the globe with hemispheres flipped, the
             average of both hemispheres, or either of the northern and southern
             hemispheres.
-        invert : bool or list of str, optional
+        invert : bool or sequence of str, optional
             If this is a `~xarray.DataArray` accessor, `invert` should be a boolean
             indicating whether data should be inverted when taking the average
             hemisphere ``'ave'``. If this is a `~xarray.Dataset` accessor, `invert`
-            should be a list of variable names that should be inverted (e.g. if the
-            dataset contains the meridional wind ``'v'`` and potential vorticity
+            should be a sequence of variable names that should be inverted (e.g. if
+            the dataset contains the meridional wind ``'v'`` and potential vorticity
             ``'pv'``, then one might use ``invert=('v', 'pv')``).
         """
         # Bail out if already is single hemisphere
@@ -2490,7 +2490,7 @@ class ClimoAccessor(object):
                 data = data.drop_vars(bounds)
 
             # Update relevant cell measures with scale factor. For example, if
-            # we are truncating latitude, only scale 'depth', 'area', and 'volume'
+            # we are truncating latitude, only scale 'width', 'area', and 'volume'
             try:
                 coordinate = self.cf._encode_name(dim, 'coordinates')
             except KeyError:
@@ -2932,7 +2932,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_CFAccessor._clear_cache
     @quack._while_quantified
-    @quack._while_inverted
     def reduce(
         self,
         indexers=None,
@@ -3288,7 +3287,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             weights_explicit.append(weight.climo.quantify())
 
         # Add unquantified cell measure weights for measures whose dimensions match any
-        # of the dimensions we are already integrating over (e.g. 'depth' is added
+        # of the dimensions we are already integrating over (e.g. 'width' is added
         # for an areal integral to account for differing cell thickness)
         for measure, (varname,) in self.cf.cell_measures.items():
             if measure in measures:  # explicit weight
@@ -3859,7 +3858,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         ----------
         dim : str
             The dimension name.
-        bins : int or list of float, optional
+        bins : int or sequence of float, optional
             The bin boundaries or the integer number of bins from the minimum datum to
             the maximum datum. Default is ``11``.
 

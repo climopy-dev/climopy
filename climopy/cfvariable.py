@@ -804,12 +804,12 @@ class CFVariableRegistry(object):
             retrieved for data arrays whose `name` match this name using
             ``data_array.climo.cfvariable.property`` or the shorthand form
             ``data_array.climo.property``.
-        aliases : str or list of str, optional
+        aliases : str or sequence of str, optional
             Aliases for the `CFVariable`. This can be useful for identifying dataset
             variables from a wide variety of sources that have empty `standard_name`
             attributes. As an example you might register an air temperature variable
             ``t`` with ``aliases=('ta', 'temp', 'air_temp')``.
-        parents : str or list of str, optional
+        parents : str or sequence of str, optional
             The parent variable name(s). Unspecified variable properties are
             inherited from the first one, and variable grouping is based on all
             of them. For example, defining the variable ``eddy_potential_energy`` with

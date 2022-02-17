@@ -11,7 +11,7 @@ import xarray as xr
 
 from .diff import deriv_half, deriv_uneven
 from .internals import ic  # noqa: F401
-from .internals import context, quack, quant, warnings
+from .internals import permute, quack, quant, warnings
 
 __all__ = [
     'calendar',
@@ -193,7 +193,7 @@ def find(
     if x.size > 2 and x[1] - x[0] < 0:  # TODO: check this works?
         which = 'negpos' if which == 'posneg' else 'posneg' if which == 'negpos' else which  # noqa: E501
 
-    with context._ArrayContext(y, push_right=(axis_track, axis)) as ctx:
+    with permute._PermuteContext(y, push_right=(axis_track, axis)) as ctx:
         # Get flattened data and iterate over extra dimensions
         # NOTE: Axes are pushed to right in the specified order. Result: first axis
         # contains flattened extra dimensions, second axis is dimension along which

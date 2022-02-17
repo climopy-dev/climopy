@@ -7,13 +7,13 @@ import numpy as np
 from . import ic  # noqa: F401
 from . import _make_logger
 
-# Set up ArrayContext logger
-logger = _make_logger('ArrayContext', 'error')  # or 'info'
+# Set up PermuteContext logger
+logger = _make_logger('PermuteContext', 'error')  # or 'info'
 
 
-def _exe_axis_moves(array, moves, reverse=False):
+def _do_axis_moves(array, moves, reverse=False):
     """
-    Execute the input series of axis swaps.
+    Execute the input series of axis moves.
     """
     slice_ = slice(None, None, -1) if reverse else slice(None)
     for move in moves[slice_]:
@@ -25,7 +25,7 @@ def _exe_axis_moves(array, moves, reverse=False):
 
 def _get_axis_moves(push_left, push_right, left_base=0, right_base=-1):
     """
-    Get the series of axis swaps given the input dimensionality.
+    Get the series of axis moves given the input dimensionality.
     """
     logger.info(f'Push axes left: {push_left}')
     logger.info(f'Push axes right: {push_right}')
@@ -43,12 +43,12 @@ def _get_axis_moves(push_left, push_right, left_base=0, right_base=-1):
     return np.array(moves)
 
 
-class _ArrayContext(object):
+class _PermuteContext(object):
     """
-    Temporarily reshape the input dataset(s). This is needed so we can do objective
-    analysis tasks "along an axis". Some tasks can be done by just moving axes and using
-    array[..., :] notation but this is not always possible. Should work with arbitrary
-    duck-type arrays, including dask arrays.
+    Temporarily permute the dimensions of the input array(s). This is needed so we can
+    do objective analysis tasks "along an axis". Some tasks can be done by just moving
+    axes and using array[..., :] notation but this is not always possible. Should work
+    with arbitrary duck-type arrays, including dask arrays.
     """
     def __init__(
         self, *args,
@@ -59,14 +59,14 @@ class _ArrayContext(object):
         ----------
         *datas : numpy.ndarray
             The arrays to be reshaped
-        push_left, push_right : int or list of int, optional
-            Axis or axes to move to the left or right sides. Axes are moved in the input
+        push_right, push_left : int or sequence of int, optional
+            Axis or axes to move to the right or left sides. Axes are moved in the input
             order. By default, if neither are provided, `push_right` is set to ``-1``.
-        nflat_left, nflat_right : int, optional
-            Number of dimensions to flatten on the left or right sides. By default, if
-            only `push_left` is provided, `nflat_right` is set to ``data.ndim -
-            len(push_left)``, and if only `push_right` is provided, `nflat_left` is set
-            to ``data.ndim - len(push_right)``.
+        nflat_right, nflat_left : int, optional
+            Number of dimensions to flatten on the right or left sides. By
+            default, if only `push_right` is provided, `nflat_left` is set to
+            ``data.ndim - len(push_right)``, and if only `push_left` is provided,
+            `nflat_right` is set to ``data.ndim - len(push_left)``.
 
         Examples
         --------
@@ -75,26 +75,27 @@ class _ArrayContext(object):
         >>> import logging
         >>> import numpy as np
         >>> import xarray as xr
-        >>> from climopy.internals.context import logger, _ArrayContext
+        >>> from climopy.internals.context import logger, _PermuteContext
         >>> logger.setLevel(logging.INFO)
-        >>> # Generate neof, member, run, time, plev, lat array
+        >>> # Generate member, run, time, plev, lat array
         >>> dataarray = xr.DataArray(
         ...     np.random.rand(12, 8, 100, 40, 20),
         ...     dims=('member', 'run', 'time', 'plev', 'lat'),
         ... )
         >>> array = dataarray.data
-        >>> with _ArrayContext(
+        >>> with _PermuteContext(
         ...     array,
         ...     push_left=(0, 1), nflat_left=2,
         ...     push_right=(2, 3, 4), nflat_right=2,
-        ... ) as context:
-        ...     data = context.data
+        ... ) as ctx:
+        ...     neof = 5
+        ...     data = ctx.data
         ...     nextra, ntime, nspace = data.shape
-        ...     eofs = np.random.rand(nextra, 5, 1, nspace)  # singleton time dimension
-        ...     pcs = np.random.rand(nextra, 5, ntime, 1)  # singleton space dimension
-        ...     context.replace_data(eofs, pcs, insert_left=1)
+        ...     eofs = np.random.rand(nextra, neof, 1, nspace)  # singleton time dim
+        ...     pcs = np.random.rand(nextra, neof, ntime, 1)  # singleton space dim
+        ...     ctx.replace_data(eofs, pcs, insert_left=1)
         >>> logger.setLevel(logging.ERROR)
-        >>> eofs, pcs = context.data
+        >>> eofs, pcs = ctx.data
         """
         # Set arrays
         # NOTE: No array standardization here. Assume duck-type arrays (numpy
@@ -302,7 +303,7 @@ class _ArrayContext(object):
             push_left = self._push_left.copy()  # *must* be copy or replace_data fails!
             push_right = self._push_right.copy()
             moves = _get_axis_moves(push_left, push_right)
-            array = _exe_axis_moves(array, moves)
+            array = _do_axis_moves(array, moves)
 
             # Get new left shape
             ndim = array.ndim
@@ -349,7 +350,7 @@ class _ArrayContext(object):
                 # WARNING: 'order' arg is invalid for dask arrays
                 logger.info(f'Reshape from {array.shape} to {ishape}')
                 array = np.reshape(array, ishape)
-            array = _exe_axis_moves(array, imoves, reverse=True)
+            array = _do_axis_moves(array, imoves, reverse=True)
             self._arrays.append(array)
 
     @property

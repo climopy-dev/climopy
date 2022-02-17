@@ -2,6 +2,9 @@
 """
 Tools for working with pint quantities.
 """
+# TODO: Currently None bypasses all input argument standardization but should instead
+# quantify with any units and provide default-disabled option to ignore completely.
+# See the quack _while_quantified and _while_dequantified methods.
 # NOTE: isinstance(..., ureg.Unit) or isinstance(..., ureg.Quantity) returns False
 # for instances derived from other registries. So always test against pint namespace
 # class definitions and defer to incompatible registry errors down the line.

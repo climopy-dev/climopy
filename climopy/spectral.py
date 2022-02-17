@@ -17,7 +17,7 @@ import numpy as np
 import scipy.signal as signal
 
 from .internals import ic  # noqa: F401
-from .internals import context, docstring, quack, quant, warnings
+from .internals import docstring, permute, quack, quant, warnings
 
 __all__ = [
     'butterworth',
@@ -322,7 +322,7 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
     n_half = (max(len(a), len(b)) - 1) // 2
 
     # Apply filter 'n' times to each sample
-    with context._ArrayContext(x, push_right=axis) as ctx:
+    with permute._PermuteContext(x, push_right=axis) as ctx:
         # Take mean
         y_filtered = ctx.data.copy()
         y_mean = y_filtered.mean(axis=1, keepdims=True)
@@ -512,7 +512,7 @@ def _power_driver(
         raise ValueError(f'Got conflicting shapes for y1 {y1.shape} and y2 {y2.shape}.')
 
     # Get copsectrum, quadrature spectrum, and powers for each window
-    with context._ArrayContext(y1, y2, push_right=axis) as ctx:
+    with permute._PermuteContext(y1, y2, push_right=axis) as ctx:
         # Get window and flattened, trimmed data
         y1, y2 = ctx.data
         win, winloc, y1, y2 = _window_data(y1, y2, nperseg=nperseg, wintype=wintype)
@@ -606,7 +606,7 @@ def _power2d_driver(
         raise ValueError(f'Shapes of y1 {y1.shape} and y2 {y2.shape} must match.')
 
     # Permute and flatten
-    with context._ArrayContext(y1, y2, push_right=(axis_time, axis_lon)) as ctx:
+    with permute._PermuteContext(y1, y2, push_right=(axis_time, axis_lon)) as ctx:
         # Get window and flattened, trimmed data
         y1, y2 = ctx.data
         win, winloc, y1, y2 = _window_data(y1, y2, nperseg=nperseg, wintype=wintype)

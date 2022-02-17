@@ -13,7 +13,7 @@ In the meantime, feel free to copy and modify it.
 import numpy as np
 
 from . import const
-from .internals import context, docstring, warnings
+from .internals import docstring, permute, warnings
 
 __all__ = [
     'eqlat', 'waq', 'waqlocal',
@@ -133,7 +133,7 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
     # TODO: Use C-style time x plev x lat x lon instead as prototypical dimensionality
     mass = sigma is not None
     arrays = (q, sigma) if mass else (q,)
-    with context._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as ctx:
+    with permute._PermuteContext(*arrays, nflat_right=(q.ndim - 2)) as ctx:
         # Get flattened arrays
         if not mass:
             q = ctx.data
@@ -214,7 +214,7 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
         arrays.append(omega)
     if has_sigma:
         arrays.append(sigma)
-    with context._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as ctx:
+    with permute._PermuteContext(*arrays, nflat_right=(q.ndim - 2)) as ctx:
         # Get flattened data
         if has_omega and has_sigma:
             q, omega, sigma = ctx.data
@@ -353,7 +353,7 @@ def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
         arrays.append(sigma)
 
     # Flatten (eqlat can do this, but not necessary here)
-    with context._ArrayContext(*arrays, nflat_right=(q.ndim - 2)) as ctx:
+    with permute._PermuteContext(*arrays, nflat_right=(q.ndim - 2)) as ctx:
         # Get flattened data
         if has_omega and has_sigma:
             q, omega, sigma = ctx.data

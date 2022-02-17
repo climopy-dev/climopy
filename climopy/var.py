@@ -12,7 +12,7 @@ import scipy.linalg as linalg
 import scipy.optimize as optimize
 
 from .internals import ic  # noqa: F401
-from .internals import context, docstring, quack, quant
+from .internals import docstring, permute, quack, quant
 
 __all__ = [
     'autocorr',
@@ -81,7 +81,7 @@ axis : int, optional
     Axis along which %(name)s is taken.
 lag : float, optional
     Return %(name)s for the single lag `lag` (must be divisible by `dt`).
-ilag : int, optional
+ilag : int, default: 0
     As with `lag` but specifies the index instead of the physical time.
 maxlag : float, optional
     Return lagged %(name)s up to the lag `maxlag` (must be divisible by `dt`).
@@ -90,8 +90,8 @@ imaxlag : int, optional
 
 Returns
 -------
-lags : array-like
-    The lags.
+lags : array-like, optional
+    The lags. Only returned if `maxlag` or `imaxlag` was used.
 result : array-like
     The %(name)s as a function of lag.
 
@@ -121,11 +121,11 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
         The autocorrelation.
     ntime : int, optional
         Number of timesteps.
-    nsamples : int or list of int, optional
-        Axis size or list of axis sizes for the "sample" dimension(s). Shape of the
-        output array will be ``(ntime,)`` if `nsamples` is not provided,
+    nsamples : int or sequence of int, optional
+        Axis size or sequence of axis sizes for the "sample" dimension(s). Shape of
+        the output array will be ``(ntime,)`` if `nsamples` is not provided,
         ``(ntime, nsamples)`` if `nsamples` is scalar, or ``(ntime, *nsamples)``
-        if `nsamples` is a list of axis sizes.
+        if `nsamples` is a sequence of axis sizes.
     mean, stdev : float, optional
         The mean and standard deviation for the red noise time series.
     state : `numpy.RandomState`, optional
@@ -149,7 +149,7 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
     # Nested loop
     if state is None:
         state = np.random
-    with context._ArrayContext(data, push_left=0) as ctx:
+    with permute._PermuteContext(data, push_left=0) as ctx:
         data = ctx.data
         data[0, :] = 0.0  # initialize
         for i in range(data.shape[-1]):
@@ -263,6 +263,8 @@ def _covar_driver(
             )[..., 0]
 
     # Return lags and covariance
+    # TODO: Only return lags if 'lag' and 'ilag' was passed.
+    # Figure out how to do this with wrapper functions.
     return lags, np.moveaxis(covar, -1, axis)
 
 
@@ -328,7 +330,7 @@ def eof(
         Number of eigenvalues we want.
     axis_time : int, optional
         Axis used as the 'record' or 'time' dimension.
-    axis_space : int or list of int, optional
+    axis_space : int or sequence of int, optional
         Axis or axes used as 'space' dimension.
     weights : array-like, optional
         Area or mass weights; must be broadcastable on multiplication with
@@ -441,7 +443,7 @@ def eof(
     # Turn matrix in to extra (K) x time (M) x space (N)
     # Requires flatening space axes into one, and flattening extra axes into one
     shape_orig = data.shape
-    with context._ArrayContext(
+    with permute._PermuteContext(
         data, dataw,
         push_left=axis_extra,
         push_right=(axis_time, *axis_space),
@@ -597,7 +599,7 @@ def hist(bins, y, /, axis=0):
     if bins.ndim != 1:
         raise ValueError('Bins must be 1-dimensional.')
 
-    with context._ArrayContext(y, push_right=axis) as ctx:
+    with permute._PermuteContext(y, push_right=axis) as ctx:
         # Get flattened data
         y = ctx.data
         yhist = np.empty((y.shape[0], bins.size - 1))
@@ -665,7 +667,7 @@ def slope(x, y, /, axis=0):
             f'of y-shape {y.shape}.'
         )
 
-    with context._ArrayContext(y, push_right=axis) as ctx:
+    with permute._PermuteContext(y, push_right=axis) as ctx:
         # Get regression coefficients. Flattened data is shape (K, N)
         # where N is regression dimension. Permute to (N, K) then back again.
         # N gets replaced with length-2 dimension (slope, offset).
@@ -783,7 +785,7 @@ def timescale(
     if maxlag_fit is not None:
         imaxlag_fit = np.round(maxlag_fit / dt).astype(int)
 
-    with context._ArrayContext(a, push_right=axis) as ctx:
+    with permute._PermuteContext(a, push_right=axis) as ctx:
         # Set defaults
         a = ctx.data
         nlag = a.shape[1] - 1  # not including 0-lag entry
