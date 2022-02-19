@@ -575,7 +575,9 @@ class _CFAccessor(object):
                     return name
             if var and return_if_missing:
                 return var.name  # return *standard* registered name
-        raise KeyError(f'Failed to find dataset or registry name for CF name {key!r}.')
+        raise KeyError(
+            f'Failed to find dataset or registry variable for CF name {key!r}.'
+        )
 
     def _get_cache_attr(self, attr):
         """
@@ -1997,6 +1999,52 @@ class ClimoAccessor(object):
         )
 
     @_CFAccessor._clear_cache
+    def invert_hemisphere(self, which=None, invert=None):
+        """
+        Invert the sign of data in one or both hemispheres. This can be used e.g.
+        to make meridional wind positive in the poleward direction. This is used
+        internally by `~ClimoAccessor.sel_hemisphere`.
+
+        Parameters
+        ----------
+        which : {'nh', 'sh', None}
+            The hemisphere to invert. May be both or the northern or
+            southern hemispheres. The default of ``which=None`` inverts both.
+        invert : bool, str, or sequence of str, optional
+            If boolean, indicates whether or not to invert the `~xarray.DataArray`
+            (or, if this is a `~xarray.Dataset`, every array in the dataset). If
+            sequence of strings, the `~xarray.DataArray` is only inverted if its
+            ``name`` appears in the sequence (or, if this is an `~xarray.Dataset`,
+            only those arrays in the dataset with matching names are inverted).
+            For example, if the dataset contains the meridional wind ``'v'`` and
+            potential vorticity ``'pv'``, one might use ``invert=('v', 'pv')``.
+        """
+        # Get latitude slice
+        dim = self.cf._decode_name('latitude', 'coordinates')
+        sel = {}
+        if which == 'sh':
+            sel = {dim: slice(-90, 0)}
+        elif which == 'nh':
+            sel = {dim: slice(0, 90)}
+        elif which is not None:
+            raise ValueError(f'Invalid {which=}. Must be sh or nh.')
+        # Invert the data
+        data = self.data
+        data = data.copy(deep=False)  # shallow copy by default
+        if invert is None:
+            invert = True
+        elif isinstance(invert, str):
+            invert = (invert,)
+        for da in data.climo._iter_data_vars():
+            if np.iterable(invert) and da.name not in invert:
+                continue
+            elif not invert:
+                continue
+            da.data = da.data.copy()  # deep copy when modifying the data
+            da.loc[sel] = -1 * da.loc[sel]  # should preserve attributes
+        return data
+
+    @_CFAccessor._clear_cache
     def isel(
         self,
         indexers=None,
@@ -2048,7 +2096,7 @@ class ClimoAccessor(object):
                 coord = xr.DataArray(coord, dims=dims, name=name)
             # Fix coordinate units and attributes
             # WARNING: Absolutely *critical* that DataArray unit string exactly
-            # mathes old one. Otherwise concatenate will strip unit attribute.
+            # matches old one. Otherwise concatenate will strip unit attribute.
             coord = coord.climo.dequantify()
             if name in self.data.coords:
                 prev = self.data.coords[name]
@@ -2059,6 +2107,22 @@ class ClimoAccessor(object):
                     coord.attrs.setdefault(key, value)  # avoid overriding
             indexers_new[name] = coord.climo.dequantify()
         return self.data.assign_coords(indexers_new)
+
+    @_CFAccessor._clear_cache
+    def reverse_hemisphere(self):
+        """
+        Reverse the direction and sign of the latitude coordinates (e.g., turn the
+        southern hemisphere into the northern hemisphere). This is used internally
+        by `~ClimoAccessor.sel_hemisphere`.
+        """
+        data = self.data
+        data = data.copy(deep=False)
+        dim = self.cf._decode_name('latitude', 'coordinates')
+        with xr.set_options(keep_attrs=True):  # retain latitude attributes
+            lat = -1 * data.coords[dim]
+        data = data.climo.replace_coords({dim: lat})
+        data = data.isel({dim: slice(None, None, -1)})  # retain original direction
+        return data
 
     @_CFAccessor._clear_cache
     def sel(
@@ -2073,7 +2137,6 @@ class ClimoAccessor(object):
         """
         Call `~xarray.DataArray.sel` with support for units and indexer aliases. Also
         permit selecting different points as a function of other coordinates.
-
 
         Parameters
         ----------
@@ -2102,58 +2165,38 @@ class ClimoAccessor(object):
 
         Parameters
         ----------
-        which : {'globe', 'inverse', 'ave', 'nh', 'sh'}
-            The hemisphere. May be the globe, the globe with hemispheres flipped, the
-            average of both hemispheres, or either of the northern and southern
-            hemispheres.
-        invert : bool or sequence of str, optional
-            If this is a `~xarray.DataArray` accessor, `invert` should be a boolean
-            indicating whether data should be inverted when taking the average
-            hemisphere ``'ave'``. If this is a `~xarray.Dataset` accessor, `invert`
-            should be a sequence of variable names that should be inverted (e.g. if
-            the dataset contains the meridional wind ``'v'`` and potential vorticity
-            ``'pv'``, then one might use ``invert=('v', 'pv')``).
+        which : {'nh', 'sh', 'avg'}
+            The hemisphere to select. May be the northern, southern, or an
+            average of both hemispheres. This also controls the value of
+            `which` passed to `~ClimoAccessor.invert_hemisphere`.
+        invert : bool, str, or sequence of str, optional
+            Passed to `~ClimoAccessor.invert_hemisphere`.
         """
-        # Bail out if already is single hemisphere
+        # Select and transform data
+        # NOTE: keep data point on either side of equator so plots drawn
+        # with resulting data will have a zero latitude point.
         data = self.data
-        lat = self.cf._get_item('latitude', 'coordinates')
-        if np.all(np.sign(lat) == np.sign(lat[0])):
-            return data
-
-        # Change the "positive" meridional direction for all variables in the dataset.
-        # NOTE: PV is -ve in SH and +ve in NH so flux does not need adjustment.
-        def _invert_hemi(data):  # noqa: E306
-            data = data.copy(deep=False)
-            rlat = -1 * data.coords[lat.name]
-            data = data.climo.replace_coords({lat.name: rlat})
-            for da in data.climo._iter_data_vars():
-                if invert in (1, True) or np.iterable(invert) and da.name in invert:
-                    da.data *= -1
-            return data
-
-        # Select region (requires temporarily removing "bnd" variables)
-        # WARNING: keep_attrs fails to preserve dataset attributes for 'ave' (bug)
-        attrs = data.attrs.copy()
-        nhmin = np.min(lat[lat > 0])
-        shmax = np.max(lat[lat < 0])
-        with xr.set_options(keep_attrs=True):
-            which = which.lower()
-            if which == 'globe':
-                pass
-            elif which == 'inverse':  # global, but SH on top
-                data = _invert_hemi(data)
-            elif which == 'nh':
-                data = data.sel({lat.name: slice(shmax, 90)})
-            elif which == 'sh':
-                data = _invert_hemi(data.sel({lat.name: slice(nhmin, -90, -1)}))
-            elif which == 'ave':
-                data = 0.5 * (
-                    data.sel({lat.name: slice(shmax, 90)})
-                    + _invert_hemi(data.sel({lat.name: slice(nhmin, -90, -1)}))
-                )
-            else:
-                raise ValueError(f'Unknown hemisphere identifier {which!r}.')
-        data.attrs.update(attrs)
+        dim = self.cf._decode_name('latitude', 'coordinates')
+        lat = data.coords[dim]
+        which = which.lower()
+        if invert is None:
+            invert = False
+        if which in ('nh', 'avg'):
+            ndata = data.sel({dim: slice(np.max(lat[lat <= 0]), 90)})
+        if which in ('sh', 'avg'):
+            sdata = data.sel({dim: slice(-90, np.min(lat[lat >= 0]))})
+            sdata = sdata.climo.invert_hemisphere('sh', invert)
+            sdata = sdata.climo.reverse_hemisphere()
+        # Possibly average hemispheres
+        if which == 'sh':
+            data = sdata
+        elif which == 'nh':
+            data = ndata
+        elif which == 'avg':
+            with xr.set_options(keep_attrs=True):
+                data = 0.5 * (sdata + ndata)
+        else:
+            raise ValueError(f'Unknown hemisphere identifier {which!r}.')
         return data
 
     @_CFAccessor._clear_cache
