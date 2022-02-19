@@ -2083,16 +2083,18 @@ class ClimoAccessor(object):
             potential vorticity ``'pv'``, one might use ``invert=('v', 'pv')``.
         """
         # Get latitude slice
+        # NOTE: Exclude equator data from inversion
+        data = self.data
         dim = self.cf._decode_name('latitude', 'coordinates')
+        lat = data.coords[dim]
         sel = {}
         if which == 'sh':
-            sel = {dim: slice(-90, 0)}
+            sel = {dim: slice(-90, np.max(lat[lat < 0]))}
         elif which == 'nh':
-            sel = {dim: slice(0, 90)}
+            sel = {dim: slice(np.min(lat[lat > 0]), 90)}
         elif which is not None:
             raise ValueError(f'Invalid {which=}. Must be sh or nh.')
         # Invert the data
-        data = self.data
         data = data.copy(deep=False)  # shallow copy by default
         if invert is None:
             invert = True
