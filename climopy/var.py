@@ -138,7 +138,7 @@ def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
 
     See Also
     --------
-    rednoisefit
+    timescale
     """
     # Initial stuff
     ntime -= 1  # exclude the initial timestep
@@ -648,7 +648,7 @@ def slope(x, y, /, axis=0):
     >>> state = np.random.RandomState(51423)
     >>> x = np.arange(500)
     >>> y = state.rand(10, 500) + 0.1 * x
-    >>> slope, stderr, fit = climo.linefit(x, y, axis=1)
+    >>> slope, stderr, fit = climo.slope(x, y, axis=1)
     >>> slope
     array([[0.10000399],
            [0.09997467],
@@ -760,7 +760,7 @@ def timescale(
     >>> state = np.random.RandomState(51423)
     >>> data = climo.rednoise(0.8, 500, 10, state=state)
     >>> lag, auto = climo.autocorr(1, data, axis=0, maxlag=50)
-    >>> taus, sigmas, fit = climo.rednoisefit(lag, auto, axis=0)
+    >>> taus, sigmas, fit = climo.timescale(lag, auto, axis=0)
     >>> taus
     array([[5.97691453, 4.29275329, 4.91997185, 4.87781027, 3.46404331,
             4.23444888, 4.91852921, 4.39283164, 4.79466674, 3.81250855]])

@@ -3982,11 +3982,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `~.var.linefit`.
+            Passed to `~.var.slope`.
         """
         dim = self.cf._decode_name(dim, 'axes', 'coordinates')
         data = self.data
-        data, _, _ = var.linefit(data.climo.coords[dim], data)
+        data, _, _ = var.slope(data.climo.coords[dim], data)
         data.climo.update_cell_methods({dim: 'slope'})
         return data
 
@@ -4002,7 +4002,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dim : str, optional
             The dimension.
         **kwargs
-            Passed to `~.var.rednoisefit`.
+            Passed to `~.var.timescale`.
         """
         dim = self.cf._decode_name(dim, 'axes', 'coordinates')
         data = self.data
@@ -4011,7 +4011,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             maxlag = 50.0  # default value is 50 days
         if dim != 'lag':
             time, data = var.autocorr(time, data, maxlag=maxlag, imaxlag=imaxlag)
-        data, _, _ = var.rednoisefit(time, data, maxlag=maxlag, imaxlag=imaxlag, **kwargs)  # noqa: E501
+        data, _, _ = var.timescale(time, data, maxlag=maxlag, imaxlag=imaxlag, **kwargs)  # noqa: E501
         data.climo.update_cell_methods({dim: 'timescale'})
         return data
 
