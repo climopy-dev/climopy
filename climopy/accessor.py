@@ -75,12 +75,13 @@ CFVARIABLE_ARGS = (
 
 # Arguments passed to parse key
 PARSEKEY_ARGS = (
-    'add_cell_measures'
+    'add_cell_measures',
+    'quantify',
     'search_vars',
     'search_coords',
     'search_derivations',
     'search_transformations',
-    'search_registry'
+    'search_registry',
 )
 
 # Expand regexes for automatic coordinate detection with standardize_coords
@@ -847,7 +848,7 @@ class _CoordsQuantified(object):
             raise KeyError(f'Invalid coordinate spec {key!r}.')
         return self._build_coord(*tup)
 
-    def _build_coord(self, transformation, coord, flag, **kwargs):
+    def _build_coord(self, transformation, coord, flag, quantify=True, **kwargs):
         """
         Return the coordinates, accounting for `CF` and `CFVariableRegistry` names.
         """
@@ -859,7 +860,7 @@ class _CoordsQuantified(object):
         if flag:
             bnds = self._get_bounds(coord, **kwargs)
             if flag in ('bnds', 'bounds'):
-                return bnds.climo.quantify()
+                return bnds.climo.quantify() if quantify else bnds
             if flag[:3] in ('bot', 'del'):
                 dest = bottom = bnds[..., 0]  # NOTE: scalar coord bnds could be 1D
                 suffix = ' bottom edge'
@@ -886,7 +887,8 @@ class _CoordsQuantified(object):
             coords=coord.coords,
             attrs=coord.attrs.copy(),  # also copies over units
         )
-        dest = dest.climo.quantify()
+        if quantify:
+            dest = dest.climo.quantify()
         if transformation:
             dest.name = None  # ensure name is modified
             dest = transformation(dest)  # adjusts name if it is unset
@@ -902,7 +904,7 @@ class _CoordsQuantified(object):
 
         return dest
 
-    def _get_bounds(self, coord, sharp_cutoff=None):
+    def _get_bounds(self, coord, sharp_cutoff=True):
         """
         Return bounds inferred from the coordinates or generated on-the-fly. See
         `.get` for `sharp_cutoff` details.
@@ -978,7 +980,7 @@ class _CoordsQuantified(object):
 
         # Construct default cell bounds
         elif quack._is_numeric(coord):
-            if sharp_cutoff or sharp_cutoff is None:
+            if sharp_cutoff:
                 delta1 = delta2 = 0
             else:
                 delta1 = 0.5 * np.diff(coord.data[:2])
@@ -1019,7 +1021,7 @@ class _CoordsQuantified(object):
             name=coord.name + '_bnds',
             dims=(*coord.dims[:1], 'bnds'),  # nameless 'bnds' dimension
             coords=coord.coords,
-            attrs=coord.attrs,
+            attrs=coord.attrs,  # could include units
         )
 
         return bounds
@@ -1080,7 +1082,7 @@ class _CoordsQuantified(object):
                     return tup
 
     @_CFAccessor._clear_cache
-    def get(self, key, default=None, sharp_cutoff=None, **kwargs):
+    def get(self, key, default=None, quantify=True, sharp_cutoff=True, **kwargs):
         """
         Return the coordinate if it is present, otherwise return a default value.
 
@@ -1090,13 +1092,13 @@ class _CoordsQuantified(object):
             The coordinate key.
         default : optional
             The default return value.
-        search_cf : bool, optional
+        search_cf : bool, default: True
             Whether to translate CF names.
-        search_registry : bool, optional
+        search_registry : bool, default: True
             Whether to translate registered names and aliases.
-        search_transformations : bool, optional
+        search_transformations : bool, default: True
             Whether to perform registered transformations of coordinates.
-        sharp_cutoff : bool, optional
+        sharp_cutoff : bool, default: True
             The cutoff behavior used when calculating default non-datetime coordinate
             bounds in the event that an explicit ``'bounds'`` variable is unavailable.
             When ``True``, the end coordinate centers are also treated as coordinate
@@ -1111,7 +1113,7 @@ class _CoordsQuantified(object):
         if tup is None:
             return default
         else:
-            return self._build_coord(*tup, sharp_cutoff=sharp_cutoff)
+            return self._build_coord(*tup, quantify=quantify, sharp_cutoff=sharp_cutoff)
 
 
 class _DataArrayCoordsQuantified(
@@ -1207,7 +1209,7 @@ class _VarsQuantified(object):
                     return da
 
     @_CFAccessor._clear_cache
-    def get(self, key, default=None, **kwargs):
+    def get(self, key, default=None, quantify=True, **kwargs):
         """
         Return the variable if it is present, otherwise return a default value.
 
@@ -1215,16 +1217,20 @@ class _VarsQuantified(object):
         ----------
         default : optional
             The default return value.
-        search_cf : bool, optional
+        quantify : bool, default: True
+            Whether to quantify the result.
+        search_cf : bool, default: True
             Whether to translate CF names.
-        search_registry : bool, optional
+        search_registry : bool, default: True
             Whether to translate registered names and aliases.
         """
         da = self._parse_key(key, **kwargs)  # potentially limit search
-        if da is not None:
+        if da is None:
+            return default
+        elif quantify:
             return da.climo.quantify()
         else:
-            return default
+            return da
 
 
 class ClimoAccessor(object):
@@ -4362,12 +4368,11 @@ class ClimoDatasetAccessor(ClimoAccessor):
         tup = self._parse_key(key, **kwargs)
         if not tup:
             raise KeyError(f'Invalid variable name {key!r}.')
-        type_, da = tup
-        if callable(da):
-            da = da()  # ta-da!
+        type_, data = tup
+        if callable(data):
+            data = data()  # ta-da!
 
         # Add units and cell measures
-        data = da.climo.quantify()  # should already be quantified, but just in case
         if data.name is None:
             data.name = 'unknown'  # just in case
         if type_ != 'coord' and add_cell_measures:
@@ -4381,7 +4386,8 @@ class ClimoDatasetAccessor(ClimoAccessor):
         if 'k' in data.dims:
             dims = ('lev', 'k', 'lat', 'c')
         else:
-            dims = _first_unique(dim for da in self.data.values() for dim in da.dims if not da.climo._is_bounds)  # noqa: E501
+            dims = (d for a in self.data.values() for d in a.dims if not a.climo._is_bounds)  # noqa: E501
+        dims = _first_unique(dims)
         data = data.transpose(..., *(dim for dim in dims if dim in data.dims))
 
         return data
@@ -4464,7 +4470,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
     def get(
         self,
         *keys,
-        quantify=None,
         standardize=False,
         units=None,
         normalize=False,
@@ -4494,31 +4499,31 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
             All names can be replaced with 2-tuples of the form ('name', kwargs) to
             pass keyword arguments positionally.
-        search_coords : bool, optional
-            Whether to search for coordinates.
-        search_vars : bool, optional
-            Whether to search for variables.
-        search_cf : bool, optional
-            Whether to translate CF names.
-        search_registry : bool, optional
-            Whether to translate registered names and aliases.
-        search_derivations : bool, optional
-            Whether to perform registered derivations of coordinates or variables.
-        search_transformations : bool, optional
-            Whether to perform registered transformations of coordinates or variables.
-        add_cell_measures : bool, optional
-            Whether to add default cell measures to the coordinates.
-        quantify : bool, optional
+        quantify : bool, default: True
             Whether to quantify the data with `~ClimoDataArrayAccessor.quantify()`.
+        add_cell_measures : bool, default: True
+            Whether to add default cell measures to the coordinates.
+        search_coords : bool, default: True
+            Whether to search for coordinates.
+        search_vars : bool, default: True
+            Whether to search for variables.
+        search_cf : bool, default: True
+            Whether to translate CF names.
+        search_registry : bool, default: True
+            Whether to translate registered names and aliases.
+        search_derivations : bool, default: True
+            Whether to perform registered derivations of coordinates or variables.
+        search_transformations : bool, default: True
+            Whether to perform registered transformations of coordinates or variables.
+        standardize : bool, default: False
+            Convert the result to the standard units with
+            `~ClimoDataArrayAccessor.to_standard_units`.
+        normalize : bool, default: False
+            Whether to normalize the resulting data with
+            `~ClimoDataArrayAccessor.normalize`.
         units : unit-like, optional
             Convert the result to the input units with
             `~ClimoDataArrayAccessor.to_units`.
-        standardize : bool, optional
-            Convert the result to the standard units with
-            `~ClimoDataArrayAccessor.to_standard_units`.
-        normalize : bool, optional
-            Whether to normalize the resulting data with
-            `~ClimoDataArrayAccessor.normalize`.
         runmean : bool, optional
             Apply a length-`runmean` running mean to the time dimension with
             `~ClimoDataArrayAccessor.runmean`.
@@ -4616,13 +4621,6 @@ short_suffix : str, optional
             data = data.climo.to_units(units)
         elif standardize:
             data = data.climo.to_standard_units()
-
-        # Quantify or dequantify data
-        if quantify is not None:
-            if quantify:  # should *already* be quantified but just to make sure
-                data = data.climo.quantify()
-            else:
-                data = data.climo.dequantify()
 
         data.attrs.update(attrs)
         return data
