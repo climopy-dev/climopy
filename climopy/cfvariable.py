@@ -13,7 +13,7 @@ import pint
 
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
-from .internals import warnings
+from .internals import docstring, warnings
 from .unit import latex_units, parse_units
 
 __all__ = [
@@ -22,6 +22,61 @@ __all__ = [
     'CFVariable',
     'CFVariableRegistry',
 ]
+
+# Snippets
+_params_cfvariable = """
+long_name : str, optional
+    The plot-friendly variable name.
+standard_units : str, optional
+    The plot-friendly CF-compatible units string. Parsed with `~.unit.parse_units`.
+short_name : str, optional
+    The shorter plot-friendly variable name. This is useful for describing
+    the "category" of a variable and its descendents, e.g. "energy flux" for
+    something with units watts per meters squared. If not provided, this is
+    set to `long_name`. It is often useful to leave this unset and create
+    child variables that inherit the parent `short_name`.
+standard_name : str, optional
+    The unambiguous CF-defined variable name. If one does not exist, you may
+    construct a reasonable one based on the `CF guidelines \
+    <http://cfconventions.org/Data/cf-standard-names/docs/guidelines.html>`_.
+    If not provided, an *ad hoc* `standard_name` is constructed by replacing
+    the non-alphanumeric characters in `long_name` with underscores. Since
+    the `standard_name` is supposed to be a *unique* variable identifier,
+    it is never inherited from parent variables.
+long_prefix, long_suffix : str, optional
+    Prefix and suffix to be added to the long name. Defaults to `short_prefix`
+    and `short_suffix`.
+short_prefix, short_suffix : str, optional
+    Prefix and suffix to be added to the short name. Also sets `long_prefix`
+    and `long_suffix` if they were not specified.
+symbol : str, optional
+    The TeX-style symbol used to represent the variable, e.g. ``R_o`` for the
+    Rossby number or ``\\lambda`` for the climate sensitivity parameter.
+sigfig : int, optional
+    The number of significant figures when printing this variable with
+    `~CFVariable.scalar_label`.
+reference : float, optional
+    The notional "reference" value for the variable (in units `standard_units`).
+    Useful for parameter sweeps with respect to some value.
+colormap : colormap-spec, optional
+    The appropriate colormap when plotting this quantity. Generally this should
+    be parsed by `~proplot.constructor.Colormap`.
+axis_scale : scale-spec, optional
+    The axis scale name when using this quantity as an axis variable. Generally
+    this should be parsed by `~proplot.constructor.Scale`.
+axis_reverse : bool, optional
+    Whether to reverse the axis by default when using this quantity as
+    an axis variable.
+axis_formatter : formatter-spec, optional
+    The number formatter when using this quantity as an axis variable. Parsed
+    by `proplot.constructor.Formatter`. Set to ``False`` to revert to the
+    default formatter instead of inheriting the formatter.
+scalar_formatter : formatter-spec, optional
+    The number formatter when using this quantity as a scalar label. Parsed
+    by `proplot.constructor.Formatter`. Set to ``False`` to revert to the
+    default formatter instead of inheriting the formatter.
+"""
+docstring.snippets['params_cfvariable'] = _params_cfvariable
 
 
 class CFVariable(object):
@@ -52,17 +107,17 @@ class CFVariable(object):
             string += f', aliases={aliases!r}'
         return f'CFVariable({string})'
 
+    @docstring.inject_snippets()
     def __init__(self, name, *args, registry=None, **kwargs):
         """
         Parameters
         ----------
         name : str
             The canonical variable name.
+        %(params_cfvariable)s
         registry : `CFVariableRegistry`
-            The associated registry.
-        *args, **kwargs
-            Passed to `CFVariable.update`. The `long_name`, `standard_units`, and
-            `short_name` can be passed positionally (in that order).
+            The associated registry. This is passed automatically when creating
+            variables with `~CFVariableRegistry.define`.
         """
         # NOTE: Accessor can only be added by querying the registry to make an
         # ad hoc copy. The 'reference' variables in general should be conceptually
@@ -144,6 +199,7 @@ class CFVariable(object):
         """
         return getattr(self, '_' + attr, default) if value is None else value
 
+    @docstring.inject_snippets()
     def child(self, name, *args, other_parents=None, **kwargs):
         """
         Return a new child variable with properties inherited from the current one.
@@ -156,11 +212,10 @@ class CFVariable(object):
         ----------
         name : str
             The child variable name.
+        %(params_cfvariable)s
         other_parents : tuple of `CFVariable`, optional
             Additional parents. Variable information will not be copied from these
             variables, but this can be useful for the purpose of grouping behavior.
-        *args, **kwargs
-            Passed to `CFVariable.update`.
         """
         # Parse input args
         parents = other_parents or ()
@@ -191,6 +246,7 @@ class CFVariable(object):
 
         return child
 
+    @docstring.inject_snippets()
     def update(
         self,
         long_name=None, standard_units=None, short_name=None, standard_name=None, *,
@@ -202,61 +258,11 @@ class CFVariable(object):
         Update the variable. This is called during initialization. Unspecified variables
         are kept at their current state. Internally, `CFVariable.child` variables are
         constructed by calling `CFVariable.update` on existing `CFVariable` objects
-        copied with `copy.copy`.
+        after copying using `copy.copy`.
 
         Parameters
         ----------
-        long_name : str, optional
-            The plot-friendly variable name.
-        standard_units : str, optional
-            The plot-friendly CF-compatible units string. Parsed with
-            `~.unit.parse_units`.
-        short_name : str, optional
-            The shorter plot-friendly variable name. This is useful for describing
-            the "category" of a variable and its descendents, e.g. "energy flux" for
-            something with units watts per meters squared. If not provided, this is
-            set to `long_name`. It is often useful to leave this unset and create
-            child variables that inherit the parent `short_name`.
-        standard_name : str, optional
-            The unambiguous CF-defined variable name. If one does not exist, you may
-            construct a reasonable one based on the `CF guidelines \
-            <http://cfconventions.org/Data/cf-standard-names/docs/guidelines.html>`_.
-            If not provided, an *ad hoc* `standard_name` is constructed by replacing
-            the non-alphanumeric characters in `long_name` with underscores. Since
-            the `standard_name` is supposed to be a *unique* variable identifier,
-            it is never inherited from parent variables.
-        long_prefix, long_suffix : str, optional
-            Prefix and suffix to be added to the long name. Defaults to `short_prefix`
-            and `short_suffix`.
-        short_prefix, short_suffix : str, optional
-            Prefix and suffix to be added to the short name. Also sets `long_prefix`
-            and `long_suffix` if they were not specified.
-        symbol : str, optional
-            The TeX-style symbol used to represent the variable, e.g. ``R_o`` for the
-            Rossby number or ``\\lambda`` for the climate sensitivity parameter.
-        sigfig : int, optional
-            The number of significant figures when printing this variable with
-            `~CFVariable.scalar_label`.
-        reference : float, optional
-            The notional "reference" value for the variable (in units `standard_units`).
-            Useful for parameter sweeps with respect to some value.
-        colormap : colormap-spec, optional
-            The appropriate colormap when plotting this quantity. Generally this should
-            be parsed by `~proplot.constructor.Colormap`.
-        axis_scale : scale-spec, optional
-            The axis scale name when using this quantity as an axis variable. Generally
-            this should be parsed by `~proplot.constructor.Scale`.
-        axis_reverse : bool, optional
-            Whether to reverse the axis by default when using this quantity as
-            an axis variable.
-        axis_formatter : formatter-spec, optional
-            The number formatter when using this quantity as an axis variable. Parsed
-            by `proplot.constructor.Formatter`. Set to ``False`` to revert to the
-            default formatter instead of inheriting the formatter.
-        scalar_formatter : formatter-spec, optional
-            The number formatter when using this quantity as a scalar label. Parsed
-            by `proplot.constructor.Formatter`. Set to ``False`` to revert to the
-            default formatter instead of inheriting the formatter.
+        %(params_cfvariable)s
         """
         # Parse input names and apply prefixes and suffixes
         # NOTE: Important to add prefixes and suffixes to long_name *after* using
