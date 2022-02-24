@@ -87,6 +87,7 @@ scalar_formatter : formatter-spec, optional
     default formatter instead of inheriting the formatter.
 """
 docstring.snippets['params_cfupdate'] = _params_cfvariable
+docstring.snippets['params_cfmodify'] = _params_cfmodify
 
 
 class CFVariable(object):
@@ -383,14 +384,14 @@ class CFVariable(object):
         # Handle unit changes due to integration
         # NOTE: Vertical integration should always be with units kg/m^2
         # NOTE: Pint contexts apply required multiplication/division by c_p and g.
-        if var in self.meridional_momentum_flux and _pop_integral(longitude):
+        if var in reg.meridional_momentum_flux and _pop_integral(longitude):
             units = 'TN' if _pop_integral(vertical) else 'TN 100hPa^-1'
             var.update(
                 long_name=var.long_name.replace('flux', 'transport'),
                 short_name='momentum transport',
                 standard_units=units,
             )
-        elif var in self.meridional_energy_flux and _pop_integral(longitude):
+        elif var in reg.meridional_energy_flux and _pop_integral(longitude):
             units = 'PW' if _pop_integral(vertical) else 'PW 100hPa^-1'
             var.update(
                 long_name=var.long_name.replace('flux', 'transport'),
@@ -400,13 +401,13 @@ class CFVariable(object):
         elif _pop_integral(vertical):
             # NOTE: Earth surface area is 500 x 10^12 m^2 and 10^12 is Tera,
             # 10^15 is Peta, 10^18 is Exa, 10^21 is Zeta.
-            if var in self.energy:
+            if var in reg.energy:
                 units = 'ZJ' if _pop_integral(longitude, latitude) else 'MJ m^-2'
                 var.update(standard_units=units)  # same short name 'energy content'
-            elif var in self.energy_flux:
+            elif var in reg.energy_flux:
                 units = 'PW' if _pop_integral(longitude, latitude) else 'W m^-2'
                 var.update(standard_units=units)  # same short name 'energy flux'
-            elif var in self.acceleration:  # includes flux convergence
+            elif var in reg.acceleration:  # includes flux convergence
                 units = 'TN' if _pop_integral(longitude, latitude) else 'Pa'
                 var.update(standard_units=units, short_name='eastward stress')
             else:

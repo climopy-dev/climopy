@@ -2978,8 +2978,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 return reg(identifier, accessor=self, **kw_attrs, **kw_methods)
             except KeyError:
                 pass
-        warnings.warn(f'Automatically adding CFVariable {name!r} to the registry.')
-        var = reg.define(identifier, standard_name=standard_name, **kw_attrs)
+        warnings._warn_climopy(
+            f'Automatically adding CFVariable {name!r} to the registry.'
+        )
+        var = reg.define(name, standard_name=standard_name, **kw_attrs)
         return var.modify(accessor=self, **kw_methods)
 
     def _cf_repr(self, brackets=True, maxlength=None, varwidth=None, **kwargs):
@@ -4203,8 +4205,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         If the `~xarray.DataArray` name is not found in the `~ClimoAccessor.registry`,
         then a new `~.cfvariable.CFVariable` is created and registered on-the-fly
         using the attributes under the `~xarray.DataArray`. Note that as a shorthand,
-        you can also access all public `~cfvariable.CFVariable` properties directly
-        under the accessor (e.g., ``data_array.climo.long_label``).
+        you can also access all public `~cfvariable.CFVariable` properties using just
+        the accessor (e.g., ``data_array.climo.long_label``).
         """
         return self._cf_variable()
 
