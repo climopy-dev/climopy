@@ -2910,16 +2910,17 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data
         name = data.name
         if name is None:
-            raise AttributeError('DataArray name is empty. Cannot get CFVariable.')
+            raise AttributeError('DataArray name is missing. Cannot create CFVariable.')
 
         # Get override attributes
-        kwargs = {}
+        kw_attrs = {}
         if use_attrs:
             for key, val in data.attrs.items():
                 if key in CFVARIABLE_ARGS:
-                    kwargs[key] = val
+                    kw_attrs[key] = val
 
         # Get modifying cell methods
+        kw_methods = {}
         if use_methods:
             # Get methods dictionary by reading cell_methods and scalar coordinates
             # NOTE: Include *this* array in case it is coordinate, e.g. lat='argmax'
@@ -2934,15 +2935,15 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 except KeyError:
                     continue
                 if any(coord in dims for dims, _ in methods):
-                    kwargs[coordinate] = [m for dims, m in methods if coord in dims]
+                    kw_methods[coordinate] = [m for dims, m in methods if coord in dims]
                 elif coord == name:
                     pass
                 elif da.size == 1 and not da.isnull():
                     units = parse_units(da.attrs['units']) if 'units' in da.attrs else 1
                     if np.issubdtype(da.data.dtype, np.str):  # noqa: E501
-                        kwargs['label'] = [da.item()]
+                        kw_methods['label'] = [da.item()]
                     else:
-                        kwargs[coordinate] = [units * da.item()]
+                        kw_methods[coordinate] = [units * da.item()]
 
             # Find if DataArray corresponds to a variable but its values and name
             # correspond to a coordinate. This happens e.g. with 'argmax'. Also try
@@ -2952,7 +2953,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 coordinate = meta.climo.cf._encode_name(meta.name, 'coordinates')
             except KeyError:
                 coordinate = None
-            if coordinate in kwargs and name not in data.coords and not data.climo._is_bounds:  # noqa: E501
+            if coordinate in kw_methods and name not in data.coords and not data.climo._is_bounds:  # noqa: E501
                 if parent_name is None:
                     raise RuntimeError(f'Unknown parent name for coordinate {name!r}.')
                 if parent_name not in data.coords:
@@ -2961,20 +2962,25 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 parent = data.coords[name]
                 for attr in ('long_name', 'short_name', 'standard_name'):
                     if attr in parent.attrs:
-                        kwargs[attr] = parent.attrs[attr]
+                        kw_attrs[attr] = parent.attrs[attr]
                     else:
-                        kwargs.pop(attr, None)
+                        kw_attrs.pop(attr, None)
             elif parent_name is not None:
-                raise RuntimeError(f'Parent variable {parent_name!r}')
+                raise RuntimeError(f'Parent variable {parent_name!r} unused.')
 
         # Create the CFVariable
-        for identifier in (name, kwargs.pop('standard_name', None)):
-            if identifier is not None:
-                try:
-                    return self.variable_registry(identifier, accessor=self, **kwargs)
-                except KeyError:
-                    pass
-        raise AttributeError(f'CFVariable not found for name {name!r}.')
+        reg = self.variable_registry
+        standard_name = kw_attrs.pop('standard_name', None)
+        for identifier in (name, standard_name):
+            if identifier is None:
+                continue
+            try:
+                return reg(identifier, accessor=self, **kw_attrs, **kw_methods)
+            except KeyError:
+                pass
+        warnings.warn(f'Automatically adding CFVariable {name!r} to the registry.')
+        var = reg.define(identifier, standard_name=standard_name, **kw_attrs)
+        return var.modify(accessor=self, **kw_methods)
 
     def _cf_repr(self, brackets=True, maxlength=None, varwidth=None, **kwargs):
         """
@@ -4194,8 +4200,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Return a `~.cfvariable.CFVariable` based on the `~xarray.DataArray` name, the
         scalar coordinates, and the coordinate reductions referenced in `cell_methods`.
-        As a shorthand, you can access ``data_array.climo.cfvariable`` properties
-        directly using ``data_array.climo.property``.
+        If the `~xarray.DataArray` name is not found in the `~ClimoAccessor.registry`,
+        then a new `~.cfvariable.CFVariable` is created and registered on-the-fly
+        using the attributes under the `~xarray.DataArray`. Note that as a shorthand,
+        you can also access all public `~cfvariable.CFVariable` properties directly
+        under the accessor (e.g., ``data_array.climo.long_label``).
         """
         return self._cf_variable()
 
