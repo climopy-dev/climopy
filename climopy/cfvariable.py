@@ -24,6 +24,16 @@ __all__ = [
 ]
 
 # Snippets
+_params_cfmodify = """
+accessor : `~.accessor.ClimoDataArrayAccessor`
+    The accessor (required for certain labels). Automatically passed
+    when requesting the accessor property
+    `~.accessor.ClimoDataArrayAccessor.cfvariable`
+longitude, latitude, vertical, time : optional
+    Reduction method(s) for standard CF coordinate axes. Taken from
+    corresponding dimensions in the `cell_methods` attribute when requesting
+    the accessor property `~.accessor.ClimoDataArrayAccessor.cfvariable`.
+"""
 _params_cfvariable = """
 long_name : str, optional
     The plot-friendly variable name.
@@ -76,7 +86,7 @@ scalar_formatter : formatter-spec, optional
     by `proplot.constructor.Formatter`. Set to ``False`` to revert to the
     default formatter instead of inheriting the formatter.
 """
-docstring.snippets['params_cfvariable'] = _params_cfvariable
+docstring.snippets['params_cfupdate'] = _params_cfvariable
 
 
 class CFVariable(object):
@@ -114,7 +124,7 @@ class CFVariable(object):
         ----------
         name : str
             The canonical variable name.
-        %(params_cfvariable)s
+        %(params_cfupdate)s
         registry : `CFVariableRegistry`
             The associated registry. This is passed automatically when creating
             variables with `~CFVariableRegistry.define`.
@@ -212,7 +222,7 @@ class CFVariable(object):
         ----------
         name : str
             The child variable name.
-        %(params_cfvariable)s
+        %(params_cfupdate)s
         other_parents : tuple of `CFVariable`, optional
             Additional parents. Variable information will not be copied from these
             variables, but this can be useful for the purpose of grouping behavior.
@@ -262,7 +272,7 @@ class CFVariable(object):
 
         Parameters
         ----------
-        %(params_cfvariable)s
+        %(params_cfupdate)s
         """
         # Parse input names and apply prefixes and suffixes
         # NOTE: Important to add prefixes and suffixes to long_name *after* using
@@ -296,6 +306,184 @@ class CFVariable(object):
         self._axis_reverse = self._inherit('axis_reverse', axis_reverse, default=False)
         self._axis_scale = self._inherit('axis_scale', axis_scale)
         self._scalar_formatter = self._inherit('scalar_formatter', scalar_formatter, default=default_scalar_formatter)  # noqa: E501
+
+    @docstring.inject_snippets()
+    def modify(
+        self,
+        accessor=None, longitude=None, latitude=None, vertical=None, time=None,
+        **kwargs
+    ):
+        """
+        Return a copy of the variable optionally paired to a specific
+        `~.accessor.DataArrayAccessor` and with optional name and unit
+        modifications based on the input cell method reductions. This is
+        similar to `~CFVariable.update` but used for case-specific modifications
+        that are not necessarliy appropriate for the globally registered variable.
+
+        Parameters
+        ----------
+        %(params_cfupdate)s
+        %(params_cfmodify)s
+
+        Note
+        ----
+        For ``integral`` coordinate reductions, instructions for dealing with unit
+        changes must be hardcoded in this function. So far this is done for energy
+        budget, momentum budget, and Lorenz budget terms and their children.
+
+        Todo
+        ----
+        Add non-standard `wavenumber`, `frequency`, and `ensemble` dimension options.
+        We're already using non-standard reduction methods, so this isn't a stretch.
+        """
+        # Helper functions
+        def _pop_integral(*args):
+            b = all('integral' in arg for arg in args)
+            if b:
+                for arg in args:
+                    arg.remove('integral')
+            return b
+        def _as_set(arg):  # noqa: E301
+            arg = arg or set()
+            if isinstance(arg, (tuple, list, set)):
+                return set(arg)
+            else:
+                return {arg}
+
+        # Get variable
+        reg = self._registry
+        if reg is None:
+            raise RuntimeError(
+                'Variable must have an assigned registry. Try creating with '
+                'CFVariableRegistry.define or looking up with CFVariableRegistry().'
+            )
+        var = copy.copy(self)
+        var._accessor = accessor
+        if var.name[0] == 'c' and 'convergence' in var.long_name and _pop_integral(latitude):  # noqa: E501
+            var = self._get_item(var.name[1:])  # Green's theorem; e.g. cehf --> ehf
+
+        # Get reduction method specifications
+        # TODO: Expand this section
+        longitude = _as_set(longitude)
+        latitude = _as_set(latitude)
+        vertical = _as_set(vertical)
+        time = _as_set(time)
+        for method in ('autocorr',):
+            if m := re.match(rf'\A(.+)_{method}\Z', var.name):
+                name = m.group(1)
+                time.add(method)
+
+        # Apply basic overrides
+        kwmod = {  # update later!
+            key: kwargs.pop(key) for key in tuple(kwargs)
+            if key in ('long_prefix', 'long_suffix', 'short_prefix', 'short_suffix')
+        }
+        var.update(**kwargs)
+
+        # Handle unit changes due to integration
+        # NOTE: Vertical integration should always be with units kg/m^2
+        # NOTE: Pint contexts apply required multiplication/division by c_p and g.
+        if var in self.meridional_momentum_flux and _pop_integral(longitude):
+            units = 'TN' if _pop_integral(vertical) else 'TN 100hPa^-1'
+            var.update(
+                long_name=var.long_name.replace('flux', 'transport'),
+                short_name='momentum transport',
+                standard_units=units,
+            )
+        elif var in self.meridional_energy_flux and _pop_integral(longitude):
+            units = 'PW' if _pop_integral(vertical) else 'PW 100hPa^-1'
+            var.update(
+                long_name=var.long_name.replace('flux', 'transport'),
+                short_name='energy transport',
+                standard_units=units,
+            )
+        elif _pop_integral(vertical):
+            # NOTE: Earth surface area is 500 x 10^12 m^2 and 10^12 is Tera,
+            # 10^15 is Peta, 10^18 is Exa, 10^21 is Zeta.
+            if var in self.energy:
+                units = 'ZJ' if _pop_integral(longitude, latitude) else 'MJ m^-2'
+                var.update(standard_units=units)  # same short name 'energy content'
+            elif var in self.energy_flux:
+                units = 'PW' if _pop_integral(longitude, latitude) else 'W m^-2'
+                var.update(standard_units=units)  # same short name 'energy flux'
+            elif var in self.acceleration:  # includes flux convergence
+                units = 'TN' if _pop_integral(longitude, latitude) else 'Pa'
+                var.update(standard_units=units, short_name='eastward stress')
+            else:
+                vertical.add('integral')  # raises error below
+
+        # If *integral* reduction is ignored raise error, because integration
+        # always changes units and that means the 'standard' units are incorrect!
+        for dim, methods in zip(
+            ('longitude', 'latitude', 'vertical'),
+            (longitude, latitude, vertical),
+        ):
+            if 'integral' in methods:
+                raise ValueError(
+                    f'Failed to adjust units for {name!r} with {dim}={methods!r}.'
+                )
+
+        # Latitude dimension reduction of variable in question
+        args = latitude & {'argmin', 'argmax', 'argzero'}
+        if args:
+            var.update(
+                short_name='latitude',
+                standard_units='deg_north',
+                symbol=fr'\phi_{{{var.symbol}}}',
+                axis_formatter='deg',
+                long_suffix=f'{args.pop()[3:]} latitude',  # use the first one
+                # long_suffix='latitude',
+            )
+
+        # Centroid reduction
+        if 'centroid' in latitude:
+            var.update(
+                long_suffix='centroid',
+                short_name='centroid',
+                standard_units='km',
+                axis_formatter=False,
+            )
+
+        # Time dimension reductions of variable in question
+        if 'timescale' in time:
+            var.update(  # modify existing
+                long_suffix='e-folding timescale',
+                short_name='timesale',
+                standard_units='day',
+                symbol=fr'T_e({var.symbol})',
+                axis_formatter=False,
+            )
+        elif 'autocorr' in time:
+            var.update(  # modify existing
+                long_suffix='autocorrelation',
+                short_name='autocorrelation',
+                standard_units='',
+                symbol=fr'\rho({var.symbol})',
+                axis_formatter=False,
+            )
+        elif 'hist' in time:
+            var.update(
+                long_suffix='histogram',
+                short_name='count',
+                standard_units='',
+                axis_formatter=False,
+            )
+
+        # Exact coordinates
+        coords = [
+            rf'{method.magnitude}$\,${latex_units(method.units)}'
+            if isinstance(method, pint.Quantity) else str(method)
+            for methods in (longitude, latitude, vertical, time) for method in methods
+            if isinstance(method, (pint.Quantity, numbers.Number))
+        ]
+        if coords:
+            var.update(long_suffix='at ' + ', '.join(coords))
+        if any('normalized' in dim for dim in (longitude, latitude, vertical, time)):
+            var.update(standard_units='')
+
+        # Finally add user-specified prefixes and suffixes
+        var.update(**kwmod)
+        return var
 
     # Core properties
     @property
@@ -560,207 +748,84 @@ class CFVariableRegistry(object):
             if key[:1] != '_':
                 yield key, value
 
-    def __call__(
-        self,
-        name,
-        accessor=None,
-        longitude=None,
-        latitude=None,
-        vertical=None,
-        time=None,
-        **kwargs
-    ):
+    @docstring.inject_snippets()
+    def __call__(self, key, **kwargs):
         """
-        Return a copy of a variable with optional name and unit modifications based
-        on the coordinate reduction methods and optional pairing to an existing
-        `~.accessor.ClimoDataArrayAccessor`. Inspired by `pint.UnitRegistry.__call__`.
+        Return a copy of the registered variable optionally paired to a
+        specific `~.accessor.DataArrayAccessor` and with optional name and
+        unit modifications based on the input cell method reductions.
+        Inspired by `pint.UnitRegistry.__call__`.
 
         Parameters
         ----------
-        name : str
-            The variable name
-        accessor : `~.accessor.ClimoDataArrayAccessor`
-            The accessor (required for certain labels). Automatically passed
-            when requesting the accessor property
-            `~.accessor.ClimoDataArrayAccessor.cfvariable`
-        longitude, latitude, vertical, time : optional
-            Reduction method(s) for standard CF coordinate axes. Taken from
-            corresponding dimensions in the `cell_methods` attribute when requesting
-            the accessor property `~.accessor.ClimoDataArrayAccessor.cfvariable`.
-        **kwargs
-            Passed to `CFVariable.update`. Prefixes and suffixes are applied at
-            the end, while name replacements are applied at the beginning
-
-        Note
-        ----
-        For ``integral`` coordinate reductions, instructions for dealing with unit
-        changes must be hardcoded in this function. So far this is done for energy
-        budget, momentum budget, and Lorenz budget terms and their children.
-
-        Todo
-        ----
-        Add non-standard `wavenumber`, `frequency`, and `ensemble` dimension options.
-        We're already using non-standard reduction methods, so this isn't a stretch.
+        key : str
+            The variable name.
+        %(params_cfmodify)s
+        %(params_cfupdate)s
         """
-        # Helper functions
-        def _pop_integral(*args):
-            b = all('integral' in arg for arg in args)
-            if b:
-                for arg in args:
-                    arg.remove('integral')
-            return b
-        def _as_set(arg):  # noqa: E301
-            arg = arg or set()
-            if isinstance(arg, (tuple, list, set)):
-                return set(arg)
-            else:
-                return {arg}
-
-        # Parse input arguments and support reduction method specifications on varname
-        # TODO: Expand this section
-        longitude = _as_set(longitude)
-        latitude = _as_set(latitude)
-        vertical = _as_set(vertical)
-        time = _as_set(time)
-        for method in ('autocorr',):
-            if m := re.match(rf'\A(.+)_{method}\Z', name or ''):
-                name = m.group(1)
-                time.add(method)
-
-        # Get variable
-        var = self._get_item(name)
-        if var.name[0] == 'c' and 'convergence' in var.long_name and _pop_integral(latitude):  # noqa: E501
-            var = self._get_item(name[1:])  # Green's theorem; e.g. cehf --> ehf
-        var = copy.copy(var)
-        var._accessor = accessor
-
-        # Apply basic overrides
-        kwmod = {  # update later!
-            key: kwargs.pop(key) for key in tuple(kwargs)
-            if key in ('long_prefix', 'long_suffix', 'short_prefix', 'short_suffix')
-        }
-        var.update(**kwargs)
-
-        # Handle unit changes due to integration
-        # NOTE: Vertical integration should always be with units kg/m^2
-        # NOTE: Pint contexts apply required multiplication/division by c_p and g.
-        if var in self.meridional_momentum_flux and _pop_integral(longitude):
-            units = 'TN' if _pop_integral(vertical) else 'TN 100hPa^-1'
-            var.update(
-                long_name=var.long_name.replace('flux', 'transport'),
-                short_name='momentum transport',
-                standard_units=units,
-            )
-        elif var in self.meridional_energy_flux and _pop_integral(longitude):
-            units = 'PW' if _pop_integral(vertical) else 'PW 100hPa^-1'
-            var.update(
-                long_name=var.long_name.replace('flux', 'transport'),
-                short_name='energy transport',
-                standard_units=units,
-            )
-        elif _pop_integral(vertical):
-            # NOTE: Earth surface area is 500 x 10^12 m^2 and 10^12 is Tera,
-            # 10^15 is Peta, 10^18 is Exa, 10^21 is Zeta.
-            if var in self.energy:
-                units = 'ZJ' if _pop_integral(longitude, latitude) else 'MJ m^-2'
-                var.update(standard_units=units)  # same short name 'energy content'
-            elif var in self.energy_flux:
-                units = 'PW' if _pop_integral(longitude, latitude) else 'W m^-2'
-                var.update(standard_units=units)  # same short name 'energy flux'
-            elif var in self.acceleration:  # includes flux convergence
-                units = 'TN' if _pop_integral(longitude, latitude) else 'Pa'
-                var.update(standard_units=units, short_name='eastward stress')
-            else:
-                vertical.add('integral')  # raises error below
-
-        # If *integral* reduction is ignored raise error, because integration
-        # always changes units and that means the 'standard' units are incorrect!
-        for dim, methods in zip(
-            ('longitude', 'latitude', 'vertical'),
-            (longitude, latitude, vertical),
-        ):
-            if 'integral' in methods:
-                raise ValueError(
-                    f'Failed to adjust units for {name!r} with {dim}={methods!r}.'
-                )
-
-        # Latitude dimension reduction of variable in question
-        args = latitude & {'argmin', 'argmax', 'argzero'}
-        if args:
-            var.update(
-                short_name='latitude',
-                standard_units='deg_north',
-                symbol=fr'\phi_{{{var.symbol}}}',
-                axis_formatter='deg',
-                long_suffix=f'{args.pop()[3:]} latitude',  # use the first one
-                # long_suffix='latitude',
-            )
-
-        # Centroid reduction
-        if 'centroid' in latitude:
-            var.update(
-                long_suffix='centroid',
-                short_name='centroid',
-                standard_units='km',
-                axis_formatter=False,
-            )
-
-        # Time dimension reductions of variable in question
-        if 'timescale' in time:
-            var.update(  # modify existing
-                long_suffix='e-folding timescale',
-                short_name='timesale',
-                standard_units='day',
-                symbol=fr'T_e({var.symbol})',
-                axis_formatter=False,
-            )
-        elif 'autocorr' in time:
-            var.update(  # modify existing
-                long_suffix='autocorrelation',
-                short_name='autocorrelation',
-                standard_units='',
-                symbol=fr'\rho({var.symbol})',
-                axis_formatter=False,
-            )
-        elif 'hist' in time:
-            var.update(
-                long_suffix='histogram',
-                short_name='count',
-                standard_units='',
-                axis_formatter=False,
-            )
-
-        # Exact coordinates
-        coords = [
-            rf'{method.magnitude}$\,${latex_units(method.units)}'
-            if isinstance(method, pint.Quantity) else str(method)
-            for methods in (longitude, latitude, vertical, time) for method in methods
-            if isinstance(method, (pint.Quantity, numbers.Number))
-        ]
-        if coords:
-            var.update(long_suffix='at ' + ', '.join(coords))
-        if any('normalized' in dim for dim in (longitude, latitude, vertical, time)):
-            var.update(standard_units='')
-
-        # Finally add user-specified prefixes and suffixes
-        var.update(**kwmod)
-        return var
+        var = self._get_item(key)
+        return var.modify(**kwargs)
 
     def _get_item(self, key):
         """
         Efficiently retrieve a variable based on its canonical name, name alias, or
         standard name.
         """
-        if not isinstance(key, str) or key[:1] == '_':
-            raise TypeError(f'Invalid variable name {key!r}.')
-        try:
-            return self._database[key]  # avoid iterating through registry if possible
-        except KeyError:
-            pass
-        for var in self._database.values():
-            if key == var.standard_name or key in var.aliases:
-                return var
-        raise KeyError(f'Unknown CFVariable {key!r}.')
+        if isinstance(key, str):
+            if key[:1] == '_':
+                raise ValueError(f'Invalid variable name {key!r}.')
+            try:
+                return self._database[key]  # avoid iterating through registry
+            except KeyError:
+                pass
+            for var in self._database.values():  # search alternative names
+                if key == var.standard_name or key in var.aliases:
+                    return var
+            raise KeyError(f'Unknown variable name {key!r}.')
+        elif isinstance(key, CFVariable):
+            if key._registry is not self:  # TODO: use isinstance(key, self.CFVariable)
+                raise ValueError('CFVariable belongs to different registry.')
+            return key
+        else:
+            raise TypeError(f'Invalid key {key!r}. Must be string or CFVariable.')
+
+    def add(self, var):
+        """
+        Add an existing `CFVariable` to the registry.
+
+        Parameters
+        ----------
+        var : `CFVariable`
+            The variable to register.
+
+        Returns
+        -------
+        `CFVariable`
+            The registered variable. This is a copy of the input variable.
+
+        Note
+        ----
+        If the input variable `~CFVariable.identifiers` conflict with an existing
+        variable's `~CFVariable.identifiers`, a warning message is printed and the
+        conflicting variable is removed from the registry (along with its children).
+        """
+        # Remove old variables and children, ensuring zero conflict between sets
+        # of unique identifiers and forbidding deletion of parent variables.
+        var = copy.copy(var)  # necessary since its _registry instance must match
+        for identifier in set(var.identifiers):
+            try:
+                prev = self._get_item(identifier)
+            except KeyError:
+                pass
+            else:
+                warnings._warn_climopy(f'Overriding variable {prev} with {var}.')
+                for other in prev:  # iterate over self and all children
+                    if other is var:  # i.e. we are trying to override a parent!
+                        raise ValueError(f'Variable name conflict between {var} and parent {other}.')  # noqa: E501
+                    self._database.pop(other.name, None)
+        var._registry = self
+        self._database[var.name] = var
+        return var
 
     def alias(self, *args):
         """
@@ -791,9 +856,10 @@ class CFVariableRegistry(object):
         var = vars[0]
         var._aliases.extend(arg for arg in args if arg not in var.identifiers)
 
+    @docstring.inject_snippets()
     def define(self, name, *args, aliases=None, parents=None, **kwargs):
         """
-        Define a `CFVariable` instance. Inspired by `pint.UnitRegistry.define`.
+        Define a new `CFVariable`. Inspired by `pint.UnitRegistry.define`.
 
         Parameters
         ----------
@@ -802,6 +868,7 @@ class CFVariableRegistry(object):
             retrieved for data arrays whose `name` match this name using
             ``data_array.climo.cfvariable.property`` or the shorthand form
             ``data_array.climo.property``.
+        %(params_cfupdate)s
         aliases : str or list of str, optional
             Aliases for the `CFVariable`. This can be useful for identifying dataset
             variables from a wide variety of sources that have empty `standard_name`
@@ -814,14 +881,11 @@ class CFVariableRegistry(object):
             ``parents=('lorenz_energy_budget_term', 'energy_flux')`` will yield both
             ``'eddy_potential_energy' in vreg['lorenz_energy_budget_term']``
             and ``'eddy_potential_energy' in vreg['energy_flux']``.
-        *args, **kwargs
-            Passed to `CFVariable`.
 
-        Notes
-        -----
-        If the input variable's `~CFVariable.identifiers` conflict with an existing
-        variable's `~CFVariable.identifiers`, a warning message is printed and the
-        conflicting variable is removed from the registry (along with its children).
+        Returns
+        -------
+        `CFVariable`
+            The registered variable.
         """
         # Create new variable or child variable
         if not parents:
@@ -832,29 +896,12 @@ class CFVariableRegistry(object):
             parents = tuple(self._get_item(parent) for parent in parents)
             var = parents[0].child(name, *args, other_parents=parents[1:], **kwargs)
 
-        # Add aliases to variable
+        # Add aliases to variable and add to registry
         aliases = aliases or ()
         if isinstance(aliases, str):
             aliases = (aliases,)
         var._aliases.extend(aliases)
-
-        # Delete old variables and children, ensuring zero conflict between sets
-        # of unique identifiers and forbidding deletion of parent variables.
-        for identifier in set(var.identifiers):
-            try:
-                prev = self._get_item(identifier)
-            except KeyError:
-                pass
-            else:
-                warnings._warn_climopy(f'Overriding {prev} with {var}.')
-                for other in prev:  # iterate over self and all children
-                    if other is var:  # i.e. we are trying to override a parent!
-                        raise ValueError(f'Name conflict between {var} and parent {other}.')  # noqa: E501
-                    self._database.pop(other.name, None)
-
-        # Add variable to database and return it
-        self._database[name] = var
-        return var
+        return self.add(var)
 
     def get(self, key, default=None):
         """
