@@ -233,4 +233,5 @@ def latex_units(units, /, *, long_form=None):
     )
     if string:
         string = '$' + string + '$'
+        string = string.replace('%', r'\%')
     return string
