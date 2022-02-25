@@ -134,7 +134,10 @@ with warnings.catch_warnings():
                 f'Unknown cell height for vertical type {type_!r}.'
             )
         data = data.climo.to_units('kg m^-2')
-        data.data[data.data < 0] = ureg.Quantity(0, 'kg m^-2')
+        if data.dims:  # non-scalar
+            data.data[data.data < 0] = ureg.Quantity(0, 'kg m^-2')
+        elif data.data < 0:
+            data.data = ureg.Quantity(0, 'kg m^-2')
         data = data.fillna(0)  # seems to work without units in the 'fill' part
         data.name = 'cell_height'
         return data.climo.add_cell_measures(height=data)
