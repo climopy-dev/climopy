@@ -333,9 +333,10 @@ def _manage_coord_reductions(func):
     identically reduce cell weights. See `add_scalar_coords` for details on motivation.
     """
     @functools.wraps(func)
-    def _wrapper(self, dim=None, *, manage_coords=True, **kwargs):
+    def _wrapper(self, dim=None, *, keep_attrs=None, manage_coords=True, **kwargs):
         # Call wrapped function
         # NOTE: Existing scalar coordinates should be retained by xarray
+        attrs = self.data.attrs
         coords = self.data.coords
         result = func(self, dim, **kwargs)
         if not manage_coords:
@@ -343,6 +344,9 @@ def _manage_coord_reductions(func):
 
         # Treat lost coordinates
         coords_lost = coords.keys() - result.coords.keys()
+        keep_attrs = xr.core.options._get_keep_attrs(keep_attrs)
+        if keep_attrs:
+            result.attrs.update({**attrs, **result.attrs})
         for name in coords_lost:
             prev = coords[name]
             try:
@@ -2666,7 +2670,7 @@ class ClimoAccessor(object):
         # NOTE: No longer track CFVARIABLE_ARGS attributes. Too complicated, and
         # yields weird behavior like adding back long_name='zonal wind' after 'argmax'
         # TODO: Stop defining cell measures for whole dataset, just like cell methods,
-        # to accomodate situation with multiple grids.
+        # to accommodate situation with multiple grids.
         # WARNING: For datasets, we use data array with longest cell_methods, to try to
         # accomodate variable derivations from source variables with identical methods
         # and ignore variables like 'bounds' with only partial cell_methods. But this
