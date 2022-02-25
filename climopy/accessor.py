@@ -2431,10 +2431,9 @@ class ClimoAccessor(object):
         # Manage all Z axis units and interpret 'positive' direction if not set
         # (guess_coord_axis does not otherwise detect 'positive' attribute)
         for name in data.climo.cf.axes.get('Z', []):
-            da = data.climo.coords[name]  # climopy makes unit-transformable copy
-            units = data.coords[name].attrs.get('units', None)
-            units = units if units is None else parse_units(units)
-            positive = None
+            da = data.climo.coords[name]  # returns quantity
+            units = da.climo.units  # always present
+            to_units = positive = None
             if units is None:
                 pass
             elif units == 'level' or units == 'layer':  # ureg.__eq__ handles strings
@@ -2443,19 +2442,29 @@ class ClimoAccessor(object):
                 positive = 'down'
             elif units.is_compatible_with('Pa'):
                 positive = 'down'
-                da = da.climo.to_units('hPa')
+                to_units = 'hPa'
             elif units.is_compatible_with('m'):
                 positive = 'up'
-                da = da.climo.to_units('km')
+                to_units = 'km'
             elif units.is_compatible_with('K'):
                 positive = 'up'
-                da = da.climo.to_units('K')
+                to_units = 'K'
             if positive is None:
                 positive = 'up'
                 warnings._warn_climopy(
                     f'Ambiguous positive direction for vertical coordinate {name!r}. '
                     'Assumed up.'
                 )
+            if to_units:
+                da = da.climo.to_units(to_units)
+                bounds = da.attrs.get('bounds', None)
+                if isinstance(data, xr.Dataset) and bounds in data:
+                    bnds = data[bounds]
+                    if not bnds.climo._has_units:
+                        bnds.attrs['units'] = encode_units(units)
+                    data[bounds] = bnds.climo.to_units(to_units)
+                    if not bnds.climo._has_units:
+                        bnds.attrs.pop('units')  # simply match level units
             da = da.climo.dequantify()
             da.attrs.setdefault('positive', positive)
             data = data.assign_coords({da.name: da})
