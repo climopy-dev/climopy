@@ -231,8 +231,6 @@ def latex_units(units, /, *, long_form=None):
         )
         for i, units in enumerate(units_parts)
     )
-    if '\N{DEGREE SIGN}' in string:
-        string = ''
-    elif string:
+    if string:
         string = '$' + string + '$'
     return string

@@ -188,7 +188,7 @@ class CFVariable(object):
             yield from var
 
     @staticmethod
-    def _mod_name(name, prefix, suffix):
+    def _adjust_name(name, prefix, suffix):
         """
         Modify variable name with prefix and suffix, squeeze consective spaces,
         and correct clunky names like "jet stream strength latitude".
@@ -204,11 +204,27 @@ class CFVariable(object):
                 name = name.replace(f'{modifier} {ending}', ending)
         return name
 
-    def _inherit(self, attr, value=None, default=None):
+    def _inherit_prop(self, attr, value=None, default=None):
         """
-        Try to inherit property if `value` was not provided.
+        Try to inherit property if `value` was not provided. This is used when
+        updating variables with `~CFVariable.update`.
         """
-        return getattr(self, '_' + attr, default) if value is None else value
+        if value is None:
+            return getattr(self, '_' + attr, default)
+        else:
+            return value
+
+    def _use_standard_units(self):
+        """
+        Whether to use the standard units or accessor units. Prefer the former so
+        that subsequent labels match the `standard_units` ordering of subunits.
+        """
+        if not self._accessor and self.standard_units is None:
+            raise RuntimeError(f'Variable {self.name!r} has no units and no accessor.')
+        return bool(
+            self._accessor and self.standard_units is not None
+            and self.units_pint != self._accessor.units
+        )
 
     @docstring.inject_snippets()
     def child(self, name, *args, other_parents=None, **kwargs):
@@ -279,12 +295,12 @@ class CFVariable(object):
         # NOTE: Important to add prefixes and suffixes to long_name *after* using
         # as default short_name. Common use case is to create "child" variables with
         # identical short_name using e.g. vreg.define('var', long_prefix='prefix')
-        standard_units = self._inherit('standard_units', standard_units)
-        long_name = self._inherit('long_name', long_name)
-        short_name = self._inherit('short_name', short_name, default=long_name)
-        long_name = self._mod_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
-        short_name = self._mod_name(short_name, short_prefix, short_suffix)
-        standard_name = self._inherit('standard_name', standard_name)
+        standard_units = self._inherit_prop('standard_units', standard_units)
+        long_name = self._inherit_prop('long_name', long_name)
+        short_name = self._inherit_prop('short_name', short_name, default=long_name)
+        long_name = self._adjust_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
+        short_name = self._adjust_name(short_name, short_prefix, short_suffix)
+        standard_name = self._inherit_prop('standard_name', standard_name)
         if standard_name is None and long_name is not None:
             standard_name = re.sub(r'\W', '_', long_name).strip('_').lower()
             standard_name = re.sub(r'_+', '_', standard_name)  # squeeze consecutive
@@ -300,13 +316,13 @@ class CFVariable(object):
         self._long_name = long_name
         self._short_name = short_name
         self._standard_name = standard_name
-        self._symbol = self._inherit('symbol', symbol, default='').strip('$')
-        self._reference = self._inherit('reference', reference)
-        self._colormap = self._inherit('colormap', colormap, default='Greys')
-        self._axis_formatter = self._inherit('axis_formatter', axis_formatter, default=default_axis_formatter)  # noqa: E501
-        self._axis_reverse = self._inherit('axis_reverse', axis_reverse, default=False)
-        self._axis_scale = self._inherit('axis_scale', axis_scale)
-        self._scalar_formatter = self._inherit('scalar_formatter', scalar_formatter, default=default_scalar_formatter)  # noqa: E501
+        self._symbol = self._inherit_prop('symbol', symbol, default='').strip('$')
+        self._reference = self._inherit_prop('reference', reference)
+        self._colormap = self._inherit_prop('colormap', colormap, default='Greys')
+        self._axis_formatter = self._inherit_prop('axis_formatter', axis_formatter, default=default_axis_formatter)  # noqa: E501
+        self._axis_reverse = self._inherit_prop('axis_reverse', axis_reverse, default=0)
+        self._axis_scale = self._inherit_prop('axis_scale', axis_scale)
+        self._scalar_formatter = self._inherit_prop('scalar_formatter', scalar_formatter, default=default_scalar_formatter)  # noqa: E501
 
     @docstring.inject_snippets()
     def modify(
@@ -634,7 +650,7 @@ class CFVariable(object):
         """
         label = self.long_name
         units = self.units_label
-        if units:
+        if units and '\N{DEGREE SIGN}' not in units:
             label += f' ({units})'
         return label
 
@@ -645,7 +661,7 @@ class CFVariable(object):
         """
         label = self.short_name
         units = self.units_label
-        if units:
+        if units and '\N{DEGREE SIGN}' not in units:
             label += f' ({units})'
         return label
 
@@ -698,15 +714,11 @@ class CFVariable(object):
         forward slash in the standard units string. See `~.unit.latex_units` for
         details.
         """
-        if self.standard_units is None:
-            if not self._accessor:
-                raise RuntimeError(f'Accessor required for variable with no default units {self!r}.')  # noqa: E501
-            units = self._accessor.units
-        elif self._accessor and self.units_pint != self._accessor.units:
-            units = self._accessor.units
-        else:
+        if self._use_standard_units():  # this is factored out for debugging
             units = self.standard_units
-        return latex_units(units)  # format, retaining slashes and whatnot
+        else:
+            units = self._accessor.units
+        return latex_units(units)  # style retaining ordering and whatnot
 
 
 class CFVariableRegistry(object):
