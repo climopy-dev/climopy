@@ -52,12 +52,13 @@ CFVARIABLE_ARGS = (
 
 # Arguments passed to parse key
 PARSEKEY_ARGS = (
-    'add_cell_measures'
+    'add_cell_measures',
+    'quantify',
     'search_vars',
     'search_coords',
     'search_derivations',
     'search_transformations',
-    'search_registry'
+    'search_registry',
 )
 
 # Regular expressions compiled for speed
@@ -785,7 +786,7 @@ class _CoordsQuantified(object):
             raise KeyError(f'Invalid coordinate spec {key!r}.')
         return self._build_coord(*tup)
 
-    def _build_coord(self, transformation, coord, flag, **kwargs):
+    def _build_coord(self, transformation, coord, flag, quantify=True, **kwargs):
         """
         Return the coordinates, accounting for `CF` and `CFVariableRegistry` names.
         """
@@ -797,7 +798,7 @@ class _CoordsQuantified(object):
         if flag:
             bnds = self._get_bounds(coord, **kwargs)
             if flag in ('bnds', 'bounds'):
-                return bnds.climo.quantify()
+                return bnds.climo.quantify() if quantify else bnds
             if flag[:3] in ('bot', 'del'):
                 dest = bottom = bnds[..., 0]  # NOTE: scalar coord bnds could be 1D
                 suffix = ' bottom edge'
@@ -824,7 +825,8 @@ class _CoordsQuantified(object):
             coords=coord.coords,
             attrs=coord.attrs.copy(),  # also copies over units
         )
-        dest = dest.climo.quantify()
+        if quantify:
+            dest = dest.climo.quantify()
         if transformation:
             dest.name = None  # ensure name is modified
             dest = transformation(dest)  # adjusts name if it is unset
@@ -840,7 +842,7 @@ class _CoordsQuantified(object):
 
         return dest
 
-    def _get_bounds(self, coord, sharp_cutoff=None):
+    def _get_bounds(self, coord, sharp_cutoff=True):
         """
         Return bounds inferred from the coordinates or generated on-the-fly. See
         `.get` for `sharp_cutoff` details.
@@ -916,7 +918,7 @@ class _CoordsQuantified(object):
 
         # Construct default cell bounds
         elif quack._is_numeric(coord):
-            if sharp_cutoff or sharp_cutoff is None:
+            if sharp_cutoff:
                 delta1 = delta2 = 0
             else:
                 delta1 = 0.5 * np.diff(coord.data[:2])
@@ -957,7 +959,7 @@ class _CoordsQuantified(object):
             name=coord.name + '_bnds',
             dims=(*coord.dims[:1], 'bnds'),  # nameless 'bnds' dimension
             coords=coord.coords,
-            attrs=coord.attrs,
+            attrs=coord.attrs,  # could include units
         )
 
         return bounds
@@ -1017,7 +1019,7 @@ class _CoordsQuantified(object):
                     return tup
 
     @_CFAccessor._clear_cache
-    def get(self, key, default=None, sharp_cutoff=None, **kwargs):
+    def get(self, key, default=None, quantify=True, sharp_cutoff=True, **kwargs):
         """
         Return the coordinate if it is present, otherwise return a default value.
 
@@ -1027,13 +1029,13 @@ class _CoordsQuantified(object):
             The coordinate key.
         default : optional
             The default return value.
-        search_cf : bool, optional
+        search_cf : bool, default: True
             Whether to translate CF names.
-        search_registry : bool, optional
+        search_registry : bool, default: True
             Whether to translate registered names and aliases.
-        search_transformations : bool, optional
+        search_transformations : bool, default: True
             Whether to perform registered transformations of coordinates.
-        sharp_cutoff : bool, optional
+        sharp_cutoff : bool, default: True
             The cutoff behavior used when calculating default non-datetime coordinate
             bounds in the event that an explicit ``'bounds'`` variable is unavailable.
             When ``True``, the end coordinate centers are also treated as coordinate
@@ -1048,7 +1050,7 @@ class _CoordsQuantified(object):
         if tup is None:
             return default
         else:
-            return self._build_coord(*tup, sharp_cutoff=sharp_cutoff)
+            return self._build_coord(*tup, quantify=quantify, sharp_cutoff=sharp_cutoff)
 
 
 class _DataArrayCoordsQuantified(
@@ -1130,21 +1132,21 @@ class _VarsQuantified(object):
 
         # Find CF alias
         if search_cf:
-            da = data.climo.cf._get_item(key, 'cell_measures', 'standard_names')
-            if da is not None and da.name in data.data_vars:
-                return da
+            data = data.climo.cf._get_item(key, 'cell_measures', 'standard_names')
+            if data is not None and data.name in data.data_vars:
+                return data
 
         # Locate using identifier synonyms
         if search_registry:
             var = self._variable_registry.get(key)
             identifiers = var.identifiers if var else ()
             for name in set(identifiers):
-                da = self._parse_key(name, search_cf=search_cf, search_registry=False)
-                if da is not None:
-                    return da
+                data = self._parse_key(name, search_cf=search_cf, search_registry=False)
+                if data is not None:
+                    return data
 
     @_CFAccessor._clear_cache
-    def get(self, key, default=None, **kwargs):
+    def get(self, key, default=None, quantify=True, **kwargs):
         """
         Return the variable if it is present, otherwise return a default value.
 
@@ -1152,16 +1154,20 @@ class _VarsQuantified(object):
         ----------
         default : optional
             The default return value.
-        search_cf : bool, optional
+        quantify : bool, default: True
+            Whether to quantify the result.
+        search_cf : bool, default: True
             Whether to translate CF names.
-        search_registry : bool, optional
+        search_registry : bool, default: True
             Whether to translate registered names and aliases.
         """
-        da = self._parse_key(key, **kwargs)  # potentially limit search
-        if da is not None:
-            return da.climo.quantify()
-        else:
+        data = self._parse_key(key, **kwargs)  # potentially limit search
+        if data is None:
             return default
+        elif quantify:
+            return data.climo.quantify()
+        else:
+            return data
 
 
 class ClimoAccessor(object):
@@ -2868,78 +2874,92 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.coords[data.name] = data  # whoa dude... this is so CF searches self
         self = data.climo
         name = data.name
+        if name is None:
+            raise AttributeError('DataArray name is missing. Cannot create CFVariable.')
 
         # Get override attributes
-        kwargs = {}
+        kw_attrs = {}
         if use_kw_attrs:
             for key, val in data.attrs.items():
                 if key in CFVARIABLE_ARGS:
-                    kwargs[key] = val
+                    kw_attrs[key] = val
 
         # Get cell methods that modify descriptive names
+        kw_methods = {}
         if use_cf_attrs:
-            # Get methods applied to each coordinate by reading cell_methods and
-            # scalar coordinates. Apply units if it can be done safely.
-            # WARNING: Looking up cf attributes can be slow when looping over dataset
-            # variables so optionally skip this (see _CFAccessor above).
-            # WARNING: To detect e.g. latitude='argmax' reductions in the cell methods
-            # list this requires the data array to match the original coordinate name.
-            # For example you cannot change the name from 'latitude' to 'jet_latitude'.
-            methods = self.cf._decode_attr(data.attrs.get('cell_methods', ''))
-            cf_name = None
-            for coord, da in data.coords.items():
-                if coord == name:
-                    attrs = ('coordinates', 'cell_measures')
-                else:
-                    attrs = ('coordinates',)
+            # Get scalar coordinate labels
+            for key, coord in self.coords.items():
+                if key == name:
+                    continue  # scalar coordinate variable
                 try:
-                    key = self.cf._encode_name(coord, *attrs)
+                    key = self.cf._encode_name(key, 'coordinates')
                 except KeyError:
-                    continue
-                if coord == name:
-                    cf_name = key
-                if any(coord in dims for dims, _ in methods):
-                    kwargs[key] = [m for dims, m in methods if coord in dims]
-                elif da.size == 1 and not da.isnull():
-                    value = da.item()
-                    if 'units' in da.attrs and np.issubdtype(da.data.dtype, np.number):
-                        value *= decode_units(da.attrs['units'])
-                    kwargs[key] = [value]  # exact coordinate
+                    continue  # not interpretable by cfvariable.modify
+                if coord.size == 1 and not coord.isnull():
+                    value = coord.item()
+                    if 'units' in coord.attrs and np.issubdtype(coord.data.dtype, np.number):  # noqa: E501
+                        value *= decode_units(coord.attrs['units'])
+                    set_ = kw_methods.setdefault(key, set())
+                    set_.add(value)
 
-            # Find if DataArray corresponds to a standard coordinate or cell measure,
-            # with corresponding standard cfvariables registered by climopy. For
-            # example this will return CFVariable('latitude') for a variable with
-            # deg_E units or CFVariable('cell_area') for a variable defined as the
-            # cell area even if their name and standard_name do not match. This also
-            # handles e.g. latitude='argmax' reduction methods in which the DataArray
-            # corresponds to some coordinate measure of a different physical variable.
+            # Get cell methods applied to coordinates
+            methods = self.cf._decode_attr(data.attrs.get('cell_methods', ''))
+            for keys, method in methods:
+                keys = list(keys)
+                if 'area' in keys:  # see the CF conventions and _integral_or_average
+                    keys.remove('area')
+                    keys.extend(('longitude', 'latitude'))
+                if 'volume' in keys:
+                    keys.remove('volume')
+                    keys.extend(('longitude', 'latitude', 'vertical'))
+                for key in keys:
+                    try:
+                        key = self.cf._encode_name(key, 'coordinates')
+                    except KeyError:
+                        continue
+                    set_ = kw_methods.setdefault(key, set())
+                    set_.add(method)
+
+            # Get registered cfvariable name corresponding to this data array
             parent_name = data.attrs.get('parent_name', None)
-            if cf_name in kwargs and not self._is_coordinate_bounds:
+            try:
+                cf_name = self.cf._encode_name(name, 'coordinates', 'cell_measures')
+            except KeyError:
+                cf_name = None
+            if cf_name is None:
+                pass  # this is a physical variable
+            elif cf_name not in kw_methods:
+                name = cf_name  # this is a coorindate or cell measure
+            else:
+                suffix = f'for coordinate {name!r} resulting from reductions {kw_methods[cf_name]}'  # noqa: E501
                 if parent_name is None:
-                    raise RuntimeError(f'Unknown parent name for coordinate {name!r}.')
+                    raise RuntimeError(f'Unknown parent variable name {suffix}.')
                 if parent_name not in data.coords:
-                    raise RuntimeError(f'Parent coordinate {parent_name!r} not found.')
+                    raise RuntimeError(f'Parent variable {parent_name!r} not found {suffix}.')  # noqa: E501
                 name = parent_name
-                parent = data.coords[name]
+                parent = data.coords[parent_name]
                 for key in ('long_name', 'short_name', 'standard_name'):
                     if key in parent.attrs:
-                        kwargs[key] = parent.attrs[key]
+                        kw_attrs[key] = parent.attrs[key]
                     else:
-                        kwargs.pop(key, None)
-            elif cf_name is None:  # this is a physical variable
-                pass
-            else:  # this is a coordinate or cell measure
-                name = cf_name
+                        kw_attrs.pop(key, None)
 
-        # Create the CFVariable
-        for identifier in (name, kwargs.pop('standard_name', None)):
+        # Retrieve and modify the CFVariable
+        reg = self.variable_registry
+        standard_name = kw_attrs.pop('standard_name', None)
+        for identifier in (name, standard_name):
             if identifier is None:
                 continue
             try:
-                return self.variable_registry(identifier, accessor=self, **kwargs)
+                return reg(identifier, accessor=self, **kw_attrs, **kw_methods)
             except KeyError:
                 pass
-        raise AttributeError(f'CFVariable not found for name {name!r}.')
+        warnings._warn_climopy(
+            f'Automatically adding CFVariable {name!r} to the registry.'
+        )
+        var = reg.define(name, standard_name=standard_name, **kw_attrs)
+        var = var.modify(accessor=self, **kw_methods)
+        return var
 
     def _expand_ellipsis(self, key):
         """
@@ -4193,8 +4213,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         Return a `~.cfvariable.CFVariable` based on the `~xarray.DataArray` name, the
         scalar coordinates, and the coordinate reductions referenced in `cell_methods`.
-        As a shorthand, you can access ``data_array.climo.cfvariable`` properties
-        directly using ``data_array.climo.property``.
+        If the `~xarray.DataArray` name is not found in the `~ClimoAccessor.registry`,
+        then a new `~.cfvariable.CFVariable` is created and registered on-the-fly
+        using the attributes under the `~xarray.DataArray`. Note that as a shorthand,
+        you can also access all public `~cfvariable.CFVariable` properties using just
+        the accessor (e.g., ``data_array.climo.long_label``).
         """
         return self._cf_variable()
 
@@ -4366,12 +4389,11 @@ class ClimoDatasetAccessor(ClimoAccessor):
         tup = self._parse_key(key, **kwargs)
         if not tup:
             raise KeyError(f'Invalid variable name {key!r}.')
-        type_, da = tup
-        if callable(da):
-            da = da()  # ta-da!
+        type_, data = tup
+        if callable(data):
+            data = data()  # ta-da!
 
         # Add units and cell measures
-        data = da.climo.quantify()  # should already be quantified, but just in case
         if data.name is None:
             data.name = 'unknown'  # just in case
         if type_ != 'coord' and add_cell_measures:
@@ -4385,7 +4407,8 @@ class ClimoDatasetAccessor(ClimoAccessor):
         if 'k' in data.dims:
             dims = ('lev', 'k', 'lat', 'c')
         else:
-            dims = _first_unique(dim for da in self.data.values() for dim in da.dims if not da.climo._is_coordinate_bounds)  # noqa: E501
+            dims = (d for a in self.data.values() for d in a.dims if not a.climo._is_coordinate_bounds)  # noqa: E501
+        dims = _first_unique(dims)
         data = data.transpose(..., *(dim for dim in dims if dim in data.dims))
 
         return data
@@ -4466,7 +4489,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
     # @functools.lru_cache(maxsize=64)  # TODO: fix issue where recursion breaks cache
     def get(
         self, key, *,
-        quantify=None,
         standardize=False,
         units=None,
         normalize=False,
@@ -4496,29 +4518,13 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
             All names can be replaced with 2-tuples of the form ('name', kwargs) to
             pass keyword arguments positionally.
-        search_coords : bool, optional
-            Whether to search for coordinates.
-        search_vars : bool, optional
-            Whether to search for variables.
-        search_cf : bool, optional
-            Whether to translate CF names.
-        search_registry : bool, optional
-            Whether to translate registered names and aliases.
-        search_derivations : bool, optional
-            Whether to perform registered derivations of coordinates or variables.
-        search_transformations : bool, optional
-            Whether to perform registered transformations of coordinates or variables.
-        add_cell_measures : bool, optional
-            Whether to add default cell measures to the coordinates.
-        quantify : bool, optional
-            Whether to quantify the data with `~ClimoDataArrayAccessor.quantify()`.
         units : unit-spec, optional
             Convert the result to the input units with
             `~ClimoDataArrayAccessor.to_units`.
-        standardize : bool, optional
+        standardize : bool, default: False
             Convert the result to the standard units with
             `~ClimoDataArrayAccessor.to_standard_units`.
-        normalize : bool, optional
+        normalize : bool, default: False
             Whether to normalize the resulting data with
             `~ClimoDataArrayAccessor.normalize`.
         runmean : bool, optional
@@ -4527,13 +4533,32 @@ class ClimoDatasetAccessor(ClimoAccessor):
         add, subtract, multiply, divide : var-spec, optional
             Modify the resulting variable by adding, subtracting, multiplying, or
             dividing by this variable (passed to `~ClimoDatasetAccessor.get`).
-        long_name, short_name, standard_name, long_prefix, long_suffix, short_prefix, \
-short_suffix : str, optional
-            Arguments to be passed to `~.cfvariable.CFVariableRegistry` when
-            constructing the `~ClimoDataArrayAccessor.cfvariable`. Added as
-            attributes to the `~xarray.DataArray`.
         **kwargs
             Passed to `~ClimoDataArrayAccessor.reduce`. Used to reduce dimensionality.
+
+        Other parameters
+        ----------------
+        quantify : bool, default: True
+            Whether to quantify the data with `~ClimoDataArrayAccessor.quantify()`.
+        add_cell_measures : bool, default: True
+            Whether to add default cell measures to the coordinates.
+        search_coords : bool, default: True
+            Whether to search for coordinates.
+        search_vars : bool, default: True
+            Whether to search for variables.
+        search_cf : bool, default: True
+            Whether to translate CF names.
+        search_registry : bool, default: True
+            Whether to translate registered names and aliases.
+        search_derivations : bool, default: True
+            Whether to perform registered derivations of coordinates or variables.
+        search_transformations : bool, default: True
+            Whether to perform registered transformations of coordinates or variables.
+        long_name, short_name, standard_name, long_prefix, long_suffix, short_prefix, \
+short_suffix : str, optional
+            Arguments to be passed to `~.cfvariable.CFVariable.modify` when
+            constructing the `~ClimoDataArrayAccessor.cfvariable`. Added as
+            attributes on the returned `~xarray.DataArray`.
 
         Returns
         -------
@@ -4594,13 +4619,6 @@ short_suffix : str, optional
             data = data.climo.to_units(units)
         elif standardize:
             data = data.climo.to_standard_units()
-
-        # Quantify or dequantify data
-        if quantify is not None:
-            if quantify:  # should *already* be quantified but just to make sure
-                data = data.climo.quantify()
-            else:
-                data = data.climo.dequantify()
 
         data.attrs.update(kw_attrs)
         return data

@@ -167,6 +167,11 @@ def encode_units(unit, /):
     """
     Convert `pint.Unit` into an unambiguous unit string. This is used with
     `~.accessor.ClimoDataArrayAccessor.dequantify` to record the units attribute.
+
+    See also
+    --------
+    decode_units
+    format_units
     """
     if isinstance(unit, str):
         unit = decode_units(unit)
@@ -187,6 +192,11 @@ def decode_units(unit, /):
       underscore (e.g. ``100km`` instead of ``_100km``; see `ureg` for details).
     * Interpret everything to the right of the first slash as part of the denominator
       (e.g. ``W / m2 Pa`` instead of ``W / m^2 / Pa``; additional slashes are optional).
+
+    See also
+    --------
+    encode_units
+    format_units
     """
     if isinstance(unit, str):
         unit = _to_pint_string(unit)
@@ -206,6 +216,11 @@ def format_units(unit, /, *, long_form=None):
       short form otherwise. Long form units in the numerator are written in plural.
     * Parses units on either side of the first slash independently. For example,
       the sensitivity parameter ``K / (W m^-2)`` is formatted as ``K / W m^-2``.
+
+    See also
+    --------
+    encode_units
+    decode_units
     """
     # Format the accessor "active units" by default. Use the string descriptor
     # representation of the standard units are active, to apply fussy formatting.
@@ -244,8 +259,7 @@ def format_units(unit, /, *, long_form=None):
         )
         for part in parts
     )
-    if '\N{DEGREE SIGN}' in string:
-        string = ''
-    elif string:
+    if string:
         string = '$' + string + '$'
+        string = string.replace('%', r'\%')
     return string
