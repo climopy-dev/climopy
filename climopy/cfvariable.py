@@ -357,23 +357,8 @@ class CFVariable(object):
                     arg.remove('integral')
             return b
 
-        # Apply basic overrides
-        reg = self._registry or {}
-        kwpost = {  # update these later!
-            key: kwargs.pop(key) for key in tuple(kwargs)
-            if key in ('long_prefix', 'long_suffix', 'short_prefix', 'short_suffix')
-        }
-        self = copy.copy(self)
-        if (
-            self.name[0] == 'c' and self.name[1:] in reg
-            and 'convergence' in self.long_name and _pop_integral(latitude)
-        ):
-            self = reg._get_item(self.name[1:])  # Green's theorem; e.g. cehf --> ehf
-        self.climo = accessor
-        self.update(**kwargs)
-
         # Get reduction method specifications
-        # TODO: Expand this section
+        # TODO: Expand this section or remove this kludge?
         longitude = _as_set(longitude)
         latitude = _as_set(latitude)
         vertical = _as_set(vertical)
@@ -382,6 +367,21 @@ class CFVariable(object):
             if m := re.match(rf'\A(.+)_{method}\Z', self.name):
                 name = m.group(1)
                 time.add(method)
+
+        # Apply basic overrides
+        reg = self._registry or {}
+        kwpost = {  # update these later!
+            key: kwargs.pop(key) for key in tuple(kwargs)
+            if key in ('long_prefix', 'long_suffix', 'short_prefix', 'short_suffix')
+        }
+        self = copy.copy(self)
+        if (
+            self.name[0] == 'c' and self.name[1:] in reg and self.long_name
+            and 'convergence' in self.long_name and _pop_integral(latitude)
+        ):
+            self = reg._get_item(self.name[1:])  # Green's theorem; e.g. cehf --> ehf
+        self.climo = accessor
+        self.update(**kwargs)
 
         # Handle unit changes due to integration
         # NOTE: Vertical integration should always be with units kg/m^2
