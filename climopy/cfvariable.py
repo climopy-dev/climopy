@@ -287,15 +287,17 @@ class CFVariable(object):
         # as default short_name. Common use case is to create "child" variables with
         # identical short_name using e.g. vreg.define('var', long_prefix='prefix')
         long_name = self._inherit_property('long_name', long_name)
-        short_name = self._inherit_property('short_name', short_name, default=long_name)
         standard_name = self._inherit_property('standard_name', standard_name)
-        standard_units = self._inherit_property('standard_units', standard_units)
         if long_name is not None:
             long_name = _adjust_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
-        if short_name is not None:
-            short_name = _adjust_name(short_name, short_prefix, short_suffix)
+        if long_name is None and standard_name is not None:
+            long_name = re.sub('_', ' ', standard_name).strip()
         if standard_name is None and long_name is not None:
             standard_name = re.sub(r'\W+', '_', long_name).strip('_').lower()
+        short_name = self._inherit_property('short_name', short_name, default=long_name)
+        standard_units = self._inherit_property('standard_units', standard_units)
+        if short_name is not None:
+            short_name = _adjust_name(short_name, short_prefix, short_suffix)
         if standard_units is not None:
             standard_units = _to_pint_string(standard_units)
         if (default_axis_formatter := 'auto') and axis_formatter is False:
