@@ -2417,6 +2417,30 @@ class ClimoAccessor(object):
         ----------
         verbose : bool, optional
             If ``True``, print statements are issued.
+
+        Examples
+        --------
+        >>> bnds = (('bnds', 'foo'), [[0, 1], [1, 2]])
+        >>> lon = ('foo', [0.5, 1.5], {'standard_name': 'longitude'})
+        >>> lat = ('lat', [-0.5, 0.5])
+        >>> ds = xr.Dataset({'foo_bnds': bnds}, coords={'foo': lon, 'lat': lat})
+        >>> ds = ds.climo.standardize_coords(verbose=True)
+        >>> ds.lon
+        <xarray.DataArray 'lon' (lon: 2)>
+        array([0.5, 1.5])
+        Coordinates:
+        * lon      (lon) float64 0.5 1.5
+        Attributes:
+            standard_name:  longitude
+            bounds:         lon_bnds
+        >>> ds.lat
+        <xarray.DataArray 'lat' (lat: 2)>
+        array([-0.5,  0.5])
+        Coordinates:
+        * lat      (lat) float64 -0.5 0.5
+        Attributes:
+            units:          degrees_north
+            standard_name:  latitude
         """
         # Update 'axis' attributes and 'longitude', 'latitude' standard names and units
         for coord in self.data.coords.values():
@@ -2480,6 +2504,7 @@ class ClimoAccessor(object):
 
         # Rename longitude, latitude, vertical, and time coordinates if present
         # WARNING: If multiples of each coordinate type are found, this triggers error
+        names = {}
         coords = {  # dummy CF-compliant coordinates used with rename_like
             'lon': ('lon', [], {'standard_name': 'longitude'}),
             'lat': ('lat', [], {'standard_name': 'latitude'}),
@@ -2487,45 +2512,45 @@ class ClimoAccessor(object):
             'time': ('time', [], {'standard_name': 'time'}),
         }
         coords_prev = data.climo.cf.coordinates
-        sample = xr.Dataset(coords=coords)
-        data = data.climo.cf.rename_like(sample)
-        if verbose:
-            coords_curr = data.climo.cf.coordinates
-            for coord, names_curr in coords_curr.items():
-                names_prev = coords_prev.get(coord, [])
-                for name_prev, name_curr in zip(names_prev, names_curr):
-                    if name_prev != name_curr:
-                        print(f'Renamed coordinate {coord!r} name {name_prev!r} to {name_curr!r}.')  # noqa: E501
+        data = data.climo.cf.rename_like(xr.Dataset(coords=coords))
+        coords_curr = data.climo.cf.coordinates
+        for key, names_curr in coords_curr.items():
+            names_prev = coords_prev.get(key, [])
+            for name_prev, name_curr in zip(names_prev, names_curr):
+                names[name_curr] = name_prev  # mapping to previous names
+                if verbose and name_prev != name_curr:
+                    print(f'Renamed coordinate {key!r} name {name_prev!r} to {name_curr!r}.')  # noqa: E501
 
         # Manage bounds variables
-        for name, da in data.coords.items():
-            if isinstance(data, xr.Dataset):
-                # Delete bounds indicators when the bounds variable is missing
-                bounds = da.attrs.get('bounds')
-                if bounds and bounds not in data:
-                    del da.attrs['bounds']
-                    if verbose:
-                        print(f'Deleted coordinate {name!r} bounds attribute {bounds!r} (bounds variable not present in dataset).')  # noqa: E501
-                # Infer unset bounds attributes
-                for suffix in ('bnds', 'bounds'):
-                    bounds = name + '_' + suffix
-                    if bounds in data and 'bounds' not in da.attrs:
-                        da.attrs['bounds'] = bounds
-                        if verbose:
-                            print(f'Set coordinate {name!r} bounds to discovered bounds-like variable {bounds!r}.')  # noqa: E501
-                # Standardize bounds name and remove attributes (similar to rename_like)
-                bounds = da.attrs.get('bounds')
-                if bounds and bounds != (bounds_new := da.name + '_bnds'):
-                    da.attrs['bounds'] = bounds_new
-                    data = data.rename_vars({bounds: bounds_new})
-                    if verbose:
-                        print(f'Renamed bounds variable {bounds!r} to {bounds_new!r}.')
-                # Delete all bounds attributes as recommended by CF manual
-                if bounds:
-                    data[bounds_new].attrs.clear()
+        for name, coord in data.coords.items():
             # Delete bounds variables for DataArrays, to prevent CF warning issue
-            elif 'bounds' in da.attrs:
-                del da.attrs['bounds']
+            if not isinstance(data, xr.Dataset):
+                if 'bounds' in da.attrs:
+                    del da.attrs['bounds']
+                continue
+            # Delete bounds indicators when the bounds variable is missing
+            bounds = coord.attrs.get('bounds')
+            if bounds and bounds not in data:
+                del coord.attrs['bounds']
+                if verbose:
+                    print(f'Deleted coordinate {name!r} bounds attribute {bounds!r} (bounds variable not present in dataset).')  # noqa: E501
+            # Infer unset bounds attributes
+            for suffix in ('bnds', 'bounds'):
+                bounds = names.get(name, name) + '_' + suffix
+                if bounds in data and 'bounds' not in coord.attrs:
+                    coord.attrs['bounds'] = bounds
+                    if verbose:
+                        print(f'Set coordinate {name!r} bounds to discovered bounds-like variable {bounds!r}.')  # noqa: E501
+            # Standardize bounds name and remove attributes (similar to rename_like)
+            bounds = coord.attrs.get('bounds')
+            if bounds:
+                data[bounds].attrs.clear()  # recommended by CF
+                if bounds != (bounds_new := name + '_bnds'):
+                    data = data.rename_vars({bounds: bounds_new})
+                    coord = data.coords[name]
+                    coord.attrs['bounds'] = bounds_new
+                    if verbose:
+                        print(f'Renamed coordinate {name!r} bounds {bounds!r} to {bounds_new!r}.')  # noqa: E501
 
         return data
 
