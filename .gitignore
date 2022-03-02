@@ -6,8 +6,8 @@
 # Sample data
 data
 
-# Development
-libby
+# Sample code
+examples
 
 # Local docs builds
 docs/api
