@@ -14,7 +14,8 @@ from ..unit import ureg
 from . import ic  # noqa: F401
 from . import warnings
 
-# Possibly make utilities public in future
+# TODO: Make basic utilities public in future
+# TODO: Add support for NetCDF4 dataset types
 __all__ = []
 
 

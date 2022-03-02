@@ -272,7 +272,7 @@ def _standardize_dependent(
                 arg = arg.climo.to(dest)
         else:
             if not require_quantity and category != 1:
-                arg = arg.climo.quantify(units=unit)
+                arg = arg.climo.quantify(units=dest)
             else:
                 raise TypeError('Pint quantity data or units attributes are required.')
     elif not require_metadata:
@@ -283,7 +283,7 @@ def _standardize_dependent(
                 arg = arg.to(dest)
         else:
             if not require_quantity and category != 1:
-                arg = ureg.Quantity(arg, unit)
+                arg = ureg.Quantity(arg, dest)
             else:
                 raise TypeError('Pint quantity data are required.')
     else:
