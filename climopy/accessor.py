@@ -2954,11 +2954,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 return reg(identifier, accessor=self, **kw_attrs, **kw_methods)
             except KeyError:
                 pass
-        warnings._warn_climopy(
-            f'Automatically adding CFVariable {name!r} to the registry.'
-        )
         var = reg.define(name, standard_name=standard_name, **kw_attrs)
         var = var.modify(accessor=self, **kw_methods)
+        warnings._warn_climopy(f'Automatically added {var!r} to the registry.')
         return var
 
     def _expand_ellipsis(self, key):
