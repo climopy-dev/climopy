@@ -44,6 +44,7 @@ CFVARIABLE_ARGS = (
     'long_name',
     'short_name',
     'standard_name',
+    'standard_units',
     'long_prefix',
     'long_suffix',
     'short_prefix',
@@ -117,13 +118,14 @@ if not _cf_regex:
     warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate regexes.')
 
 # Expand regexes for coordinate detection
-# NOTE: The default criteria only sees 'degree_E' not 'deg_E', 'degree_east' not
+# NOTE: The default criteria only sees 'degree_E' not 'deg_E', and 'degree_east' not
 # 'degree_East'. This is annoying so we make it as flexible as custom unit definition.
 _cf_criteria = getattr(_cf_accessor, 'coordinate_criteria', None)
 if _cf_criteria:
     for key, opt in zip(('longitude', 'latitude'), (_longitude_units, _latitude_units)):
-        values = [s.strip() for i, s in enumerate(opt.split('=')) if i not in (1, 2)]
-        _cf_criteria[key]['units'] = tuple(values)  # skips definition and abbreviation
+        _cf_criteria[key]['units'] = tuple(  # skip definition and abbreviation indices
+            s.strip() for i, s in enumerate(opt.split('=')) if i not in (1, 2)
+        )
 if not _cf_criteria:
     warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate criteria.')
 
