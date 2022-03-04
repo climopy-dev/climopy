@@ -941,6 +941,16 @@ class CFVariableRegistry(object):
         except (KeyError, TypeError):  # allow e.g. vreg.get(None, default)
             return default
 
+    def undefine(self, key):
+        """
+        Remove the variable if present, otherwise emit a warning.
+        """
+        var = self.get(key, None)
+        if var is None:
+            warnings._warn_climopy(f'Variable {key!r} is undefined or already removed.')
+        else:
+            del self._database[var.name]
+
 
 # Alternate name inherited by registry-specific subclass inheritance. This mimics
 # pint's registry-specific Unit and Quantity internals.
