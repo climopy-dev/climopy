@@ -99,28 +99,29 @@ with warnings.catch_warnings():
 
     @register_derivation('cell_height')
     def cell_height(self):
-        # WARNING: Must use _get_item with add_cell_measures=False to avoid recursion
+        # WARNING: Previously used air_pressure_at_mean_sea_level for aquaplanet
+        # models but better instead to always use surface pressure... otherwise
+        # this will give weird weightings for datasets with realistic topography.
         type_ = self.cf.vertical_type
         if type_ == 'temperature':
             data = self.vars['pseudo_density'] * self.coords['vertical_delta']
         elif type_ == 'pressure':
             ps = None
             data = bnds = self.coords['vertical_bnds']
-            for candidate in ('surface_air_pressure', 'air_pressure_at_mean_sea_level'):
-                if candidate not in self.vars:
-                    continue
-                # Conform dimensionality
-                ps = 0 * data + self.vars[candidate]
+            if 'surface_air_pressure' in self.vars:
+                # Set hard minimum bounds (possibly for multiple levels)
+                ps = 0 * data + self.vars['surface_air_pressure']
                 data = data + 0 * ps
-                data = data.transpose(*ps.dims)
-                # Set hard minimum vertical bounds (possibly for multiple levels)
+                data = data.transpose(*ps.dims)  # conform dimensionality
                 mask = data.data > ps.data
                 data.data[mask] = ps.data[mask]
                 # Expand near-surface vertical bounds to actual surface
-                idx = {
-                    'bnds': bnds.cf.isel(vertical=0).data.argmax(),
-                    'vertical': bnds.isel(bnds=0).data.argmax(),
-                }
+                idx = {}
+                if 'vertical' not in bnds.cf.sizes:
+                    idx['bnds'] = bnds.data.argmax()  # e.g. single-level
+                else:
+                    idx['bnds'] = bnds.cf.isel(vertical=0).data.argmax()
+                    idx['vertical'] = bnds.isel(bnds=0).data.argmax()
                 mask = data.climo[idx].data < ps.climo[idx].data
                 data.climo[idx].data[mask] = ps.climo[idx].data[mask]
             data = data.diff('bnds').isel(bnds=0)
