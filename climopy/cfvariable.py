@@ -370,6 +370,18 @@ class CFVariable(object):
                 name = m.group(1)
                 time.add(method)
 
+        # Get variable
+        reg = self._registry
+        if reg is None:
+            raise RuntimeError(
+                'Variable must have an assigned registry. Try creating with '
+                'CFVariableRegistry.define or looking up with CFVariableRegistry().'
+            )
+        var = copy.copy(self)
+        var._accessor = accessor
+        if var.name[0] == 'c' and var.long_name and 'convergence' in var.long_name and _pop_integral(latitude):  # noqa: E501
+            var = reg._get_item(var.name[1:])  # Green's theorem; e.g. cehf --> ehf
+
         # Apply basic overrides
         reg = self._registry or {}
         kwpost = {  # update these later!

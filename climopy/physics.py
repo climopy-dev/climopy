@@ -122,13 +122,14 @@ with warnings.catch_warnings():
                 # Set hard minimum bounds (possibly for multiple levels)
                 ps = 0 * data + self.vars['surface_air_pressure']
                 data = data + 0 * ps
-                data = data.transpose(*ps.dims)
+                data = data.transpose(*ps.dims)  # conform dimensionality
                 mask = data.data > ps.data
                 data.data[mask] = ps.data[mask]
                 # Expand near-surface vertical bounds to actual surface
                 idx = {}
-                if 'vertical' in bnds.cf.sizes:
+                if 'vertical' not in bnds.cf.sizes:
                     idx['bnds'] = bnds.data.argmax()  # e.g. single-level
+                    pass
                 else:
                     idx['bnds'] = bnds.cf.isel(vertical=0).data.argmax()
                     idx['vertical'] = bnds.isel(bnds=0).data.argmax()

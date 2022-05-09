@@ -2881,30 +2881,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             value = np.atleast_1d(value)  # fix assignment of scalar pint quantities
         data[...] = value
 
-    def _cf_repr(self, brackets=True, varwidth=None, maxlength=None, padlength=None, **kwargs):  # noqa: E501
-        """
-        Get representation even if `cfvariable` is not present.
-        """
-        # Get content inside CFVariable(...) repr
-        try:
-            var = self._cf_variable(**kwargs)
-        except AttributeError:
-            repr_ = self.data.name or 'unknown'
-        else:
-            repr_ = REGEX_REPR_PAREN.match(repr(var)).group(1)
-
-        # Align names and truncate key=value pairs
-        padlength = padlength or 0
-        if varwidth is not None and (m := REGEX_REPR_COMMA.match(repr_)):
-            name, _, info = m.groups()  # pad between canonical name + subsequent info
-            repr_ = name[:varwidth] + ',' + ' ' * (varwidth - len(name)) + info
-        if maxlength is not None and len(repr_) > maxlength - padlength:
-            repr_ = repr_[:maxlength - padlength - 4]
-            repr_ = repr_[:repr_.rfind(' ')] + ' ...'
-        if brackets:
-            repr_ = REGEX_REPR_COMMA.sub(r'\1\2<\3>', repr_)
-        return ' ' * padlength + repr_
-
     def _cf_variable(self, use_kw_attrs=True, use_cf_attrs=True):
         """
         Return a `CFVariable` with options for excluding information.
@@ -2998,6 +2974,30 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         var = var.modify(accessor=self, **kw_methods)
         warnings._warn_climopy(f'Automatically added {var!r} to the registry.')
         return var
+
+    def _cf_repr(self, brackets=True, varwidth=None, maxlength=None, padlength=None, **kwargs):  # noqa: E501
+        """
+        Get representation even if `cfvariable` is not present.
+        """
+        # Get content inside CFVariable(...) repr
+        try:
+            var = self._cf_variable(**kwargs)
+        except AttributeError:
+            repr_ = self.data.name or 'unknown'
+        else:
+            repr_ = REGEX_REPR_PAREN.match(repr(var)).group(1)
+
+        # Align names and truncate key=value pairs
+        padlength = padlength or 0
+        if varwidth is not None and (m := REGEX_REPR_COMMA.match(repr_)):
+            name, _, info = m.groups()  # pad between canonical name and subsequent info
+            repr_ = name[:varwidth] + ',' + ' ' * (varwidth - len(name)) + info
+        if maxlength is not None and len(repr_) > maxlength - padlength:
+            repr_ = repr_[:maxlength - padlength - 4]
+            repr_ = repr_[:repr_.rfind(' ')] + ' ...'
+        if brackets:
+            repr_ = REGEX_REPR_COMMA.sub(r'\1\2<\3>', repr_)
+        return ' ' * padlength + repr_
 
     def _expand_ellipsis(self, key):
         """
