@@ -295,15 +295,16 @@ class CFVariable(object):
         # NOTE: Important to add prefixes and suffixes to long_name *after* using
         # as default short_name. Common use case is to create "child" variables with
         # identical short_name using e.g. vreg.define('var', long_prefix='prefix')
-        standard_units = self._inherit_prop('standard_units', standard_units)
         long_name = self._inherit_prop('long_name', long_name)
-        short_name = self._inherit_prop('short_name', short_name, default=long_name)
         long_name = self._adjust_name(long_name, long_prefix or short_prefix, long_suffix or short_suffix)  # noqa: E501
-        short_name = self._adjust_name(short_name, short_prefix, short_suffix)
         standard_name = self._inherit_prop('standard_name', standard_name)
+        if long_name is None and standard_name is not None:
+            long_name = re.sub(r'_', ' ', standard_name).strip()
         if standard_name is None and long_name is not None:
-            standard_name = re.sub(r'\W', '_', long_name).strip('_').lower()
-            standard_name = re.sub(r'_+', '_', standard_name)  # squeeze consecutive
+            standard_name = re.sub(r'\W+', '_', long_name).strip('_').lower()
+        short_name = self._inherit_prop('short_name', short_name, default=long_name)
+        short_name = self._adjust_name(short_name, short_prefix, short_suffix)
+        standard_units = self._inherit_prop('standard_units', standard_units)
 
         # Add attributes
         default_axis_formatter = 'auto'
@@ -367,6 +368,17 @@ class CFVariable(object):
             else:
                 return {arg}
 
+        # Get reduction method specifications
+        # TODO: Expand this section
+        longitude = _as_set(longitude)
+        latitude = _as_set(latitude)
+        vertical = _as_set(vertical)
+        time = _as_set(time)
+        for method in ('autocorr',):
+            if m := re.match(rf'\A(.+)_{method}\Z', self.name):
+                name = m.group(1)
+                time.add(method)
+
         # Get variable
         reg = self._registry
         if reg is None:
@@ -376,19 +388,8 @@ class CFVariable(object):
             )
         var = copy.copy(self)
         var._accessor = accessor
-        if var.name[0] == 'c' and 'convergence' in var.long_name and _pop_integral(latitude):  # noqa: E501
-            var = self._get_item(var.name[1:])  # Green's theorem; e.g. cehf --> ehf
-
-        # Get reduction method specifications
-        # TODO: Expand this section
-        longitude = _as_set(longitude)
-        latitude = _as_set(latitude)
-        vertical = _as_set(vertical)
-        time = _as_set(time)
-        for method in ('autocorr',):
-            if m := re.match(rf'\A(.+)_{method}\Z', var.name):
-                name = m.group(1)
-                time.add(method)
+        if var.name[0] == 'c' and var.long_name and 'convergence' in var.long_name and _pop_integral(latitude):  # noqa: E501
+            var = reg._get_item(var.name[1:])  # Green's theorem; e.g. cehf --> ehf
 
         # Apply basic overrides
         kwmod = {  # update later!
