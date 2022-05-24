@@ -237,13 +237,19 @@ def _yy_metadata(func):
         y_out = func(y_in, *args, **kwargs)
 
         # Build back the DataArray
+        # NOTE: Data might be shifted left by one if had even numbered
+        # runmean window, so the padding may not be exactly symmetrical.
         if isinstance(y, xr.DataArray):
             axis = kwargs['axis']
             dim = y.dims[axis]
-            ntrim = (y_in.shape[axis] - y_out.shape[axis]) // 2
+            d1 = (y_in.shape[axis] - y_out.shape[axis]) // 2
+            d2 = y_in.shape[axis] - y_out.shape[axis] - d1
             dim_coords = None
-            if ntrim > 0 and dim in y.coords:
-                dim_coords = {dim: y.coords[dim][ntrim:-ntrim]}
+            if d1 > 0 and dim in y.coords:
+                if kwargs.get('center', True):
+                    dim_coords = {dim: y.coords[dim][d1:-d2]}
+                else:
+                    dim_coords = {dim: y.coords[dim][d1 + d2:]}
             y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
 
         return y_out
@@ -269,10 +275,9 @@ def _xyy_metadata(func):
             axis = kwargs['axis']
             dim = y.dims[axis]
             dx = (y_in.shape[axis] - y_out.shape[axis]) // 2
+            dim_coords = None
             if dx > 0 and dim in y.coords:
                 dim_coords = {dim: y.coords[y.dims[axis]][dx:-dx]}
-            else:
-                dim_coords = None
             y_out = _dataarray_from(y, y_out, dim_coords=dim_coords)
 
         return y_out

@@ -3575,7 +3575,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             Passed to `~.spectral.runmean`.
         """
         data = self.data
-        indexers, _ = self._parse_indexers(indexers, allow_kwargs=False, **kwargs)
+        indexers, kwargs = self._parse_indexers(indexers, allow_kwargs=True, **kwargs)
         for dim, window in indexers.items():
             if isinstance(window, ureg.Quantity):
                 coords = data.climo.coords[dim]
@@ -3583,7 +3583,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 window = int(window.climo.magnitude)
                 if window <= 0:
                     raise ValueError('Invalid window length.')
-            data = spectral.runmean(data, window, dim=dim)
+            data = spectral.runmean(data, window, dim=dim, **kwargs)
         return data
 
     @_CFAccessor._clear_cache
