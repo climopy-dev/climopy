@@ -32,36 +32,6 @@ __all__ = [
     'register_transformation',
 ]
 
-# Custom cell measures and associated coordinates. Naming conventions are consistent
-# with existing 'cell' style names and avoid conflicts with axes names / standard names.
-# NOTE: width * depth = area and width * depth * height = volume
-# NOTE: height should generally be a mass-per-unit-area weighting rather than distance
-CELL_MEASURE_COORDS = {
-    'width': ('longitude',),
-    'depth': ('latitude',),
-    'height': ('vertical',),
-    'duration': ('time',),
-    'area': ('longitude', 'latitude'),
-    'volume': ('longitude', 'latitude', 'vertical'),
-}
-
-# One-to-one coordinate-cell measure relationships
-CELL_MEASURE_BY_COORD = {
-    coords[0]: measure for measure, coords in CELL_MEASURE_COORDS.items()
-    if len(coords) == 1
-}
-
-# Cell measure names added in calc.py
-CELL_MEASURE_NAMES = {
-    measure: 'cell_' + measure for measure in CELL_MEASURE_COORDS
-}
-
-# Add cell measures as valid cf-detected variables
-if hasattr(_cf_accessor, '_CELL_MEASURES'):
-    _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
-else:
-    warnings._warn_climopy('cf_xarray API changed. Cannot update cell measures.')
-
 # Attributes passed to cfvariable
 CFVARIABLE_ARGS = (
     'long_name',
@@ -86,19 +56,51 @@ PARSEKEY_ARGS = (
 )
 
 # Expand regexes for automatic coordinate detection with standardize_coords
-if hasattr(_cf_accessor, 'regex'):
-    _cf_accessor.regex = {
-        'time': 'lag[0-9]*|date[0-9]*|time[0-9]*|datetime[0-9]*|min|hour|day|week|month|year',  # noqa: E501
-        'vertical': '([a-z]*le?v|bottom_top|sigma|h(ei)?ght|altitude|depth|isobaric|pres|isotherm)[a-z0-9_]*',  # noqa: E501
-        'latitude': 'y?lat[a-z0-9_]*',
-        'longitude': 'x?lon[a-z0-9_]*',
-        'X': 'xc?',
-        'Y': 'yc?',
-    }
-    _cf_accessor.regex['Z'] = _cf_accessor.regex['vertical']
-    _cf_accessor.regex['T'] = _cf_accessor.regex['time']
+# NOTE: The new 'vertical' regex covers old options 'nav_lev', 'gdep', 'lv_', '[o]*lev',
+# 'depth' and the time regex includes new matches 'date', 'datetime', 'lag'.
+# NOTE: Suffixes are irrelevant because we only test re.match without end word
+# or end string atoms. The old regex dictionary needlessly includes suffixes.
+_cf_regex = getattr(_cf_accessor, 'regex', None)
+if _cf_regex:
+    _cf_patterns = all(isinstance(_, re.Pattern) for _ in _cf_accessor.regex.values())
+    _cf_strings = all(isinstance(_, str) for _ in _cf_regex.values())
+    _cf_regex.update({
+        'longitude': '(?:x|nav_)?(?:lon|g?lam)',
+        'latitude': '(?:y|nav_)?(?:lat|g?phi)',
+        'vertical': (
+            r'z\Z|(?:[a-z_]+)?(?:le?v|g?dep)|pres|sigma|h(?:ei)?ght|altitude'
+            r'|isobar(?:ic)?|isotherm(?:al)?|isentrop(?:e|ic)|top_bottom|bottom_top'
+        ),
+        'time': r't\Z|time|date|datetime|lag|min|hour|day|week|month|year',
+        'X': r'x\Z|i\Z|n(?:lon|phi|i)',
+        'Y': r'y\Z|j\Z|n(?:lat|phi|j)',
+    })
+    _cf_regex['Z'] = _cf_regex['vertical']
+    _cf_regex['T'] = _cf_regex['time']
+    if _cf_patterns:
+        _cf_regex.update({key: re.compile(value) for key, value in _cf_regex.items()})
+    elif not _cf_strings:
+        warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate regexes.')  # noqa: E501
+
+# Custom cell measures and associated coordinates. Naming conventions are consistent
+# with existing 'cell' style names and avoid conflicts with axes names / standard names.
+# NOTE: width * depth = area and width * depth * height = volume
+# NOTE: height should generally be a mass-per-unit-area weighting rather than distance
+CELL_MEASURE_COORDS = {
+    'width': ('longitude',),
+    'depth': ('latitude',),
+    'height': ('vertical',),
+    'duration': ('time',),
+    'area': ('longitude', 'latitude'),
+    'volume': ('longitude', 'latitude', 'vertical'),
+}
+COORD_CELL_MEASURE = {
+    coords[0]: m for m, coords in CELL_MEASURE_COORDS.items() if len(coords) == 1
+}
+if hasattr(_cf_accessor, '_CELL_MEASURES'):
+    _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
 else:
-    warnings._warn_climopy('cf_xarray API changed. Cannot update regexes.')
+    warnings._warn_climopy('cf_xarray API changed. Cannot update cell measures.')
 
 # Mean and average templates
 _template_meansum = """
@@ -1455,7 +1457,7 @@ class ClimoAccessor(object):
                         coordinate = self.cf._encode_name(dim, 'coordinates')
                     except KeyError:
                         continue
-                    measure = CELL_MEASURE_BY_COORD[coordinate]
+                    measure = COORD_CELL_MEASURE[coordinate]
                     try:
                         measure = self.cf._decode_name(measure, 'cell_measures', search_registry=False)  # noqa: E501
                     except KeyError:
@@ -1709,7 +1711,7 @@ class ClimoAccessor(object):
                 # NOTE: This catches RuntimeErrors emitted from _get_bounds if fail to
                 # calculate bounds and NotImplementedErrors from the definitions e.g.
                 # if there is no algorithm for cell height (child of RuntimeError)
-                name = CELL_MEASURE_NAMES[measure]
+                name = 'cell_' + measure
                 with warnings.catch_warnings():
                     warnings.simplefilter(action)  # possibly ignore warnings
                     try:
@@ -3346,7 +3348,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         dims = []
         measures = set()
         for dim in dims_orig:
-            is_coord = dim in CELL_MEASURE_BY_COORD
+            is_coord = dim in COORD_CELL_MEASURE
             is_measure = dim in CELL_MEASURE_COORDS
             if not is_coord and not is_measure:
                 try:
@@ -3354,11 +3356,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 except KeyError:
                     raise ValueError(f'Missing {cell_method} dimension {dim!r}.')
                 names = (dim,)
-                measure = CELL_MEASURE_BY_COORD[coordinate]
+                measure = COORD_CELL_MEASURE[coordinate]
                 coordinates = (coordinate,)
             else:
                 names = ()
-                measure = dim if is_measure else CELL_MEASURE_BY_COORD[dim]
+                measure = dim if is_measure else COORD_CELL_MEASURE[dim]
                 coordinates = (dim,) if is_coord else CELL_MEASURE_COORDS[dim]
                 for coord in coordinates:
                     try:
