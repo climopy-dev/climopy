@@ -941,7 +941,7 @@ def response(dx, b, a=1, /, n=1000, manual=False):
 
 @quack._yy_metadata
 @quant.while_dequantified('=y', '=y')
-def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
+def runmean(y, n, /, axis=-1, wintype='boxcar', pad=np.nan, center=True):
     """
     Apply running average to array.
 
@@ -951,17 +951,20 @@ def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
         Data, and we roll along axis `axis`.
     n : int, optional
         Window length. Passed to `window`.
-    wintype : int or array-like
-        Window type. Passed to `window`.
     axis : int, optional
         Axis to filter.
+    wintype : int or array-like
+        Window type. Passed to `window`.
+    center : bool, optional
+        If ``True``, pad symmetrically about the center of the window.
+        If ``False``, pad the left side the window.
     pad : bool, optional
-        The pad value used to fill the array back to its original size.
-        Set to `None` to disable padding.
+        The pad value used to fill the array back to its original `axis` size.
+        If ``None`` then padding is disabled and the `axis` size is reduced.
 
     Returns
     -------
-    y : array-like
+    array-like
         Data windowed along axis `axis`.
 
     Notes
@@ -970,32 +973,37 @@ def runmean(y, n, /, wintype='boxcar', axis=-1, pad=np.nan):
     `this post <https://stackoverflow.com/a/4947453/4970632>`__. This creates *view*
     of original array, without duplicating data, so very efficient approach.
     """
-    # * For 1-D data numpy `convolve` would be appropriate, problem is `convolve`
-    #   doesn't take multidimensional input!
-    # * If `y` has odd number of obs along axis, result will have last element
-    #   trimmed. Just like `filter`.
-    # * Strides are apparently the 'number of bytes' one has to skip in memory
-    #   to move to next position *on the given axis*. For example, a 5 by 5
-    #   array of 64bit (8byte) values will have array.strides == (40, 8).
-    # Roll axis, reshape, and get generate running dimension
+    # Roll axis, reshape, and generate running dimension
     if axis < 0:
         axis += y.ndim
     y = np.moveaxis(y, axis, -1)
     w = window(n, wintype)
 
     # Manipulate array
+    # * For 1-D data numpy `convolve` would be appropriate, problem is `convolve`
+    #   doesn't take multidimensional input!
+    # * If `y` has odd number of observations along axis, result will have
+    #   last element trimmed. This is consistent with `filter`.
+    # * Strides are apparently the 'number of bytes' one has to skip in memory
+    #   to move to next position *on the given axis*. For example, a 5 by 5
+    #   array of 64-bit (8-byte) values will have array.strides == (40, 8).
     shape = y.shape[:-1] + (y.shape[-1] - (n - 1), n)
     strides = (*y.strides, y.strides[-1])  # repeat striding on end
     yr = np.lib.stride_tricks.as_strided(y, shape=shape, strides=strides)
-    yr = (yr * w).mean(axis=-1)  # broadcasts to right
+    yr = (yr * w).mean(axis=-1)  # weights broadcast to right
 
     # Optionally fill the rows taken up
-    # NOTE: Data might be shifted left by one if had even numbered window
+    # NOTE: Data might be shifted left by one if had even numbered
+    # runmean window, so the padding may not be exactly symmetrical.
     if pad is not None:
-        n1 = (y.shape[-1] - yr.shape[-1]) // 2
-        n2 = (y.shape[-1] - yr.shape[-1]) - n1
-        y1 = pad * np.ones((*yr.shape[:-1], n1))
-        y2 = pad * np.ones((*yr.shape[:-1], n2))
+        d1 = (y.shape[-1] - yr.shape[-1]) // 2
+        d2 = (y.shape[-1] - yr.shape[-1]) - d1
+        if center:
+            y1 = pad * np.ones((*yr.shape[:-1], d1))
+            y2 = pad * np.ones((*yr.shape[:-1], d2))
+        else:
+            y1 = pad * np.ones((*yr.shape[:-1], d1 + d2))
+            y2 = pad * np.ones((*yr.shape[:-1], 0))
         yr = np.concatenate((y1, yr, y2), axis=-1)
 
     return np.moveaxis(yr, -1, axis)

@@ -71,12 +71,11 @@ REGEX_REPR_PAREN = re.compile(r'\A.*?\((.*)\)\Z')  # content inside first parent
 
 # Custom cell measures and associated coordinates. Naming conventions are consistent
 # with existing 'cell' style names and avoid conflicts with axes names / standard names.
-# NOTE: The width * depth = area and width * depth * height = volume
-# TODO: The height cell measures are generally mass-per-unit-area implying volume
-# is more like mass but may want to support actual volume and height in future.
+# NOTE: width * depth = area and width * depth * height = volume
+# NOTE: height should generally be a mass-per-unit-area weighting rather than distance
 CELL_MEASURE_COORDS = {
-    'length': ('longitude',),
-    'width': ('latitude',),
+    'width': ('longitude',),
+    'depth': ('latitude',),
     'height': ('vertical',),
     'duration': ('time',),
     'area': ('longitude', 'latitude'),
@@ -97,6 +96,8 @@ else:
 # or end string atoms. The old regex dictionary needlessly includes suffixes.
 _cf_regex = getattr(_cf_accessor, 'regex', None)
 if _cf_regex:
+    _cf_patterns = all(isinstance(_, re.Pattern) for _ in _cf_accessor.regex.values())
+    _cf_strings = all(isinstance(_, str) for _ in _cf_regex.values())
     _cf_regex.update({
         'longitude': '(?:x|nav_)?(?:lon|g?lam)',
         'latitude': '(?:y|nav_)?(?:lat|g?phi)',
@@ -110,12 +111,10 @@ if _cf_regex:
     })
     _cf_regex['Z'] = _cf_regex['vertical']
     _cf_regex['T'] = _cf_regex['time']
-    if all(isinstance(_, re.Pattern) for _ in _cf_accessor.regex.values()):
+    if _cf_patterns:
         _cf_regex.update({key: re.compile(value) for key, value in _cf_regex.items()})
-    elif not all(isinstance(_, str) for _ in _cf_regex.values()):
-        _cf_regex = None
-if not _cf_regex:
-    warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate regexes.')
+    elif not _cf_strings:
+        warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate regexes.')  # noqa: E501
 
 # Expand regexes for coordinate detection
 # NOTE: The default criteria only sees 'degree_E' not 'deg_E', and 'degree_east' not
@@ -3578,7 +3577,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             Passed to `~.spectral.runmean`.
         """
         data = self.data
-        indexers, _ = self._parse_indexers(indexers, allow_kwargs=False, **kwargs)
+        indexers, kwargs = self._parse_indexers(indexers, allow_kwargs=True, **kwargs)
         for dim, window in indexers.items():
             if isinstance(window, ureg.Quantity):
                 coords = data.climo.coords[dim]
@@ -3586,7 +3585,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 window = int(window.climo.magnitude)
                 if window <= 0:
                     raise ValueError('Invalid window length.')
-            data = spectral.runmean(data, window, dim=dim)
+            data = spectral.runmean(data, window, dim=dim, **kwargs)
         return data
 
     @_CFAccessor._clear_cache
