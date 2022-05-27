@@ -98,20 +98,23 @@ pi = ureg.Quantity(math.pi, '')
 tau = ureg.Quantity(2.0 * math.pi, '')
 
 #: Dry air gas constant
+#: (equivalent to :math:`R / M_d`)
 Rd = R / Md
 
 #: Water vapor gas constant
+#: (equivalent to :math:`R / M_w`)
 Rm = R / Mw
 
 #: `Poisson constant\
 #: <http://glossary.ametsoc.org/wiki/Poisson_constant>`__
-#: for dry air. Equivalent to :math:`R_d / c_p`.
+#: for dry air (equivalent to :math:`R_d / c_p`)
 kappa = Rd / cp
 
 #: `Boltzmann constant\
 #: <https://en.wikipedia.org/wiki/Boltzmann_constant>`__
+#: (equivalent to :math:`R / N_a`)
 kb = R / Na
 
 #: `Stefan-Boltzmann constant\
 #: <https://en.wikipedia.org/wiki/Stefan–Boltzmann_constant>`__
-sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
+sigma = ((2 * (pi ** 5) * (kb ** 4)) / (15 * (h ** 3) * (c ** 2))).to('W K^-4 m^-2')
