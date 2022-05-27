@@ -55,6 +55,26 @@ PARSEKEY_ARGS = (
     'search_registry',
 )
 
+# Custom cell measures and associated coordinates. Naming conventions are consistent
+# with existing 'cell' style names and avoid conflicts with axes names / standard names.
+# NOTE: width * depth = area and width * depth * height = volume
+# NOTE: height should generally be a mass-per-unit-area weighting rather than distance
+CELL_MEASURE_COORDS = {
+    'width': ('longitude',),
+    'depth': ('latitude',),
+    'height': ('vertical',),
+    'duration': ('time',),
+    'area': ('longitude', 'latitude'),
+    'volume': ('longitude', 'latitude', 'vertical'),
+}
+COORD_CELL_MEASURE = {
+    coords[0]: m for m, coords in CELL_MEASURE_COORDS.items() if len(coords) == 1
+}
+if hasattr(_cf_accessor, '_CELL_MEASURES'):
+    _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
+else:
+    warnings._warn_climopy('cf_xarray API changed. Cannot update cell measures.')
+
 # Expand regexes for automatic coordinate detection with standardize_coords
 # NOTE: The new 'vertical' regex covers old options 'nav_lev', 'gdep', 'lv_', '[o]*lev',
 # 'depth' and the time regex includes new matches 'date', 'datetime', 'lag'.
@@ -81,26 +101,6 @@ if _cf_regex:
         _cf_regex.update({key: re.compile(value) for key, value in _cf_regex.items()})
     elif not _cf_strings:
         warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate regexes.')  # noqa: E501
-
-# Custom cell measures and associated coordinates. Naming conventions are consistent
-# with existing 'cell' style names and avoid conflicts with axes names / standard names.
-# NOTE: width * depth = area and width * depth * height = volume
-# NOTE: height should generally be a mass-per-unit-area weighting rather than distance
-CELL_MEASURE_COORDS = {
-    'width': ('longitude',),
-    'depth': ('latitude',),
-    'height': ('vertical',),
-    'duration': ('time',),
-    'area': ('longitude', 'latitude'),
-    'volume': ('longitude', 'latitude', 'vertical'),
-}
-COORD_CELL_MEASURE = {
-    coords[0]: m for m, coords in CELL_MEASURE_COORDS.items() if len(coords) == 1
-}
-if hasattr(_cf_accessor, '_CELL_MEASURES'):
-    _cf_accessor._CELL_MEASURES = tuple(CELL_MEASURE_COORDS)
-else:
-    warnings._warn_climopy('cf_xarray API changed. Cannot update cell measures.')
 
 # Mean and average templates
 _template_meansum = """
