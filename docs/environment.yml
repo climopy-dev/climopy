@@ -28,7 +28,7 @@ dependencies:
     - docutils==0.16
     - sphinx>=3.0
     - sphinx-copybutton
-    - sphinx_rtd_theme==0.4.3
+    - sphinx_rtd_light_dark
     - jinja2==2.11.3
     - nbsphinx==0.8.1
     - jupytext
