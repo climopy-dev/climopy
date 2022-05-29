@@ -66,7 +66,7 @@ extensions = [
     'sphinx_automodapi.automodapi',  # see: https://github.com/lukelbd/sphinx-automodapi/tree/proplot-mods  # noqa: #501
     'sphinxcontrib.bibtex',  # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html  # noqa: #501
     'sphinx_copybutton',
-    'sphinx-rtd-light-dark',
+    'sphinx_rtd_light_dark',
 ]
 
 extlinks = {
