@@ -58,17 +58,22 @@ REGEX_CONSTANTS = re.compile(r'\b([-+]?[0-9]+[a-zA-Z]+)')
 #: vertical pressure distance and terms normalized per unit mass per unit area
 #: (:math:`x \cdot g`).
 ureg = UnitRegistry(
+    # NOTE: If logging messages are enabled with e.g. due to another module calling
+    # logging.basicConfig() then the below will emit warnings. Can temporarily
+    # disable these messages using 'on_redefinition'. Note also the below definitions
+    # that overwrite existing definitions are always a superset of existing aliases
+    # -- we only omit @alias to change the default long or short string repr.
+    # See: https://github.com/hgrecco/pint/issues/1304
+    # NOTE: Pint-xarray asserts that force_ndarray_like=True is required for scalar
+    # conversions to work but haven't run into issues so far, and encountered an
+    # issue due to negative integer exponentiation after enabling this option.
+    # See: https://pint-xarray.readthedocs.io/en/stable/creation.html#attaching-units
+    # See: https://github.com/hgrecco/pint/issues/1203
     preprocessors=[
         lambda s: s.replace('%%', ' permille '),
         lambda s: s.replace('%', ' percent '),
     ],
-    # NOTE: Pint-xarray mysteriously declares that force_ndarary_like=True is
-    # required for things to "work properly" but can't find other information.
-    # Everything seems to work just fine without it so far...
-    # https://pint-xarray.readthedocs.io/en/stable/creation.html#attaching-units
-    # WARNING: Encountered this issue after enabling this option:
-    # https://github.com/hgrecco/pint/issues/1203
-    # force_ndarray_like=True,
+    on_redefinition='ignore',
 )
 
 #: Alias for the default `pint.UnitRegistry` `ureg`. The name "units" is consistent
@@ -96,13 +101,13 @@ ureg.define('_10mb = 10 * mb = 10mb')
 ureg.define('_100mb = 100 * mb = 100mb')
 ureg.define('_1000mb = 1000 * mb = 1000mb')
 
+# Vorticity definitions
+ureg.define('vorticity_unit = 10^-5 s^-1 = VU')
+ureg.define('potential_vorticity_unit = 10^-6 K m^2 s^-1 kg^-1 = PVU')
+
 # Pressure definitions (replace 'barn' with 'bar' as default 'b' unit)
 ureg.define('bar = 10^5 Pa = b')
 ureg.define('inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = in_Hg = inch_Hg = inches_Hg = inches_mercury')  # noqa: E501
-
-# Vorticity definitions
-ureg.define('potential_vorticity_unit = 10^-6 K m^2 s^-1 kg^-1 = PVU')
-ureg.define('vorticity_unit = 10^-5 s^-1 = 10^-5 s^-1 = VU')
 
 # Degree definitions with unicode short repr
 ureg.define('degree = π / 180 * radian = ° = deg = arcdeg = arcdegree = angular_degree')
@@ -150,6 +155,9 @@ ureg.define('@alias meter = metre = geopotential_meter = geopotential_metre = gp
 
 # Set up for use with matplotlib
 ureg.setup_matplotlib()
+
+# Re-enable redefinition warnings
+ureg._on_redefinition = 'warn'
 
 
 def _to_pint_string(unit):
