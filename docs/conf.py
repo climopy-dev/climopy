@@ -84,7 +84,7 @@ copybutton_remove_prompts = True
 
 # Bibtex file locations
 import glob
-bibtex_bibfiles = glob.glob('bibs/*')
+bibtex_bibfiles = glob.glob('_bibfiles/*')
 
 # Run doctest test blocks
 doctest_test_doctest_blocks = 'default'
