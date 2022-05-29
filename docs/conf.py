@@ -66,7 +66,7 @@ extensions = [
     'sphinx_automodapi.automodapi',  # see: https://github.com/lukelbd/sphinx-automodapi/tree/proplot-mods  # noqa: #501
     'sphinxcontrib.bibtex',  # see: https://sphinxcontrib-bibtex.readthedocs.io/en/latest/quickstart.html  # noqa: #501
     'sphinx_copybutton',
-    'sphinx_rtd_light_dark',
+    'sphinx-rtd-light-dark',
 ]
 
 extlinks = {
@@ -173,7 +173,7 @@ default_role = 'py:obj'
 # -- Options for HTML output -------------------------------------------------
 
 # Logo
-html_logo = '_static/logo_square.png'
+html_logo = os.path.join('_static', 'logo_square.png')
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
