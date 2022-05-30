@@ -17,7 +17,7 @@ import pint
 import xarray as xr
 from cf_xarray import accessor as _cf_accessor
 
-from . import DERIVATIONS, TRANSFORMATIONS, const, diff, spectral, utils, var
+from . import const, diff, spectral, utils, var
 from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
@@ -35,8 +35,6 @@ __all__ = [
     'ClimoAccessor',
     'ClimoDataArrayAccessor',
     'ClimoDatasetAccessor',
-    'register_derivation',
-    'register_transformation',
 ]
 
 # Attributes passed to cfvariable
@@ -58,7 +56,6 @@ PARSEKEY_ARGS = (
     'search_vars',
     'search_coords',
     'search_derivations',
-    'search_transformations',
     'search_registry',
 )
 
@@ -974,7 +971,7 @@ class _CoordsQuantified(object):
         key,
         search_cf=True,
         search_registry=True,
-        search_transformations=True,
+        search_derivations=True,
     ):
         """
         Return the coordinates, transformation function, and flag.
@@ -1003,9 +1000,9 @@ class _CoordsQuantified(object):
         # Find transformed coordinate
         # WARNING: Cannot call native items() or values() because they call
         # overridden __getitem__ internally. So recreate coordinate mapping below.
-        if search_transformations:
+        if search_derivations:
             coords = (super(_CoordsQuantified, self).__getitem__(key) for key in self)
-            if tup := data.climo._find_any_transformation(coords, key):
+            if tup := data.climo._find_derivation(key, *coords.values()):
                 transformation, coord = tup
                 return transformation, coord, flag
 
@@ -1018,7 +1015,7 @@ class _CoordsQuantified(object):
                 if tup := self._parse_key(
                     name + flag,
                     search_cf=search_cf,
-                    search_transformations=search_transformations,
+                    search_derivations=search_derivations,
                     search_registry=False,
                 ):
                     return tup
@@ -1038,8 +1035,8 @@ class _CoordsQuantified(object):
             Whether to translate CF names.
         search_registry : bool, default: True
             Whether to translate registered names and aliases.
-        search_transformations : bool, default: True
-            Whether to perform registered transformations of coordinates.
+        search_derivations : bool, default: True
+            Whether to search for registered derivations of existing variables.
         sharp_cutoff : bool, default: True
             The cutoff behavior used when calculating default non-datetime coordinate
             bounds in the event that an explicit ``'bounds'`` variable is unavailable.
@@ -1242,57 +1239,35 @@ class ClimoAccessor(object):
 
         return indexers_scaled
 
-    def _find_derivation(self, dest):
+    def _find_derivation(self, key, *arrays):
         """
-        Find derivation that generates the variable name. Return `None` if not found.
+        Find possibly nested series of derivations that get from input data arrays
+        A, B, C, ... --> output data array Z. Account for `CFVariableRegistry` names.
         """
-        # TODO: Merge 'transformations' with 'derivations' concepts with
-        # metpy.calc-like functions that can be supplied with dataset variables.
-        for idest, derivation in DERIVATIONS.items():
-            if func := _matching_function(idest, derivation, dest):
-                return func
-
-    def _find_any_transformation(self, data_arrays, dest):
-        """
-        Find transformation that generates the variable name. Return `None` if not
-        found. Otherwise return the generating function and a source variable.
-        """
-        # TODO: Merge 'transformations' with 'derivations' concepts with
-        # metpy.calc-like functions that can be supplied with dataset variables.
-        for data in data_arrays:
-            if func := self._find_this_transformation(data.name, dest):
-                return func, data
-
-    def _find_this_transformation(self, src, dest):
-        """
-        Find possibly nested series of transformations that get from variable A --> C.
-        Account for `CF` and `CFVariableRegistry` names.
-        """
-        # Translate names to dataset variable names or registry variable names
+        # Get input and output variables
+        # NOTE: The cfvariable generator also detects cf coordinate and cell measure
+        # names. So we can use cfvariable comparison logic for searching.
+        opts = {}
+        for array in arrays:
+            name = array.name
+            if name is None:
+                continue
+            try:
+                opts[self._variable_registry[name]] = array
+            except KeyError:
+                pass
         try:
-            src = self.cf._decode_name(src, return_if_missing=True)
-        except KeyError:
-            return  # source not available!
-        try:
-            dest = self.cf._decode_name(dest, return_if_missing=True)
+            var = self._variable_registry[key]
         except KeyError:
             pass
-        if src == dest:
-            return lambda da: da.copy()
-        # Find the transformation
-        for (isrc, idest), transformation in TRANSFORMATIONS.items():
-            try:
-                isrc = self.cf._decode_name(isrc, return_if_missing=True)
-            except KeyError:
-                continue  # source not available!
-            if isrc != src:
-                continue
-            if func := _matching_function(idest, transformation, dest):
-                return func
-            # Perform nested invocation of transformations. Inner func goes from
-            # A --> ?, then outer func from ? --> B (returned above)
-            if outer := self._find_this_transformation(idest, dest):  # noqa: E501
-                return lambda da, **kwargs: outer(transformation(da, **kwargs))
+
+        # Search derivations: require destination CFVariables that are equal to
+        # requested output variable and children of required input variables.
+        if var in opts:
+            return lambda: vars[name]
+
+        # for deriv in DERIVATIONS:
+        # TODO: Rest of the function.
 
     def _find_params(self, allow_empty=False, return_reference=False):
         """
@@ -1443,7 +1418,7 @@ class ClimoAccessor(object):
         include_scalar=False,
         include_pseudo=False,
         include_no_coords=False,
-        search_transformations=False,
+        search_derivations=False,
         **kwargs
     ):
         """
@@ -1479,7 +1454,7 @@ class ClimoAccessor(object):
             if (
                 dim in coords
                 or include_pseudo and dim in ('area', 'volume')
-                or search_transformations and self._find_any_transformation(coords.values(), dim)  # noqa: E501
+                or search_derivations and self._find_derivation(dim, *coords.values())  # noqa: E501
             ):
                 # e.g. integral('area') or derivative('meridional_coordinate')
                 indexers_filtered[dim] = indexers.pop(key)
@@ -1653,7 +1628,7 @@ class ClimoAccessor(object):
                         weight = dataset.climo._get_item(
                             name,
                             search_cf=False,
-                            search_transformations=False,
+                            search_derivations=False,
                             search_registry=False,
                             add_cell_measures=False
                         )
@@ -3612,7 +3587,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data
         coords = data.coords
         indexers, kwargs = self._parse_indexers(
-            indexers, search_transformations=True, **kwargs
+            indexers, search_derivations=True, **kwargs
         )
         kwargs.pop('order', None)
         for dim, order in indexers.items():
@@ -4078,8 +4053,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @quack._while_quantified
     def to_variable(self, dest, standardize=False, **kwargs):
         """
-        Transform this variable to another variable using transformations
-        registered with `register_transformation`. Transformations work recursively,
+        Transform this variable to another variable using one-to-one derivations
+        registered with `register_derivation`. Transformations work recursively,
         i.e. definitions for A --> B and B --> C permit transforming A --> C.
 
         Parameters
@@ -4094,7 +4069,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data
         if data.name is None:
             raise RuntimeError('DataArray name is empty. Cannot get transformation.')
-        func = self._find_this_transformation(data.name, dest)
+        func = self._find_derivation(dest, data.name)
         if func is None:
             raise ValueError(f'Transformation {data.name!r} --> {dest!r} not found.')
         with xr.set_options(keep_attrs=False):  # ensure invalid attributes are lost
@@ -4405,11 +4380,11 @@ class ClimoDatasetAccessor(ClimoAccessor):
     @_CFAccessor._clear_cache
     def __getitem__(self, key):
         """
-        Return a quantified coordinate or variable, including transformations and
-        derivations registered with `register_transformation` or `register_derivation`,
-        or return a selection along dimensions with translated dictionary indexing.
-        Translates CF names and `~.cfvariable.CFVariableRegistry` identifiers. Attaches
-        cell measures to coordinates using `~ClimoAccessor.add_cell_measures`.
+        Return a quantified coordinate or variable, including derivations registered
+        with `register_derivation`, or return a selection along dimensions with
+        translated dictionary indexing. Translates CF names and
+        `~.cfvariable.CFVariableRegistry` identifiers. Attaches cell
+        measures to coordinates using `~ClimoAccessor.add_cell_measures`.
         """
         if isinstance(key, dict):  # see also .loc.__getitem__
             key, _ = self._parse_indexers(key)
@@ -4433,7 +4408,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         # Add units and cell measures
         if data.name is None:
             data.name = 'unknown'  # just in case
-        if type_ != 'coord' and add_cell_measures:
+        if type_ != 'coordinate' and add_cell_measures:
             data = data.climo.add_cell_measures(dataset=self.data)
 
         # Transpose, potentially after derivation or transformation moved dims around
@@ -4456,7 +4431,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
         search_vars=True,
         search_coords=True,
         search_derivations=True,
-        search_transformations=True,
         search_registry=True,
         **kwargs
     ):
@@ -4484,15 +4458,11 @@ class ClimoDatasetAccessor(ClimoAccessor):
         if search_coords:
             coord = self.coords.get(key, search_registry=search_registry, **kwargs)
             if coord is not None:
-                return 'coord', coord
+                return 'coordinate', coord
         if search_derivations:
-            func = self._find_derivation(key)
+            func = self._find_derivation(key, *self.data.values())
             if func is not None:
                 return 'derivation', functools.partial(func, self)
-        if search_transformations:
-            tup = self._find_any_transformation(self.data.values(), key)
-            if tup is not None:
-                return 'transformation', functools.partial(*tup)
 
         # Recursively check if any aliases are valid
         if search_registry:
@@ -4504,7 +4474,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
                     search_vars=search_vars,
                     search_coords=search_coords,
                     search_derivations=search_derivations,
-                    search_transformations=search_transformations,
                     search_registry=False
                 ):
                     return tup
@@ -4684,111 +4653,3 @@ short_suffix : str, optional
         `~.cfvariable.CFVariableRegistry` identifiers.
         """
         return _VarsQuantified(self.data, self.variable_registry)
-
-
-@docstring.inject_snippets()
-def register_derivation(dest, /, *, assign_name=True):
-    """
-    Register a function that derives one variable from one or more others, for use
-    with `ClimoDatasetAccessor.get`.
-
-    Parameters
-    ----------
-    %(params_register)s
-
-    Examples
-    --------
-    >>> import climopy as climo
-    >>> from climopy import const
-    >>> @climo.register_derivation('pot_temp')
-    ... def potential_temp(self):
-    ...     return self.temp * (const.p0 / self.pres).climo.to_units('') ** (2 / 7)
-    >>> ds = xr.Dataset(
-    ...     {
-    ...         'temp': ((), 273, {'units': 'K'}),
-    ...         'pres': ((), 100, {'units': 'hPa'})
-    ...     }
-    ... )
-    >>> ds.climo['pot_temp']  # or ds.climo.pt
-    <xarray.DataArray 'pot_temp' ()>
-    <Quantity(527.08048, 'kelvin')>
-    """
-    if not isinstance(dest, (str, tuple, re.Pattern)):
-        raise TypeError(f'Invalid name or regex {dest!r}.')
-    if dest in DERIVATIONS:
-        warnings._warn_climopy(f'Overriding existing derivation {dest!r}.')
-
-    def _decorator(func):
-        @quack._keep_cell_attrs
-        @functools.wraps(func)
-        def _wrapper(*args, **kwargs):
-            data = func(*args, **kwargs)
-            if data is NotImplemented:
-                raise NotImplementedError(f'Derivation {func} is not implemnted.')
-            if not isinstance(data, xr.DataArray):
-                raise TypeError(f'Derivation {func} did not return a DataArray.')
-            if assign_name:
-                data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
-            return data
-
-        DERIVATIONS[dest] = _wrapper
-        return _wrapper
-
-    return _decorator
-
-
-@docstring.inject_snippets()
-def register_transformation(src, dest, /, *, assign_name=True):
-    """
-    Register a function that transforms one variable to another, for use with
-    `ClimoDataArrayAccessor.to_variable`. Transformations should depend only on the
-    initial variable and (optionally) the coordinates.
-
-    Parameters
-    ----------
-    src : str
-        The source variable name.
-    %(params_register)s
-
-    Examples
-    --------
-    In this example, we define a simple derivation to convert pressure to the
-    log-pressure height.
-
-    >>> import climopy as climo
-    >>> from climopy import const
-    >>> @climo.register_transformation('p', 'z_logp')
-    ... def meridional_coordinate(da):
-    ...     return (const.H * np.log(const.p0 / da)).climo.to_units('km')
-    >>> da = xr.DataArray([1000, 800, 600, 400], name='p', attrs={'units': 'hPa'})
-    >>> da.climo.to_variable('z_logp')
-    <xarray.DataArray 'z_logp' (dim_0: 4)>
-    array([0.        , 1.56200486, 3.57577937, 6.41403512])
-    Dimensions without coordinates: dim_0
-    Attributes:
-        units:    kilometer
-    """
-    if not isinstance(src, str):
-        raise ValueError(f'Invalid source {src!r}. Must be string.')
-    if not isinstance(dest, (str, tuple, re.Pattern)):
-        raise ValueError(f'Invalid destination {dest!r}. Must be string, tuple, regex.')
-    if (src, dest) in TRANSFORMATIONS:
-        warnings._warn_climopy(f'Overriding existing {src!r}->{dest!r} transformation.')  # noqa: E501
-
-    def _decorator(func):
-        @quack._keep_cell_attrs
-        @functools.wraps(func)
-        def _wrapper(*args, **kwargs):
-            data = func(*args, **kwargs)
-            if data is NotImplemented:
-                raise NotImplementedError(f'Transformation {func} is not implemnted.')
-            if not isinstance(data, xr.DataArray):
-                raise TypeError(f'Transformation {func} did not return a DataArray.')
-            if assign_name:
-                data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
-            return data
-
-        TRANSFORMATIONS[(src, dest)] = _wrapper
-        return _wrapper
-
-    return _decorator
