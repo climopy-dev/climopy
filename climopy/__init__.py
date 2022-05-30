@@ -35,7 +35,7 @@ from . import internals  # noqa: F401
 # Using e.g. CLIMOPY_NO_ACCESSORS=True can result in speedup when using climopy
 # in processing pipeline, e.g. to handle continuous output of model runs.
 import os
-_no_accessors = os.env.get('CLIMOPY_NO_ACCESSORS', '0')
+_no_accessors = os.environ.get('CLIMOPY_NO_ACCESSORS', '0')
 if _no_accessors.isdecimal() and len(_no_accessors) == 1 and int(_no_accessors):
     pass
 else:

@@ -14,7 +14,8 @@ class _SnippetManager(dict):
         Add snippets to the string or object using ``%(name)s`` substitution. Use
         `kwargs` to format the snippets themselves with ``%(name)s`` substitution.
         """
-        def decorator(obj):
+        kwargs = {key: string.strip() for key, string in kwargs.items()}
+        def _decorator(obj):  # noqa: E306
             if isinstance(obj, str):
                 obj %= self  # add snippets to a string
                 obj %= kwargs
@@ -23,14 +24,14 @@ class _SnippetManager(dict):
                 if obj.__doc__:
                     obj.__doc__ %= self  # insert snippets after dedent
                     obj.__doc__ %= kwargs
-        return decorator
+            return obj
+        return _decorator
 
     def __setitem__(self, key, value):
         """
         Populate input strings with other snippets and strip newlines. Developers
         should take care to import modules in the correct order.
         """
-        value = self(value)
         value = value.strip('\n')
         super().__setitem__(key, value)
 
