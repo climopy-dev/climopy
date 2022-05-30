@@ -58,7 +58,7 @@ REGEX_CONSTANTS = re.compile(r'\b([-+]?[0-9]+[a-zA-Z]+)')
 #: vertical pressure distance and terms normalized per unit mass per unit area
 #: (:math:`x \cdot g`).
 ureg = UnitRegistry(
-    # NOTE: If logging messages are enabled with e.g. due to another module calling
+    # NOTE: If logging messages are enabled e.g. due to another module calling
     # logging.basicConfig() then the below will emit warnings. Can temporarily
     # disable these messages using 'on_redefinition'. Note also the below definitions
     # that overwrite existing definitions are always a superset of existing aliases

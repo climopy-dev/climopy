@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Tools for managing CF-style variable metadata. Includes a class for holding variable
-metadata and grouping variables into related hierarchies, and a registry for storing
-variables.
+metadata and grouping them into related hierarchies, and a registry for storing them.
 """
 import copy
 import numbers

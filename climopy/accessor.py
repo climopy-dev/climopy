@@ -11,7 +11,6 @@ import math
 import numbers
 import re
 
-import cf_xarray as xcf  # noqa: F401
 import numpy as np
 import pint
 import xarray as xr
