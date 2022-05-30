@@ -2,12 +2,12 @@
 """
 Tools for working with pint quantities.
 """
-# TODO: Currently None bypasses all input argument standardization but should instead
-# quantify with any units and provide default-disabled option to ignore completely.
-# See the quack _while_quantified and _while_dequantified methods.
-# NOTE: isinstance(..., ureg.Unit) or isinstance(..., ureg.Quantity) returns False
-# for instances derived from other registries. So always test against pint namespace
-# class definitions and defer to incompatible registry errors down the line.
+# NOTE: The functions while_xarray_quantified and while_xarray_dequantified are
+# "public" for consistency with while_quantified and while_dequantified but omitted
+# from __all__ since they are only used internally with accessors.
+# NOTE: Here isinstance(..., ureg.Unit) or isinstance(..., ureg.Quantity) returns
+# False for instances derived from other registries. So always test against pint
+# namespace class definitions and defer to incompatible registry errors down the line.
 import functools
 import re
 
@@ -25,6 +25,17 @@ __all__ = ['while_quantified', 'while_dequantified']
 REGEX_FORMAT = re.compile(r'\{[a-zA-Z_]\w*\}')  # valid identifiers
 
 # Docstring snippets
+_quant_xarray_docstring = """
+A decorator that executes accessor methods with %(descrip)s data arrays
+or datasets using the object metadata. Any data bounds variables are
+automatically skipped.
+
+Parameters
+----------
+always_quantify : bool, default: False
+    Whether array(s) are required to be pint quanties or have valid units
+    attributes. Valid only for `while_xarray_quantified`.
+"""
 _quant_docstring = """
 A decorator that executes functions with %(descrip)s data values and enforces the
 specified input and output units or dimensionalities. Comapre to `pint.wraps` and
@@ -84,6 +95,7 @@ Here is a simple example for an nth derivative wrapper.
 <Quantity(1.0, 'second / meter ** 2')>
 """
 docstring.snippets['quant.quantified'] = _quant_docstring
+docstring.snippets['quant.xarray_quantified'] = _quant_xarray_docstring
 
 
 def _as_units_container(arg, **fmt_kwargs):
@@ -133,7 +145,7 @@ def _enforce_dimensionality(arg, dimensionality):
         )
 
 
-def _get_pint_units(arg):
+def _find_pint_units(arg):
     """
     Get the pint units associated with the object argument.
     """
@@ -309,8 +321,12 @@ def _while_converted(
     **fmt_defaults  # noqa: E501
 ):
     """
-    Driver function for `while_quantified` and `while_dequantified`. See above
-    for the full documentation.
+    Driver function for `while_quantified` and `while_dequantified`.
+
+    Parameters
+    ----------
+    **kwargs
+        See `while_quantified` and `while_dequantified`.
     """
     # Group and categorize the input argument units
     # NOTE: Resulting units_in, units_out will be singleton lists unless | was used.
@@ -364,7 +380,7 @@ def _while_converted(
             # are compatible with the declared units. If this fails we use the final
             # grouping by default and an error will be raised down the line.
             for grp, (independents, dependents, constants) in enumerate(categories):
-                units_input = [_get_pint_units(args[idx]) for idx in constants]
+                units_input = [_find_pint_units(args[idx]) for idx in constants]
                 units_expect = [units_in[grp][idx] for idx in constants]
                 if all(
                     unit_input is None
@@ -439,7 +455,81 @@ def _while_converted(
     return _decorator
 
 
-@docstring.inject_snippets(descrip='dequantified')
+def _while_xarray_converted(func, quantify=True, always_quantify=False):
+    """
+    Driver function for `while_xarray_quantified` and `while_xarray_dequantified`.
+
+    Parameters
+    ----------
+    **kwargs
+        See `while_xarray_quantified` and `while_xarray_dequantified`.
+    """
+    # NOTE: This is accessor-specific implementation that supports dataset and
+    # requires no explicit or implicit input and output units. Instead just
+    # naivly applies and removes units from the underlying array or the
+    @functools.wraps(func)
+    def _wrapper(self, *args, **kwargs):
+        # Quantify
+        data = self.data
+        units = {}
+        if isinstance(data, xr.Dataset):
+            data = data.copy(deep=False)
+            for da in data.values():
+                if da.climo._is_coordinate_bounds:  # i.e. missing attributes
+                    pass
+                elif not quantify:
+                    if da.climo._is_quantity:
+                        units[da.name] = da.data.units
+                        da.climo._dequantify()
+                elif da.climo._has_units:
+                    if not da.climo._is_quantity:
+                        da.climo._quantify()
+                        units[da.name] = da.data.units
+                else:
+                    if always_quantify:
+                        msg = f'Cannot quantify DataArray with no units {da.name!r}.'
+                        raise RuntimeError(msg)
+        else:
+            if not quantify:
+                if self._is_quantity:
+                    units[data.name] = data.data.units
+                    data = data.climo.dequantify()
+            else:
+                if not self._is_quantity:
+                    data = data.climo.quantify()
+                    units[data.name] = data.data.units
+
+        # Main function
+        result = func(data.climo, *args, **kwargs)
+
+        # Dequantify
+        # WARNING: In _find_extrema, units are changed by updating the attributes,
+        # while for other functions, units may be lost and then are restored here.
+        # Critical to avoid overwriting units that were explicitly applied to outgoing
+        # array by passing `None` to `ClimoAccessor.quantify` when present.
+        if isinstance(data, xr.Dataset):
+            result = result.copy(deep=False)
+            for name, unit in units.items():
+                if not quantify:
+                    unit = None if 'units' in result[name].attrs else unit
+                    result[name].climo._quantify(units=unit)
+                else:
+                    result[name].climo._dequantify()
+        else:
+            if not quantify:
+                if self._is_quantity:
+                    unit = None if 'units' in result.attrs else units[data.name]
+                    result = result.climo.quantify(units=unit)
+            else:
+                if not self._is_quantity:
+                    result = result.climo.dequantify()
+
+        return result
+
+    return _wrapper
+
+
+@docstring.inject_snippets(descrip='quantified')
 def while_quantified(*args, **kwargs):
     """
     %(quant.quantified)s
@@ -455,3 +545,21 @@ def while_dequantified(*args, **kwargs):
     """
     kwargs['quantify'] = False
     return _while_converted(*args, **kwargs)
+
+
+@docstring.inject_snippets(descrip='quantified')
+def while_xarray_quantified(*args, **kwargs):
+    """
+    %(quant.xarray_quantified)s
+    """
+    kwargs['quantify'] = True
+    return _while_xarray_converted(*args, **kwargs)
+
+
+@docstring.inject_snippets(descrip='dequantified')
+def while_xarray_dequantified(*args, **kwargs):
+    """
+    %(quant.xarray_quantified)s
+    """
+    kwargs['quantify'] = False
+    return _while_xarray_converted(*args, **kwargs)

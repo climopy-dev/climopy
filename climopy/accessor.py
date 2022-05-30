@@ -21,7 +21,7 @@ from . import const, diff, spectral, utils, var
 from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
-from .internals import _first_unique, docstring, quack, warnings
+from .internals import _first_unique, docstring, quack, quant, warnings
 from .unit import (
     _latitude_units,
     _longitude_units,
@@ -1947,7 +1947,7 @@ class ClimoAccessor(object):
         return self._mean_or_sum('sum', dim, **kwargs)
 
     @_CFAccessor._clear_cache
-    @quack._while_dequantified
+    @quant.while_xarray_dequantified
     def interp(
         self,
         indexers=None,
@@ -3008,7 +3008,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return kw
 
     @_CFAccessor._clear_cache
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     def reduce(
         self,
         indexers=None,
@@ -3087,7 +3087,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             resulting reduction will be concatenated along a `track` dimension.
         **kwargs
             Remaining keyword arguments are passed to relevant functions
-            like `find` and `rednoisefit`.
+            like `find` and `timescale`.
 
         Returns
         -------
@@ -3255,7 +3255,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 data = 1.0 / data
         return data
 
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     @quack._keep_cell_attrs
     def _integral_or_average(
         self,
@@ -3564,7 +3564,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     @quack._keep_cell_attrs
     def derivative(self, indexers=None, centered=True, **kwargs):
         """
@@ -3613,7 +3613,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             return -1 * result
 
     @_CFAccessor._clear_cache
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     @quack._keep_cell_attrs
     @docstring.inject_snippets(operator='divergence')
     def divergence(self, cos_power=1, centered=True, **kwargs):
@@ -3654,7 +3654,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return res
 
     @_CFAccessor._clear_cache
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     @quack._keep_cell_attrs
     @docstring.inject_snippets(operator='correlation', func='corr')
     def autocorr(self, dim, **kwargs):
@@ -3670,7 +3670,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     @quack._keep_cell_attrs
     @docstring.inject_snippets(operator='covariance', func='covar')
     def autocovar(self, dim, **kwargs):
@@ -3735,7 +3735,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         return wavelen
 
-    @quack._while_dequantified
+    @quant.while_xarray_dequantified
     @quack._keep_cell_attrs
     def _find_extrema(
         self, dim, abs=False, arg=False, which='max', dim_track=None, **kwargs
@@ -3991,7 +3991,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @quack._while_dequantified
+    @quant.while_xarray_dequantified
     @quack._keep_cell_attrs
     def normalize(self):
         """
@@ -4005,7 +4005,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     @quack._keep_cell_attrs
     def slope(self, dim):
         """
@@ -4025,7 +4025,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     @quack._keep_cell_attrs
     def timescale(self, dim, maxlag=None, imaxlag=None, **kwargs):
         """
@@ -4050,7 +4050,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return data
 
     @_CFAccessor._clear_cache
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     def to_variable(self, dest, standardize=False, **kwargs):
         """
         Transform this variable to another variable using one-to-one derivations
@@ -4079,7 +4079,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             param = param.climo.to_standard_units()
         return param
 
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     def to_units(self, units, context='climo'):
         """
         Return a copy converted to the desired units.
@@ -4106,7 +4106,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             )
         return data
 
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     def to_base_units(self, coords=False):
         """
         Return a copy with the underlying data converted to base units.
@@ -4122,7 +4122,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             })
         return data
 
-    @quack._while_quantified
+    @quant.while_xarray_quantified
     def to_compact_units(self, coords=False):
         """
         Return a copy with the underlying data converted to "compact" units.
