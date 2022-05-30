@@ -94,8 +94,8 @@ Here is a simple example for an nth derivative wrapper.
 >>> deriv(1 * ureg.m, 1 * ureg.s, order=2)
 <Quantity(1.0, 'second / meter ** 2')>
 """
-docstring.snippets['quant.quantified'] = _quant_docstring
-docstring.snippets['quant.xarray_quantified'] = _quant_xarray_docstring
+docstring._snippet_manager['quant.quantified'] = _quant_docstring
+docstring._snippet_manager['quant.xarray_quantified'] = _quant_xarray_docstring
 
 
 def _as_units_container(arg, **fmt_kwargs):
@@ -529,7 +529,7 @@ def _while_xarray_converted(func, quantify=True, always_quantify=False):
     return _wrapper
 
 
-@docstring.inject_snippets(descrip='quantified')
+@docstring._snippet_manager(descrip='quantified')
 def while_quantified(*args, **kwargs):
     """
     %(quant.quantified)s
@@ -538,7 +538,7 @@ def while_quantified(*args, **kwargs):
     return _while_converted(*args, **kwargs)
 
 
-@docstring.inject_snippets(descrip='dequantified')
+@docstring._snippet_manager(descrip='dequantified')
 def while_dequantified(*args, **kwargs):
     """
     %(quant.quantified)s
@@ -547,7 +547,7 @@ def while_dequantified(*args, **kwargs):
     return _while_converted(*args, **kwargs)
 
 
-@docstring.inject_snippets(descrip='quantified')
+@docstring._snippet_manager(descrip='quantified')
 def while_xarray_quantified(*args, **kwargs):
     """
     %(quant.xarray_quantified)s
@@ -556,7 +556,7 @@ def while_xarray_quantified(*args, **kwargs):
     return _while_xarray_converted(*args, **kwargs)
 
 
-@docstring.inject_snippets(descrip='dequantified')
+@docstring._snippet_manager(descrip='dequantified')
 def while_xarray_dequantified(*args, **kwargs):
     """
     %(quant.xarray_quantified)s

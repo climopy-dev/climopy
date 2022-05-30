@@ -44,11 +44,11 @@ keepedges : bool, optional
     Whether to fill the edge positions with progressively lower-`accuracy`
     finite difference estimates to prevent reducing the dimension size.
 """
-docstring.snippets['params_axisdim'] = _params_axisdim
-docstring.snippets['params_uneven'] = _params_uneven
-docstring.snippets['params_order'] = _params_order
-docstring.snippets['params_cyclic'] = _params_cyclic
-docstring.snippets['params_edges'] = _params_edges
+docstring._snippet_manager['params_axisdim'] = _params_axisdim
+docstring._snippet_manager['params_uneven'] = _params_uneven
+docstring._snippet_manager['params_order'] = _params_order
+docstring._snippet_manager['params_cyclic'] = _params_cyclic
+docstring._snippet_manager['params_edges'] = _params_edges
 
 
 def _fornberg_coeffs(x, x0, order=1):
@@ -142,7 +142,7 @@ def _standardize_x_y(x, y, /, axis=0):
 
 @quack._xyy_metadata
 @quant.while_dequantified(('=x', '=y'), '=x * y')
-@docstring.inject_snippets(name='integral')
+@docstring._snippet_manager(name='integral')
 def integral(x, y, /, y0=0, axis=0):
     """
     Return the integral approximation along an arbitrary axis.
@@ -349,7 +349,7 @@ def _deriv_third(h, y, /, accuracy=2, keepleft=False, keepright=False):
 
 @quack._xyy_metadata
 @quant.while_dequantified(('=x', '=y'), '=y / x ** {order}', order=1)
-@docstring.inject_snippets(name='derivative')
+@docstring._snippet_manager(name='derivative')
 def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=False):
     """
     Return an estimate of the first, second, or third order derivative along an
@@ -415,7 +415,7 @@ def deriv_even(h, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=Fal
 
 @quack._xyy_metadata
 @quant.while_dequantified(('=x', '=y'), '=y / x ** {order}', order=1)
-@docstring.inject_snippets(name='derivative')
+@docstring._snippet_manager(name='derivative')
 def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=False):
     r"""
     Return an arbitrary order centered finite difference approximation for
@@ -497,7 +497,7 @@ def deriv_uneven(x, y, /, order=1, axis=0, accuracy=2, cyclic=False, keepedges=F
 
 @quack._xyxy_metadata
 @quant.while_dequantified(('=x', '=y'), ('=x', '=y / x ** {order}'), order=1)
-@docstring.inject_snippets(name='derivative')
+@docstring._snippet_manager(name='derivative')
 def deriv_half(x, y, /, order=1, axis=0, cyclic=False):
     """
     Return an arbitrary order finite difference approximation by taking successive

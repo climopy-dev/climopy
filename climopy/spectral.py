@@ -76,9 +76,9 @@ detrend : {'constant', 'linear'}, optional
     Passed as the `type` argument to `scipy.signal.detrend`. ``'constant'``
     removes the mean and ``'linear'`` removes the linear trend.
 """
-docstring.snippets['params_power1d'] = _params_power1d
-docstring.snippets['params_power2d'] = _params_power2d
-docstring.snippets['params_power'] = _params_power
+docstring._snippet_manager['params_power1d'] = _params_power1d
+docstring._snippet_manager['params_power2d'] = _params_power2d
+docstring._snippet_manager['params_power'] = _params_power
 
 # Return values
 _returns_power1d = """
@@ -109,10 +109,10 @@ Coh : array-like, optional
 Phi : array-like, optional
     Phase difference in degrees.
 """
-docstring.snippets['returns_power1d'] = _returns_power1d
-docstring.snippets['returns_power2d'] = _returns_power2d
-docstring.snippets['returns_power'] = _returns_power
-docstring.snippets['returns_copower'] = _returns_copower
+docstring._snippet_manager['returns_power1d'] = _returns_power1d
+docstring._snippet_manager['returns_power2d'] = _returns_power2d
+docstring._snippet_manager['returns_power'] = _returns_power
+docstring._snippet_manager['returns_copower'] = _returns_copower
 
 # Notes
 _notes_power = """
@@ -161,7 +161,7 @@ References
 ----------
 .. bibliography:: ../bibs/power.bib
 """
-docstring.snippets['notes_power'] = _notes_power
+docstring._snippet_manager['notes_power'] = _notes_power
 
 
 @quant.while_dequantified(('=x', None, '=x'))
@@ -681,7 +681,7 @@ def _power2d_driver(
 
 @quack._power_metadata
 @quant.while_dequantified(('=x', '=y'), ('=1 / x', '=y ** 2'))
-@docstring.inject_snippets(data=_power_data)
+@docstring._snippet_manager(data=_power_data)
 def power(dx, y1, /, axis=0, **kwargs):
     """
     Return the spectral decomposition of a real-valued array along an
@@ -743,7 +743,7 @@ def power(dx, y1, /, axis=0, **kwargs):
     ('=x', '=y1', '=y2'),
     ('=1 / x', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
-@docstring.inject_snippets(data=_copower_data)
+@docstring._snippet_manager(data=_copower_data)
 def copower(dx, y1, y2, /, axis=0, **kwargs):
     """
     Return the co-spectral decomposition and related quantities for two
@@ -821,7 +821,7 @@ def copower(dx, y1, y2, /, axis=0, **kwargs):
 
 @quack._power2d_metadata
 @quant.while_dequantified(('=x1', '=x2', '=y'), ('=1 / x1', '=1 / x2', '=y ** 2'))
-@docstring.inject_snippets(data=_power_data)
+@docstring._snippet_manager(data=_power_data)
 def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
     """
     Return the spectral decomposition of a real-valued array along an
@@ -849,7 +849,7 @@ def power2d(dx_lon, dx_time, y, /, axis_lon=-1, axis_time=0, **kwargs):
     ('=x1', '=x2', '=y1', '=y2'),
     ('=1 / x1', '=1 / x2', '=y1 * y2', '=y1 * y2', '=y1 ** 2', '=y2 ** 2', '', 'deg'),
 )
-@docstring.inject_snippets(data=_copower_data)
+@docstring._snippet_manager(data=_copower_data)
 def copower2d(dx_lon, dx_time, y1, y2, /, axis_lon=0, axis_time=-1, **kwargs):
     """
     Return the 2D spectral decomposition of two real-valued arrays with

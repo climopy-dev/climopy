@@ -37,8 +37,8 @@ omega : ndarray, optional
 sigma : ndarray, optional
     The data weights, useful for isentropic coordinates. Shape must match `q`.
 """
-docstring.snippets['params_eqlat'] = _params_eqlat
-docstring.snippets['params_waq'] = _params_waq
+docstring._snippet_manager['params_eqlat'] = _params_eqlat
+docstring._snippet_manager['params_waq'] = _params_waq
 
 
 class _LongitudeLatitude(object):
@@ -100,7 +100,7 @@ class _LongitudeLatitude(object):
         self.areas = self.weights * const.a ** 2
 
 
-@docstring.inject_snippets()
+@docstring._snippet_manager()
 def eqlat(lon, lat, q, skip=10, sigma=None):
     r"""
     Get equivalent latitudes corresponding to PV levels evenly sampled from
@@ -181,7 +181,7 @@ def eqlat(lon, lat, q, skip=10, sigma=None):
     return ctx.data
 
 
-@docstring.inject_snippets()
+@docstring._snippet_manager()
 def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
     """
     Return the finite-amplitude wave activity. See
@@ -313,7 +313,7 @@ def waq(lon, lat, q, sigma=None, omega=None, flip=True, skip=10):
     return waq
 
 
-@docstring.inject_snippets()
+@docstring._snippet_manager()
 def waqlocal(lon, lat, q, omega=None, sigma=None, flip=True, skip=10):
     """
     Return the local finite-amplitude wave activity. See

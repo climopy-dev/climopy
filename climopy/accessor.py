@@ -174,9 +174,9 @@ reverse : bool, optional
 **kwargs
     Passed to `~ClimoAccessor.truncate`. Used to limit bounds of integration.
 """
-docstring.snippets['template_meansum'] = _template_meansum
-docstring.snippets['template_avgint'] = _template_avgint
-docstring.snippets['template_cumavgint'] = _template_cumavgint
+docstring._snippet_manager['template_meansum'] = _template_meansum
+docstring._snippet_manager['template_avgint'] = _template_avgint
+docstring._snippet_manager['template_cumavgint'] = _template_cumavgint
 
 # Mean and average notes
 _notes_avgmean = """
@@ -188,8 +188,8 @@ This was added as a dedicated accessor function rather than creating a
 custom `~xarray.core.weighted.Weighted` object because the selection of
 mass weights depends on the dimension(s) passed by the user.
 """
-docstring.snippets['notes_avgmean'] = _notes_avgmean
-docstring.snippets['notes_weighted'] = _notes_weighted
+docstring._snippet_manager['notes_avgmean'] = _notes_avgmean
+docstring._snippet_manager['notes_weighted'] = _notes_weighted
 
 # Extrema templates
 _template_minmax = """
@@ -232,9 +232,9 @@ dim_track : str, optional
 **kwargs
     Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
 """
-docstring.snippets['template_minmax'] = _template_minmax
-docstring.snippets['template_absminmax'] = _template_absminmax
-docstring.snippets['template_argloc'] = _template_argloc
+docstring._snippet_manager['template_minmax'] = _template_minmax
+docstring._snippet_manager['template_absminmax'] = _template_absminmax
+docstring._snippet_manager['template_argloc'] = _template_argloc
 
 # Differentiation
 _template_divcon = r"""
@@ -254,7 +254,7 @@ centered : bool, optional
 **kwargs
     Passed to `~.diff.deriv_uneven` or `~.diff.deriv_half`.
 """
-docstring.snippets['template_divcon'] = _template_divcon
+docstring._snippet_manager['template_divcon'] = _template_divcon
 
 # Auto-variance
 _template_auto = """
@@ -268,7 +268,7 @@ dim : str
 **kwargs
     Passed to `~.var.auto%(func)s`.
 """
-docstring.snippets['template_auto'] = _template_auto
+docstring._snippet_manager['template_auto'] = _template_auto
 
 # Variable derivations
 _params_register = r"""
@@ -283,7 +283,7 @@ assign_name : bool, optional
     Whether to assign the user-input string as the output `xarray.DataArray.name`.
     Default is ``True``.
 """
-docstring.snippets['params_register'] = _params_register
+docstring._snippet_manager['params_register'] = _params_register
 
 # Messages
 _warning_inplace = """
@@ -292,7 +292,7 @@ Warning
 Unlike most other public methods, this modifies the data in-place rather
 than returning a copy.
 """
-docstring.snippets['warning_inplace'] = _warning_inplace
+docstring._snippet_manager['warning_inplace'] = _warning_inplace
 
 
 def _expand_variable_args(func):
@@ -354,7 +354,7 @@ def _expand_indexer(key, ndim):
 
 def _manage_coord_reductions(func):
     """
-    Add back singleton NaN dummy coordinates after some dimension reduction, so that
+    Add back scalar NaN dummy coordinates after some dimension reduction so that
     we can continue relating dimension names to CF axis and coordinate names, and
     identically reduce cell weights. See `add_scalar_coords` for details on motivation.
     """
@@ -1925,7 +1925,7 @@ class ClimoAccessor(object):
 
     @_CFAccessor._clear_cache
     @_manage_coord_reductions
-    @docstring.inject_snippets(operator='mean')
+    @docstring._snippet_manager(operator='mean')
     def mean(self, dim=None, **kwargs):
         """
         %(template_meansum)s
@@ -1938,7 +1938,7 @@ class ClimoAccessor(object):
 
     @_CFAccessor._clear_cache
     @_manage_coord_reductions
-    @docstring.inject_snippets(operator='sum')
+    @docstring._snippet_manager(operator='sum')
     def sum(self, dim=None, **kwargs):
         """
         %(template_meansum)s
@@ -2596,7 +2596,7 @@ class ClimoAccessor(object):
 
         return data
 
-    @docstring.inject_snippets()
+    @docstring._snippet_manager()
     def update_cell_attrs(self, other):
         """
         Update `cell_methods` and `cell_measures` attributes from another object onto
@@ -2633,7 +2633,7 @@ class ClimoAccessor(object):
                 ):
                     da.attrs[attr] = value
 
-    @docstring.inject_snippets()
+    @docstring._snippet_manager()
     def update_cell_methods(self, methods=None, **kwargs):
         """
         Update the `cell_methods` attribute on the `xarray.DataArray` or on every array
@@ -3451,7 +3451,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_CFAccessor._clear_cache
     @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
-    @docstring.inject_snippets(operator='integral', action='integration',)
+    @docstring._snippet_manager(operator='integral', action='integration')
     def integral(self, dim=None, **kwargs):
         """
         %(template_avgint)s
@@ -3465,7 +3465,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_CFAccessor._clear_cache
     @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
-    @docstring.inject_snippets(operator='average', action='averaging')
+    @docstring._snippet_manager(operator='average', action='averaging')
     def average(self, dim=None, **kwargs):
         """
         %(template_avgint)s
@@ -3493,7 +3493,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             return self.data - self.average(*args, **kwargs)
 
     @_CFAccessor._clear_cache
-    @docstring.inject_snippets(operator='integral', action='integration')
+    @docstring._snippet_manager(operator='integral', action='integration')
     def cumintegral(self, dim, **kwargs):
         """
         %(template_cumavgint)s
@@ -3506,7 +3506,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return self._integral_or_average(dim, **kwargs)
 
     @_CFAccessor._clear_cache
-    @docstring.inject_snippets(operator='average', action='averaging')
+    @docstring._snippet_manager(operator='average', action='averaging')
     def cumaverage(self, dim, **kwargs):
         """
         %(template_cumavgint)s
@@ -3602,7 +3602,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         )
         return data
 
-    @docstring.inject_snippets(operator='convergence')
+    @docstring._snippet_manager(operator='convergence')
     def convergence(self, *args, **kwargs):
         """
         %(template_divcon)s
@@ -3614,7 +3614,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_CFAccessor._clear_cache
     @quant.while_xarray_quantified
     @quack._keep_cell_attrs
-    @docstring.inject_snippets(operator='divergence')
+    @docstring._snippet_manager(operator='divergence')
     def divergence(self, cos_power=1, centered=True, **kwargs):
         """
         %(template_divcon)s
@@ -3655,7 +3655,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_CFAccessor._clear_cache
     @quant.while_xarray_quantified
     @quack._keep_cell_attrs
-    @docstring.inject_snippets(operator='correlation', func='corr')
+    @docstring._snippet_manager(operator='correlation', func='corr')
     def autocorr(self, dim, **kwargs):
         """
         %(template_auto)s
@@ -3671,7 +3671,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
     @_CFAccessor._clear_cache
     @quant.while_xarray_quantified
     @quack._keep_cell_attrs
-    @docstring.inject_snippets(operator='covariance', func='covar')
+    @docstring._snippet_manager(operator='covariance', func='covar')
     def autocovar(self, dim, **kwargs):
         """
         %(template_auto)s
@@ -3840,7 +3840,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @_CFAccessor._clear_cache
     # @_manage_coord_reductions
-    @docstring.inject_snippets(extrema='mimima', prefix='')
+    @docstring._snippet_manager(extrema='mimima', prefix='')
     def min(self, dim=None, **kwargs):
         """
         %(template_minmax)s
@@ -3848,8 +3848,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(which='min', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     # @_manage_coord_reductions
-    @docstring.inject_snippets(extrema='maxima', prefix='')
+    @docstring._snippet_manager(extrema='maxima', prefix='')
     def max(self, dim=None, **kwargs):
         """
         %(template_minmax)s
@@ -3857,8 +3858,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(which='max', abs=False, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     # @_manage_coord_reductions
-    @docstring.inject_snippets(extrema='minima', prefix='')
+    @docstring._snippet_manager(extrema='minima', prefix='')
     def absmin(self, dim=None, **kwargs):
         """
         %(template_absminmax)s
@@ -3866,8 +3868,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(which='min', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     # @_manage_coord_reductions
-    @docstring.inject_snippets(extrema='maxima', prefix='')
+    @docstring._snippet_manager(extrema='maxima', prefix='')
     def absmax(self, dim=None, **kwargs):
         """
         %(template_absminmax)s
@@ -3875,8 +3878,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(which='max', abs=True, arg=False)
         return self._find_extrema(dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     # @_manage_coord_reductions
-    @docstring.inject_snippets(extrema='minima', prefix='coordinates of')
+    @docstring._snippet_manager(extrema='minima', prefix='coordinates of')
     def argmin(self, dim=None, **kwargs):
         """
         %(template_minmax)s
@@ -3884,8 +3888,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(which='min', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     # @_manage_coord_reductions
-    @docstring.inject_snippets(extrema='maxima', prefix='coordinates of')
+    @docstring._snippet_manager(extrema='maxima', prefix='coordinates of')
     def argmax(self, dim=None, **kwargs):
         """
         %(template_minmax)s
@@ -3893,8 +3898,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(which='max', abs=False, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     # @_manage_coord_reductions
-    @docstring.inject_snippets(extrema='minima', prefix='coordinates of')
+    @docstring._snippet_manager(extrema='minima', prefix='coordinates of')
     def absargmin(self, dim=None, **kwargs):
         """
         %(template_absminmax)s
@@ -3902,8 +3908,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(which='min', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     # @_manage_coord_reductions
-    @docstring.inject_snippets(extrema='maxima', prefix='coordinates of')
+    @docstring._snippet_manager(extrema='maxima', prefix='coordinates of')
     def absargmax(self, dim=None, **kwargs):
         """
         %(template_absminmax)s
@@ -3911,8 +3918,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         kwargs.update(which='max', abs=True, arg=True)
         return self._find_extrema(dim, **kwargs)
 
+    @_CFAccessor._clear_cache
     # @_manage_coord_reductions
-    @docstring.inject_snippets()
+    @docstring._snippet_manager()
     def argloc(self, dim=None, value=None, **kwargs):
         """
         %(template_argloc)s

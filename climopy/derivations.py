@@ -17,7 +17,7 @@ from .internals import docstring, quack, quant, warnings
 DERIVATIONS = {}
 
 
-@docstring.inject_snippets()
+@docstring._snippet_manager()
 def register_derivation(vars_in, vars_out, assign_name=True, **kwargs):
     """
     Register a function that derives one output variable from arbitrarily many input

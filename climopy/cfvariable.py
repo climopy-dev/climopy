@@ -84,8 +84,8 @@ scalar_formatter : formatter-spec, optional
     by `proplot.constructor.Formatter`. Set to ``False`` to revert to the
     default formatter instead of inheriting the formatter.
 """
-docstring.snippets['params_cfupdate'] = _params_cfvariable
-docstring.snippets['params_cfmodify'] = _params_cfmodify
+docstring._snippet_manager['params_cfupdate'] = _params_cfvariable
+docstring._snippet_manager['params_cfmodify'] = _params_cfmodify
 
 
 def _adjust_name(name, prefix, suffix):
@@ -128,7 +128,7 @@ class CFVariable(object):
             string += f', {standard_units=}'
         return f'CFVariable({string})'
 
-    @docstring.inject_snippets()
+    @docstring._snippet_manager()
     def __init__(self, name, *args, **kwargs):
         """
         Parameters
@@ -217,7 +217,7 @@ class CFVariable(object):
             and self.units_object != self._climo.units
         )
 
-    @docstring.inject_snippets()
+    @docstring._snippet_manager()
     def child(self, name, *args, other_parents=None, **kwargs):
         """
         Return a new child variable with properties inherited from the current one.
@@ -264,7 +264,7 @@ class CFVariable(object):
 
         return child
 
-    @docstring.inject_snippets()
+    @docstring._snippet_manager()
     def update(
         self,
         long_name=None, standard_units=None, short_name=None, standard_name=None, *,
@@ -315,7 +315,7 @@ class CFVariable(object):
         self._axis_scale = self._inherit_property('axis_scale', axis_scale)
         self._scalar_formatter = self._inherit_property('scalar_formatter', scalar_formatter, default=default_scalar_formatter)  # noqa: E501
 
-    @docstring.inject_snippets()
+    @docstring._snippet_manager()
     def modify(
         self,
         accessor=None, longitude=None, latitude=None, vertical=None, time=None,
@@ -776,7 +776,7 @@ class CFVariableRegistry(object):
             if key[:1] != '_':
                 yield key, value
 
-    @docstring.inject_snippets()
+    @docstring._snippet_manager()
     def __call__(self, key, **kwargs):
         """
         Return a copy of the registered variable optionally paired to a
@@ -896,7 +896,7 @@ class CFVariableRegistry(object):
         var._aliases.extend(arg for arg in args if arg not in var.identifiers)
         var._aliases.sort()
 
-    @docstring.inject_snippets()
+    @docstring._snippet_manager()
     def define(self, name, *args, aliases=None, parents=None, **kwargs):
         """
         Define a new `CFVariable`. Inspired by `pint.UnitRegistry.define`.

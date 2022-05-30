@@ -101,7 +101,7 @@ This function uses the following formula to estimate %(name)s at lag :math:`k`:
 
 %(math)s
 """
-docstring.snippets['template_var'] = _var_template
+docstring._snippet_manager['template_var'] = _var_template
 
 
 def rednoise(a, ntime=100, nsamples=1, mean=0, stdev=1, state=None):
@@ -270,7 +270,7 @@ def _covar_driver(
 
 @quack._covar_metadata
 @quant.while_dequantified(('=t', '=z'), ('=t', ''))
-@docstring.inject_snippets(name='autocorrelation', data=_var_data, math=_corr_math)
+@docstring._snippet_manager(name='autocorrelation', data=_var_data, math=_corr_math)
 def autocorr(dt, z, axis=0, **kwargs):
     """
     %(template_var)s
@@ -282,7 +282,7 @@ def autocorr(dt, z, axis=0, **kwargs):
 
 @quack._covar_metadata
 @quant.while_dequantified(('=t', '=z'), ('=t', '=z ** 2'))
-@docstring.inject_snippets(name='autocovariance', data=_var_data, math=_covar_math)
+@docstring._snippet_manager(name='autocovariance', data=_var_data, math=_covar_math)
 def autocovar(dt, z, axis=0, **kwargs):
     """
     %(template_var)s
@@ -293,7 +293,7 @@ def autocovar(dt, z, axis=0, **kwargs):
 
 @quack._covar_metadata
 @quant.while_dequantified(('=t', '=z1', '=z2'), ('=t', ''))
-@docstring.inject_snippets(name='correlation', data=_covar_data, math=_corr_math)
+@docstring._snippet_manager(name='correlation', data=_covar_data, math=_corr_math)
 def corr(dt, z1, z2, axis=0, **kwargs):
     """
     %(template_var)s
@@ -304,7 +304,7 @@ def corr(dt, z1, z2, axis=0, **kwargs):
 
 @quack._covar_metadata
 @quant.while_dequantified(('=t', '=z1', '=z2'), ('=t', '=z1 * z2'))
-@docstring.inject_snippets(name='covariance', data=_covar_data, math=_covar_math)
+@docstring._snippet_manager(name='covariance', data=_covar_data, math=_covar_math)
 def covar(dt, z1, z2, axis=0, **kwargs):
     """
     %(template_var)s
@@ -540,7 +540,7 @@ def reof(data, neof=5):  # noqa
 
 @quack._hist_metadata
 @quant.while_dequantified(('=y', '=y'), 'count')
-@docstring.inject_snippets(name='count')
+@docstring._snippet_manager(name='count')
 def hist(bins, y, /, axis=0):
     """
     Get the histogram along axis `axis`.
