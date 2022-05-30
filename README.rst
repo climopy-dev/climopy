@@ -1,9 +1,3 @@
-.. Docstrings formatted according to:
-   numpy guide:      https://numpydoc.readthedocs.io/en/latest/format.html
-   matplotlib guide: https://matplotlib.org/devel/documenting_mpl.html
-.. Sphinx is used following this guide (less traditional approach):
-   https://daler.github.io/sphinxdoc-test/includeme.html
-
 ClimoPy
 =======
 
