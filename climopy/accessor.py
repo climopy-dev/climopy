@@ -2409,6 +2409,8 @@ class ClimoAccessor(object):
           are also interpted as ``vertical`` coordinates.
         * Enforces vertical coordinate units of kilometers, hectopascals, and kelvin,
           for height-like, pressure-like, and temperature-like data, respectively.
+        * Inverts vertical coordinates so that increasing index corresponds to
+          increasing value (and may or may not correspond to increasing height).
         * Renames longitude, latitude, vertical, and time coordinate names
           to ``'lon'``, ``'lat'``, ``'lev'``, and ``'time'``, respectively.
         * Renames coordinate bounds to the coordinate names followed by a
@@ -2482,10 +2484,10 @@ class ClimoAccessor(object):
                 to_units = 'K'
             if positive is None:
                 positive = 'up'
-                warnings._warn_climopy(
-                    f'Ambiguous positive direction for vertical coordinate {name!r}. '
-                    'Assumed up.'
-                )
+                warnings._warn_climopy(f'Ambiguous positive direction for coordinate {name!r}. Assumed up.')  # noqa: E501
+            if da.size > 0 and da[1] < da[0]:
+                da = da.isel({name: slice(None, None, -1)})
+                data = data.isel({name: slice(None, None, -1)})
             if to_units:
                 da = da.climo.to_units(to_units)
                 bounds = da.attrs.get('bounds', None)
@@ -2501,8 +2503,8 @@ class ClimoAccessor(object):
             data = data.assign_coords({da.name: da})
             if verbose:
                 print(
-                    f'Set vertical coordinate {name!r} units to {da.climo.units} '
-                    f'with positive direction {positive!r}.'
+                    f'Set vertical coordinate {name!r} units to {da.climo.units} with '
+                    f'positive height direction {positive!r} and ascending along index.'
                 )
 
         # Rename longitude, latitude, vertical, and time coordinates if present
