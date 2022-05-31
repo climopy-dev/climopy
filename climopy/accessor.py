@@ -2151,8 +2151,8 @@ class ClimoAccessor(object):
     def replace_coords(self, indexers=None, **kwargs):
         """
         Return a copy with coordinate values added or replaced (if they already exist).
-        If the input coordinates are `~xarray.DataArray`\\ s, the non-conflicting
-        coordinate attributes are kept.
+        Unlike `~.assign_coords`, this automatically copies unset attributes from
+        existing coordinates to the input coordinates, including the unit string.
 
         Parameters
         ----------
@@ -2161,29 +2161,26 @@ class ClimoAccessor(object):
         **kwargs
             Coordinates passed as keyword args.
         """
+        # WARNING: Absolutely *critical* that DataArray units string exactly matches
+        # old one. Otherwise subsequent concatenate will strip the units attribute. So
+        # we manually overwrite this rather than relying on the 'to_units' formatting.
         indexers, _ = self._parse_indexers(
             indexers, include_no_coords=True, include_scalar=True, allow_kwargs=False, **kwargs  # noqa: E501
         )
         indexers_new = {}
         for name, coord in indexers.items():
-            if isinstance(coord, tuple):
-                raise ValueError('Coordinate data must be array-like.')
-            # Build coordinate DataArray
             if not isinstance(coord, xr.DataArray):
                 dims = () if quack._is_scalar(coord) else (name,)
                 coord = xr.DataArray(coord, dims=dims, name=name)
-            # Fix coordinate units and attributes
-            # WARNING: Absolutely *critical* that DataArray unit string exactly
-            # matches old one. Otherwise concatenate will strip unit attribute.
             coord = coord.climo.dequantify()
-            if name in self.data.coords:
-                prev = self.data.coords[name]
+            prev = self.data.coords.get(name, None)
+            if prev is not None:
                 if coord.climo._has_units:
                     coord = coord.climo.to_units(prev.climo.units)  # may raise error
                     coord.attrs['units'] = prev.attrs['units']  # *always* identical
                 for key, value in prev.attrs.items():
                     coord.attrs.setdefault(key, value)  # avoid overriding
-            indexers_new[name] = coord.climo.dequantify()
+            indexers_new[name] = coord
         return self.data.assign_coords(indexers_new)
 
     @_CFAccessor._clear_cache
