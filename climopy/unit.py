@@ -259,7 +259,7 @@ def format_units(unit, /, *, long_form=None):
                 key = ureg._get_symbol(key)
             elif exp > 0 and i == 0:
                 key += 's'
-            part.append((exp, key))
+            part.append((key, exp))
         parts.append(part)
     string = r' \, / \, '.join(
         formatter(
