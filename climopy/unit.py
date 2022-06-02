@@ -187,7 +187,10 @@ def encode_units(unit, /):
     """
     if isinstance(unit, str):
         unit = decode_units(unit)
-    return ' '.join(formatter([(u, e)], as_ratio=False) for u, e in unit._units.items())
+    return ' '.join(
+        formatter([(key, exp)], as_ratio=False)
+        for key, exp in unit._units.items()
+    )
 
 
 def decode_units(unit, /):
@@ -259,6 +262,7 @@ def format_units(unit, /, *, long_form=None):
                 key = ureg._get_symbol(key)
             elif exp > 0 and i == 0:
                 key += 's'
+            key = rf'\mathrm{{{key}}}'
             part.append((key, exp))
         parts.append(part)
     string = r' \, / \, '.join(
