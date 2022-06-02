@@ -1,7 +1,7 @@
 Installation
 ------------
 
-ClimoPy is published on `PyPi <https://pypi.org/project/climopy/>`__.
+Climopy is published on `PyPi <https://pypi.org/project/climopy/>`__.
 It can be installed or upgraded with ``pip`` as follows:
 
 .. code-block:: bash
@@ -9,7 +9,7 @@ It can be installed or upgraded with ``pip`` as follows:
    pip install climopy
    pip install --upgrade climopy
 
-To install a development version of ClimoPy, you can use
+To install a development version of climopy, you can use
 ``pip install git+https://github.com/lukelbd/climopy.git``
 or clone the repository and run ``pip install -e .`` inside
 the ``climopy`` folder.
