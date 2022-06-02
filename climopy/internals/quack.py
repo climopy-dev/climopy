@@ -43,13 +43,6 @@ def _as_step(h):
         return h[1] - h[0]
 
 
-def _default_param(func, param):
-    """
-    Get the default value from the call signature.
-    """
-    return inspect.signature(func).parameters[param].default
-
-
 def _interp_safe(x, xp, yp):
     """
     Safe interpolation accounting for pint units. The `yp` can be a DataArray.
@@ -167,18 +160,28 @@ def _dataarray_from(
     return data
 
 
-def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
+def _dataarray_strip(x, *ys, suffix='', infer_axis=True, **kwargs):
     """
     Get data from *x* and *y* DataArrays, interpret the `dim` argument, and try to
     determine the `axis` used for computations automatically if ``infer_axis=True``.
-    The axis suffix can be e.g. ``'_time'`` and we look for the ``dim_time`` keyword.
+    Can also translate suffixed dimensions to suffixed axes, e.g. `dim_time`.
+
+    Parameters
+    ----------
+    x, *ys : array-like
+        The input data.
+    suffix : str or sequence,
+        The axis keyword suffix(es).
+    infer_axis : bool, optional
+        Whether to infer the default `axis` keyword. Suffixed keywords are ignored.
+    **kwargs
+        Function keyword arguments. This may include axis and dimension specifiers.
     """
     # Convert builtin python types to arraylike
     x, = _as_arraylike(x)
     ys = _as_arraylike(*ys)
     x_dataarray = isinstance(x, xr.DataArray)
     y_dataarray = all(isinstance(y, xr.DataArray) for y in ys)
-    axis_default = _default_param(func, 'axis' + suffix)
 
     # Ensure all *ys* have identical dimensions, type, and shape
     # TODO: Permit automatic broadcasting for various functions?
@@ -193,26 +196,31 @@ def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
         if any(_ != dims[0] for _ in dims):
             raise ValueError(f'Dimensions should be identical, got {dims}.')
 
-    # Interpret 'dim' argument when input is Dataarray
-    axis = kwargs.pop('axis' + suffix, None)
-    if y_dataarray:
-        dim = kwargs.pop('dim' + suffix, None)
-        if dim is not None:
-            if axis is not None:
-                warnings._warn_climopy('Ambiguous axis specification.')
-            axis = ys[0].dims.index(dim)
-
-    # If both are dataarrays and *x* is coordinates, infer axis from dimension names
-    # Detect if user input axis or dim conflicts with inferred one
+    # Interpret 'dim' argument when input is DataArray, and if both inputs are
+    # DataArray and *x* is coordinates, infer axis from dimension names
     # NOTE: Easier to do this than permit *omitting* x coordinates and retrieving
-    # coordinates from DataArray. Variable call signatures get tricky.
-    if infer_axis and x_dataarray and y_dataarray and x.ndim == 1 and x.dims[0] in ys[0].dims:  # noqa: E501
-        axis_inferred = ys[0].dims.index(x.dims[0])
-        if axis is not None and axis != axis_inferred:
-            raise ValueError(f'Input {axis=} different from {axis_inferred=}.')
-        axis = axis_inferred
+    # coordinates from DataArray... but should still allow the latter in the future.
+    suffixes = (suffix,) if isinstance(suffix, str) else tuple(suffix)
+    for suffix in suffixes:
+        axis = kwargs.pop('axis' + suffix, None)
+        if y_dataarray:
+            dim = kwargs.pop('dim' + suffix, None)
+            if dim is not None:
+                if axis is not None:
+                    warnings._warn_climopy('Ambiguous axis specification.')
+                axis = ys[0].dims.index(dim)
+            infer = infer_axis and not suffix  # only for naked 'axis' keyword
+            if infer and x_dataarray and x.ndim == 1 and x.dims[0] in ys[0].dims:
+                axis_inferred = ys[0].dims.index(x.dims[0])
+                if axis is not None and axis != axis_inferred:
+                    raise ValueError(f'Input {axis=} different from {axis_inferred=}.')
+                axis = axis_inferred
+        if axis is not None:
+            kwargs['axis' + suffix] = None
 
     # Finally apply units and strip dataarray data
+    # NOTE: Use .data not .values to preserve e.g. Quantity,
+    # dask array, or numpy masked array data.
     args = []
     for arg in (x, *ys):
         if isinstance(arg, xr.DataArray):
@@ -220,8 +228,6 @@ def _dataarray_strip(func, x, *ys, suffix='', infer_axis=True, **kwargs):
                 arg = arg.climo.quantify()
             arg = arg.data
         args.append(arg)
-    kwargs['axis' + suffix] = axis_default if axis is None else axis
-
     return (*args, kwargs)
 
 
@@ -233,7 +239,7 @@ def _yy_metadata(func):
     """
     @functools.wraps(func)
     def wrapper(y, *args, **kwargs):
-        _, y_in, kwargs = _dataarray_strip(func, 0, y, **kwargs)
+        _, y_in, kwargs = _dataarray_strip(0, y, **kwargs)
         y_out = func(y_in, *args, **kwargs)
 
         # Build back the DataArray
@@ -266,7 +272,7 @@ def _xyy_metadata(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         x, y = args
-        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
+        x_in, y_in, kwargs = _dataarray_strip(x, y, **kwargs)
         y_out = func(x_in, y_in, **kwargs)
 
         # Build back the DataArray
@@ -298,7 +304,7 @@ def _xyxy_metadata(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         x, y = args  # *both* or *one* of these is dataarray
-        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
+        x_in, y_in, kwargs = _dataarray_strip(x, y, **kwargs)
         x_out, y_out = func(x_in, y_in, **kwargs)
 
         # Build back the DataArray. Trim x coordinates or interpolate to half-levels
@@ -346,19 +352,20 @@ def _power_metadata(func):
     def wrapper(*args, **kwargs):
         x, *ys = args  # *both* or *one* of these is dataarray
         y = ys[0]
-        x_in, *ys_in, kwargs = _dataarray_strip(func, x, *ys, **kwargs)
+        x_in, *ys_in, kwargs = _dataarray_strip(x, *ys, **kwargs)
         f, *Ps = func(x_in, *ys_in, **kwargs)
 
         # Build back the DataArray
         if isinstance(x, xr.DataArray):
             f = _dataarray_from(
-                x, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'},
+                x, f, dims=('f',), coords={}, attrs={'long_name': 'frequency'}
             )
         if isinstance(y, xr.DataArray):
             dim = y.dims[kwargs['axis']]
             Ps = (
-                _dataarray_from(y, P, dim_change={dim: 'f'}, dim_coords={'f': f})
-                for P in Ps
+                _dataarray_from(
+                    y, P, dim_change={dim: 'f'}, dim_coords={'f': f}
+                ) for P in Ps
             )
 
         return f, *Ps
@@ -374,8 +381,8 @@ def _power2d_metadata(func):
     def wrapper(*args, **kwargs):
         x1, x2, *ys = args  # *both* or *one* of these is dataarray
         y = ys[0]
-        x1_in, *ys_in, kwargs = _dataarray_strip(func, x1, *ys, suffix='_lon', **kwargs)
-        x2_in, *_, kwargs = _dataarray_strip(func, x2, *ys, suffix='_time', **kwargs)
+        x1_in, *ys_in, kwargs = _dataarray_strip(x1, *ys, suffix='_lon', **kwargs)
+        x2_in, *_, kwargs = _dataarray_strip(x2, *ys, suffix='_time', **kwargs)
         k, f, *Ps = func(x1_in, x2_in, *ys_in, **kwargs)
 
         # Build back the DataArray
@@ -393,8 +400,7 @@ def _power2d_metadata(func):
             Ps = (
                 _dataarray_from(
                     y, P, dim_change={dim1: 'k', dim2: 'f'}, dim_coords={'k': k, 'f': f}
-                )
-                for P in Ps
+                ) for P in Ps
             )
 
         return k, *Ps
@@ -410,7 +416,7 @@ def _lls_metadata(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         x, y = args  # *both* or *one* of these is dataarray
-        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
+        x_in, y_in, kwargs = _dataarray_strip(x, y, **kwargs)
         fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
 
         # Build back the DataArray
@@ -438,7 +444,7 @@ def _covar_metadata(func):
             raise TypeError(f'Expected {nargs} positional arguments. Got {len(args)}.')
         x, *ys = args  # *both* or *one* of these is dataarray
         y = ys[0]  # the first one
-        x_in, *ys_in, kwargs = _dataarray_strip(func, x, *ys, **kwargs)
+        x_in, *ys_in, kwargs = _dataarray_strip(x, *ys, **kwargs)
         lag, cov = func(x_in, *ys_in, **kwargs)
 
         # Build back the DataArray
@@ -459,16 +465,14 @@ def _eof_metadata(func):
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        data, = data_in, = args
-        axis_time = kwargs.pop('axis_time', _default_param(func, 'axis_time'))
-        axis_space = kwargs.pop('axis_space', _default_param(func, 'axis_space'))
-        if isinstance(data, xr.DataArray):
-            data_in = data.data
-            if 'dim_time' in kwargs:  # no warning for duplicate args, no big deal
-                axis_time = data.dims.index(kwargs.pop('dim_time'))
-            if 'dim_space' in kwargs:
-                axis_space = data.dims.index(kwargs.pop('dim_space'))
-
+        # NOTE: Here we need the time and space axis explicitly so that array coords
+        # can be propertly applied below. In future might have function that permits
+        # collapse of arbitrary dimensions to scalar and auto strips coords.
+        data, = args
+        data_in, kwargs = _dataarray_strip(data, suffix=('_time', '_space'), **kwargs)
+        default = lambda param: inspect.signature(func).parameters[param].default  # noqa: E731, E501
+        axis_time = kwargs.pop('axis_time', default('axis_time'))
+        axis_space = kwargs.pop('axis_space', default('axis_space'))
         pcs, projs, evals, nstars = func(
             data_in, axis_time=axis_time, axis_space=axis_space, **kwargs,
         )
@@ -505,7 +509,7 @@ def _hist_metadata(func):
     def wrapper(*args, **kwargs):
         # NOTE: This time 'x' coordinates are bins so do not infer
         yb, y = args
-        yb_in, y_in, kwargs = _dataarray_strip(func, yb, y, infer_axis=False, **kwargs)
+        yb_in, y_in, kwargs = _dataarray_strip(yb, y, infer_axis=False, **kwargs)
         y_out = func(yb_in, y_in, **kwargs)
 
         # Build back the DataArray
@@ -533,7 +537,7 @@ def _find_metadata(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         x, y = args
-        x_in, y_in, kwargs = _dataarray_strip(func, x, y, **kwargs)
+        x_in, y_in, kwargs = _dataarray_strip(x, y, suffix=('', '_track'), **kwargs)
         x_out, y_out = func(x_in, y_in, **kwargs)
 
         # Build back the DataArray

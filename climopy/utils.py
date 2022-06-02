@@ -113,9 +113,15 @@ def find(
         The data for which we find zeros.
     axis : int, optional
         Axis along which zeros are found and (optionally) derivatives are taken.
+    dim : str, optional
+        *For `xarray.DataArray` input only*.
+        Named dimension along which zeros are found.
     axis_track : int, optional
-        Axis along which zeros taken along `axis` are "tracked". Default is the
-        last position not occupied by `axis`.
+        Axis along which zeros taken along `axis` are "tracked". Default
+        is the rightmost axis not occupied by `axis`.
+    dim_track : str, optional
+        *For `xarray.DataArray` input only*.
+        Named dimension along which zeros are "tracked".
     track : bool, optional
         Whether to track zeros. If ``False`` they are added in the order they appeared.
     diff : int, optional
