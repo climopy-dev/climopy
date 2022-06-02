@@ -99,7 +99,7 @@ def calendar(dt, /):
 @quack._find_metadata
 @quant.while_dequantified(('=x', '=y'), ('=x', '=y'))
 def find(
-    x, y, /, axis=-1, axis_track=None, track=True, diff=None, which='both', centered=True,  # noqa: E501
+    x, y, /, axis=-1, axis_track=None, diff=None, which='both', centered=True,
     **kwargs,
 ):
     """
@@ -113,11 +113,15 @@ def find(
         The data for which we find zeros.
     axis : int, optional
         Axis along which zeros are found and (optionally) derivatives are taken.
+    dim : str, optional
+        *For `xarray.DataArray` input only*.
+        Named dimension along which zeros are found.
     axis_track : int, optional
-        Axis along which zeros taken along `axis` are "tracked". Default is the
-        last position not occupied by `axis`.
-    track : bool, optional
-        Whether to track zeros. If ``False`` they are added in the order they appeared.
+        Axis along which zeros taken along `axis` are "tracked". If not
+        provided then the zeros are not tracked.
+    dim_track : str, optional
+        *For `xarray.DataArray` input only*.
+        Named dimension along which zeros are "tracked".
     diff : int, optional
         How many times to differentiate along the axis.
     which : {'negpos', 'posneg', 'both'}, optional
@@ -157,7 +161,7 @@ def find(
     ...     y * ureg.m, name='variable',
     ...     dims=('x', 'y'), coords={'x': xarr.climo.dequantify()}
     ... )
-    >>> x0s, y0s = climo.find(xarr, yarr, axis=0, ntrack=2)
+    >>> x0s, y0s = climo.find(xarr, yarr, axis=0, nmax=2)
     >>> x0s
     <xarray.DataArray 'x' (track: 2, y: 10)>
     <Quantity([[25.56712412 17.1468964  25.94590963 24.43748793 25.96456694 23.50805224
@@ -170,12 +174,13 @@ def find(
     """
     # Standardize input
     ndim = y.ndim
+    track = axis_track is not None
     if axis < 0:
         axis += ndim
-    if axis_track is not None and axis_track < 0:
-        axis_track += ndim
-    if axis_track is None:
+    if axis_track is None:  # get dummy axis number to use in algorithm
         axis_track = ndim - 2 if axis == ndim - 1 else ndim - 1
+    elif axis_track < 0:
+        axis_track += ndim
     for _ in range(3 - ndim):  # add missing 'extra' and 'track' dims
         y = y[None, ...]
         axis += 1
@@ -349,7 +354,7 @@ def intersection(x, y1, y2, /, xlog=False):
 
 
 # TODO: Support pint quantities here
-def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
+def linetrack(xs, ys=None, /, nmax=None, seed=None, sep=None):  # noqa: E225
     """
     Track individual "lines" across lists of coordinates.
 
@@ -359,13 +364,13 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
         The locations to be grouped into tracks.
     ys : list of lists, optional
         The values corresponding to the locations `xs`.
-    ntrack : int, optional
+    nmax : int, optional
         The maximum number of values to be simultaneously tracked. This can be used
         in combination with `seed` to ignore spurious tracks. The default value is
         `numpy.inf` (i.e. the number of tracks is unlimited).
     seed : float or list of float, optional
         Seed value(s) for the track(s) that should be picked up at the start.
-        If `ntrack` is ``None`` this has no effect.
+        If `nmax` is ``None`` this has no effect.
     sep : float, optional
         The maximum separation between points belonging to the same "track". If a
         separation is larger than `sep` the algorithm will begin a new track. Default
@@ -415,28 +420,28 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
         or any(np.atleast_1d(x).size != np.atleast_1d(y).size for x, y in zip(xs, ys))
     ):
         raise ValueError('Mismatched geometry between x and y lines.')
-    if ntrack is None:
+    if nmax is None:
         # WARNING: np.isscalar(np.array(1)) returns False so need to take
         # great pains to avoid length of unsized object errors
-        ntrack = max(
+        nmax = max(
             size if (size := getattr(x, 'size', None)) is not None  # noqa: E203, E231
             else 1 if np.isscalar(x) else len(x) for x in xs
         )
 
     # Arrays containing sorted lines in the output columns
     # NOTE: Need twice the maximum number of simultaneously tracked lines as columns
-    # in the array. For example the following sequence with ntrack == 1 and sep == 5:
+    # in the array. For example the following sequence with nmax == 1 and sep == 5:
     # [20, NaN]
     # [22, NaN]
     # [NaN, 40]  # bigger than sep, so "new" line
-    # For another example, the following sequence with ntrack == 2 and sep == np.inf:
+    # For another example, the following sequence with nmax == 2 and sep == np.inf:
     # [18, 32, NaN]
     # [20, 30, NaN]
     # [NaN, 33, 40]
-    # The algorithm recognizes that even if ntrack is 2, if the remaining unmatched
+    # The algorithm recognizes that even if nmax is 2, if the remaining unmatched
     # points are even *farther* from the remaining previous points, this is a new line.
-    nslots = 2 * ntrack
-    seed = np.atleast_1d(seed)[:ntrack]
+    nslots = 2 * nmax
+    seed = np.atleast_1d(seed)[:nmax]
     with np.errstate(invalid='ignore'):
         xs_sorted = np.empty((len(xs) + 1, nslots)) * np.nan
         ys_sorted = np.empty((len(ys) + 1, nslots)) * np.nan
@@ -451,8 +456,8 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
         ixs = np.atleast_1d(ixs)
         iys = np.atleast_1d(iys)
         if ixs.size == 0 or np.all(np.isnan(xs_sorted[i - 1, :])):
-            ixs = ixs[:ntrack]  # WARNING: just truncate the list of candidates!
-            iys = iys[:ntrack]
+            ixs = ixs[:nmax]  # WARNING: just truncate the list of candidates!
+            iys = iys[:nmax]
             xs_sorted[i, :ixs.size] = ixs
             ys_sorted[i, :iys.size] = iys
             continue
@@ -482,7 +487,7 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
                 continue
             if idx in idxs:  # already continued the line from a closer candidate
                 continue
-            if nlines >= ntrack:
+            if nlines >= nmax:
                 continue
             nlines += 1
             idxs.add(idx)
@@ -497,7 +502,7 @@ def linetrack(xs, ys=None, /, ntrack=None, seed=None, sep=None):  # noqa: E225
         jslots, = np.where(np.all(np.isnan(xs_sorted[i - 1:i + 1, :]), axis=0))
         lines_new = set(range(len(ixs))) - set(argmins)
         for j, idx in enumerate(lines_new):
-            if nlines >= ntrack:
+            if nlines >= nmax:
                 continue
             nlines += 1
             xs_sorted[i, jslots[j]] = ixs[int(idx)]

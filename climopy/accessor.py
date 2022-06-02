@@ -192,6 +192,16 @@ docstring._snippet_manager['notes_avgmean'] = _notes_avgmean
 docstring._snippet_manager['notes_weighted'] = _notes_weighted
 
 # Extrema templates
+_template_absminmax = """
+Return the %(prefix)s global %(extrema)s along the dimension.
+
+Parameters
+----------
+dim : str, optional
+    The dimension.
+**kwargs
+    Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
+"""
 _template_minmax = """
 Return the %(prefix)s local %(extrema)s along the dimension. Multiple %(extrema)s are
 concatenated along a 'track' dimension.
@@ -204,16 +214,6 @@ dim : str, optional
 dim_track : str, optional
     The dimension along which %(extrema)s are grouped into lines and tracked with
     `~.utils.linetrack`.
-**kwargs
-    Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
-"""
-_template_absminmax = """
-Return the %(prefix)s global %(extrema)s along the dimension.
-
-Parameters
-----------
-dim : str, optional
-    The dimension.
 **kwargs
     Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
 """
@@ -232,8 +232,8 @@ dim_track : str, optional
 **kwargs
     Passed to `~.utils.find` or `~ClimoAccessor.truncate`.
 """
-docstring._snippet_manager['template_minmax'] = _template_minmax
 docstring._snippet_manager['template_absminmax'] = _template_absminmax
+docstring._snippet_manager['template_minmax'] = _template_minmax
 docstring._snippet_manager['template_argloc'] = _template_argloc
 
 # Differentiation
@@ -3104,7 +3104,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         avg_keys = ('skipna', 'weight')
         cov_keys = ('lag', 'ilag', 'maxlag', 'imaxlag')
         fit_keys = ('maxlag', 'imaxlag', 'maxlag_fit', 'imaxlag_fit')
-        find_keys = ('diff', 'which', 'centered', 'sep', 'seed', 'ntrack', 'dim_track')
+        find_keys = ('diff', 'which', 'centered', 'maxn', 'seed', 'sep', 'dim_track')
         reduce_methods = {
             'autocorr': ('autocorr', cov_keys, {}),
             'autocovar': ('autocovar', cov_keys, {}),
@@ -3735,9 +3735,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
     @quant.while_xarray_dequantified
     @quack._keep_cell_attrs
-    def _find_extrema(
-        self, dim, abs=False, arg=False, which='max', dim_track=None, **kwargs
-    ):
+    def _find_extrema(self, dim, abs=False, arg=False, which='max', **kwargs):
         """
         Find local or global extrema or their locations.
         """
@@ -3760,26 +3758,13 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             data.coords['track'] = np.arange(data.sizes['track'])
             return data
 
-        # Parse and truncate
+        # Parse keywords and truncate
+        # NOTE: Tracking is disabled unless axis explicitly specified
         dim = self._parse_dims(dim, single=True)
         trunc, kwargs = self._parse_truncate_args(**kwargs)
         data = self.truncate(**trunc)
         if dim == 'lat':  # TODO: remove kludge! error is with uweight lat=absmax
             data = data.transpose(..., dim)
-
-        # Manage find keyword args
-        if dim_track is not None:
-            kwargs['axis_track'] = data.dims.index(dim_track)
-        if abs:
-            kwargs.setdefault('track', False)  # will not matter in the end
-        elif kwargs.get('axis_track', None) is not None:
-            kwargs.setdefault('track', True)  # implied that user wants tracking
-        elif kwargs.get('track', None):
-            warnings._warn_climopy(
-                'Keyword args axis_track or dim_track required when track=True. '
-                'Setting track=False.'
-            )
-            kwargs['track'] = False
         if which in ('negpos', 'posneg', 'both'):  # super users
             kwargs['which'] = which
         elif which in ('min', 'max'):

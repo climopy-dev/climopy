@@ -79,6 +79,9 @@ dt : float or array-like, optional
 %(data)s
 axis : int, optional
     Axis along which %(name)s is taken.
+dim : str, optional
+    *For `xarray.DataArray` input only*.
+    Named dimension along which %(name)s is taken.
 lag : float, optional
     Return %(name)s for the single lag `lag` (must be divisible by `dt`).
 ilag : int, default: 0
@@ -629,6 +632,9 @@ def slope(x, y, /, axis=0):
         The *y* coordinates.
     axis : int, optional
         The regression axis.
+    dim : str, optional
+        *For `xarray.DataArray` input only*.
+        The named regression dimension.
 
     Returns
     -------
@@ -740,6 +746,10 @@ def timescale(
           and the timescale is computed from the lag-1 pure red noise formula.
         * If `axis` is non-singleton, the timescale is estimated from a least-squares
           curve fit to a pure red noise spectrum up to `maxlag`.
+
+    dim : str, optional
+        *For `xarray.DataArray` input only*.
+        The named lag dimension.
 
     Returns
     -------

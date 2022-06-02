@@ -52,6 +52,9 @@ dx : float or array-like
 %(data)s
 axis : int, optional
     Location of the "time" axis.
+dim : str, optional
+    *For `xarray.DataArray` input only*.
+    The named "time" dimension.
 """
 _params_power2d = """
 dx_lon : float or array-like
@@ -63,6 +66,12 @@ axis_lon : int, optional
     Location of the cyclic "space" axis, generally longitude.
 axis_time : int, optional
     Location of the "time" axis.
+dim_lon : str, optional
+    *For `xarray.DataArray` input only*.
+    The named cyclic "space" dimension, generally longitude.
+dim_time : str, optional
+    *For `xarray.DataArray` input only*.
+    The named "time" dimension.
 """
 _params_power = """
 wintype : str or (str, float), optional
@@ -293,6 +302,9 @@ def filter(x, b, /, a=1, n=1, axis=-1, center=True, pad=True, pad_value=np.nan):
         Number of times to filter data. Will go forward --> backward --> forward...
     axis : int, optional
         Axis along which data is filtered. Defaults to last axis.
+    dim : str, optional
+        *For `xarray.DataArray` input only*.
+        Named dimension along which data is filtered.
     center : bool, optional
         Whether to trim leading part of axis by number of *b* coefficients. Will also
         attempt to *re-center* the data if a net-forward (e.g. f, fbf, fbfbf, ...)
@@ -380,6 +392,9 @@ def harmonics(y, n, /, axis=-1):
         The number of harmonics.
     axis : int, optional
         The axis along which harmonics are taken.
+    dim : str, optional
+        *For `xarray.DataArray` input only*.
+        Named dimension along which harmonics are taken.
 
     Returns
     -------
@@ -413,6 +428,9 @@ def highpower(y, n, /, axis=-1):
         The integer number of frequencies to select.
     axis : int, optional
         Axis along which the power is computed.
+    dim : str, optional
+        *For `xarray.DataArray` input only*.
+        Named dimension along which the power is computed.
 
     Returns
     -------
@@ -941,26 +959,29 @@ def response(dx, b, a=1, /, n=1000, manual=False):
 
 @quack._yy_metadata
 @quant.while_dequantified('=y', '=y')
-def runmean(y, n, /, axis=-1, wintype='boxcar', pad=np.nan, center=True):
+def runmean(y, n, /, axis=-1, pad=np.nan, center=True, wintype='boxcar'):
     """
     Apply running average to array.
 
     Parameters
     ----------
     y : array-like
-        Data, and we roll along axis `axis`.
+        The input data.
     n : int, optional
         Window length. Passed to `window`.
     axis : int, optional
-        Axis to filter.
-    wintype : int or array-like
-        Window type. Passed to `window`.
-    center : bool, optional
-        If ``True``, pad symmetrically about the center of the window.
-        If ``False``, pad the left side the window.
+        Axis along which average is taken.
+    dim : str, optional
+        *For `xarray.DataArray` input only*.
+        Named dimension along which average is taken.
     pad : bool, optional
         The pad value used to fill the array back to its original `axis` size.
         If ``None`` then padding is disabled and the `axis` size is reduced.
+    center : bool, optional
+        If ``True``, pad symmetrically about the center of the window.
+        If ``False``, pad the left side the window.
+    wintype : int or array-like
+        Window type. Passed to `window`.
 
     Returns
     -------
