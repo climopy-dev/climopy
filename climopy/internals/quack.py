@@ -470,7 +470,7 @@ def _eof_metadata(func):
         # collapse of arbitrary dimensions to scalar and auto strips coords.
         data, = args
         data_in, kwargs = _dataarray_strip(data, suffix=('_time', '_space'), **kwargs)
-        default = lambda param: inspect.signature(func).parameters[param].default  # noqa: E731, E501
+        default = lambda param: inspect.signature(func).parameters[param].default
         axis_time = kwargs.pop('axis_time', default('axis_time'))
         axis_space = kwargs.pop('axis_space', default('axis_space'))
         pcs, projs, evals, nstars = func(
