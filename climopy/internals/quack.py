@@ -306,8 +306,9 @@ def _dataarray_strip(x, *ys, suffix='', infer_axis=True, **kwargs):
         if y_dataarray:
             dim = kwargs.pop('dim' + suffix, None)
             if dim is not None:
+                msg = f'Ambiguous axis specification {dim=} and {axis=}. Using {dim=}.'
                 if axis is not None:
-                    warnings._warn_climopy('Ambiguous axis specification.')
+                    warnings._warn_climopy(msg)
                 axis = ys[0].dims.index(dim)
             infer = infer_axis and not suffix  # only for naked 'axis' keyword
             if infer and x_dataarray and x.ndim == 1 and x.dims[0] in ys[0].dims:
@@ -316,7 +317,7 @@ def _dataarray_strip(x, *ys, suffix='', infer_axis=True, **kwargs):
                     raise ValueError(f'Input {axis=} different from {axis_inferred=}.')
                 axis = axis_inferred
         if axis is not None:
-            kwargs['axis' + suffix] = None
+            kwargs['axis' + suffix] = axis
 
     # Finally apply units and strip dataarray data
     # NOTE: Use .data not .values to preserve e.g. Quantity,

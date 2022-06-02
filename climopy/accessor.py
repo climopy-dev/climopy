@@ -2392,7 +2392,7 @@ class ClimoAccessor(object):
             if positive is None:
                 positive = 'up'
                 warnings._warn_climopy(f'Ambiguous positive direction for coordinate {name!r}. Assumed up.')  # noqa: E501
-            if da.size > 0 and da[1] < da[0]:
+            if da.size > 1 and da[1] < da[0]:
                 da = da.isel({name: slice(None, None, -1)})
                 data = data.isel({name: slice(None, None, -1)})
             if to_units:

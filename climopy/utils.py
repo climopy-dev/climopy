@@ -125,8 +125,8 @@ def find(
     diff : int, optional
         How many times to differentiate along the axis.
     which : {'negpos', 'posneg', 'both'}, optional
-        Whether to find values that go from negative to positive, positive to negative,
-        or both.
+        Whether to find values that go from negative to positive, positive to
+        negative, or both.
     centered : bool, optional
         If False, use half-level differentiation rather than centered differentiation.
         Gives more accurate locations but less accurate values.
