@@ -230,9 +230,10 @@ def latex_units(units, /, *, long_form=None):
         pint.formatting.formatter(
             [
                 (
-                    (key if key in long_form else ureg._get_symbol(key))
-                    + ('s' if key in long_form and i == 0 and exp > 0 else ''),
-                    exp
+                    r'\mathrm{'
+                    + (key if key in long_form else ureg._get_symbol(key))
+                    + ('s' if key in long_form and i == 0 and exp > 0 else '')
+                    + '}', exp
                 )
                 for key, exp in units._units.items()
             ],
