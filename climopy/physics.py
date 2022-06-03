@@ -13,6 +13,11 @@ from .internals import ic  # noqa: F401
 from .internals.warnings import ClimoPyWarning
 from .unit import ureg
 
+# Global constant
+# TODO: Let add_cell_measures and other accessor get() operators
+# accept keyword arguments passed to derivation functions.
+TROPOSPHERE = True
+
 # Ignore override warnings arising due to autoreload. Only want to issue warnings
 # when users are *manually* overriding things.
 with warnings.catch_warnings():
@@ -118,19 +123,21 @@ with warnings.catch_warnings():
         elif type_ == 'pressure':
             ps = None
             data = bnds = self.coords['vertical_bnds']
+            if TROPOSPHERE and 'air_temperature' in self.vars:
+                # Contract too-high near-tropopause bounds onto tropopuse
+                pt = 0 * data + self.get('trop', add_cell_measures=False)
+                data = (data + 0 * pt).transpose(*pt.dims)
+                mask = data.data < pt.data
+                data.data[mask] = pt.data[mask]
             if 'surface_air_pressure' in self.vars:
-                # Set hard minimum bounds (possibly for multiple levels)
+                # Contract too-low near-surface bounds onto surface pressure
                 ps = 0 * data + self.vars['surface_air_pressure']
-                data = data + 0 * ps
-                data = data.transpose(*ps.dims)  # conform dimensionality
+                data = (data + 0 * ps).transpose(*ps.dims)
                 mask = data.data > ps.data
                 data.data[mask] = ps.data[mask]
-                # Expand near-surface vertical bounds to actual surface
-                idx = {}
-                if 'vertical' not in bnds.cf.sizes:
-                    idx['bnds'] = bnds.data.argmax()  # e.g. single-level
-                    pass
-                else:
+                # Expand too-high surface bounds onto surface pressure
+                idx = {'bnds': bnds.data.argmax()}  # e.g. single-level
+                if 'vertical' in bnds.cf.sizes:
                     idx['bnds'] = bnds.cf.isel(vertical=0).data.argmax()
                     idx['vertical'] = bnds.isel(bnds=0).data.argmax()
                 mask = data.climo[idx].data < ps.climo[idx].data

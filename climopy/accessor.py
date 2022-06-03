@@ -1574,9 +1574,9 @@ class ClimoAccessor(object):
         ----------
         measures : dict-like, optional
             Dictionary of cell measures. If none are provided, the default `width`,
-            `depth`, `height`, and `period` measures are automatically calculated.
-            If this is a DataArray, surface pressure will not be taken into account
-            and isentropic grids will error out.
+            `depth`, `height`, and `duration` measures are automatically calculated.
+            If this is a DataArray, pressure level cell heights will not include
+            surface pressure and isentropic level cell heights cannot be computed.
         dataset : xarray.Dataset, optional
             The dataset associated with this `xarray.DataArray`. Needed when
             calculating cell measures automatically.
@@ -1587,6 +1587,9 @@ class ClimoAccessor(object):
         **kwargs
             Cell measures passed as keyword args.
         """
+        # TODO: Support data arrays with surface pressure, isentropic density
+        # stored as coordinate variables. This should be part of derivation refactor
+        # supporting derivations/retrievals on both data aqrays and data array coords.
         stopwatch = _make_stopwatch(verbose=False)
         cf = self.cf
         data = self.data.copy(deep=False)
@@ -1617,6 +1620,8 @@ class ClimoAccessor(object):
                     continue
 
                 # Calculate new measures
+                # TODO: Permit passing keyword arguments to functions e.g.
+                # picking cell height filtered to the tropopause.
                 # NOTE: This catches RuntimeErrors emitted from _get_bounds if fail to
                 # calculate bounds and NotImplementedErrors from the definitions e.g.
                 # if there is no algorithm for cell height (child of RuntimeError)
@@ -1631,7 +1636,7 @@ class ClimoAccessor(object):
                             search_registry=False,
                             add_cell_measures=False
                         )
-                    except RuntimeError as err:
+                    except Exception as err:
                         if verbose:
                             print(f'Failed to add cell measure {measure!r} with name {name!r}. Error message: {err!s}')  # noqa: E501
                         continue
@@ -2301,7 +2306,9 @@ class ClimoAccessor(object):
         return data
 
     @_CFAccessor._clear_cache
-    def standardize_coords(self, verbose=False):
+    def standardize_coords(
+        self, verbose=False, height_units='km', pressure_units='hPa', temperature_units='K',  # noqa: E501
+    ):
         """
         Infer and standardize coordinates to satisfy CF conventions with the help of
         `~cf_xarray.CFAccessor.guess_coord_axis` and `cf_xarray.CFAccessor.rename_like`.
@@ -2328,6 +2335,12 @@ class ClimoAccessor(object):
         ----------
         verbose : bool, optional
             If ``True``, print statements are issued.
+        height_units : 'km'
+            The destination units for height-like vertical coordinates.
+        pressure_units : 'hPa'
+            The destination units for pressure-like vertical coordinates.
+        temperature_units : 'K'
+            The destination units for temperature-like vertical coordinates.
 
         Examples
         --------
@@ -2380,15 +2393,15 @@ class ClimoAccessor(object):
                 positive = 'up'  # positive vertical direction is increasing values
             elif units == 'sigma_level':  # special CF unit
                 positive = 'down'
-            elif units.is_compatible_with('Pa'):
-                positive = 'down'
-                to_units = 'hPa'
             elif units.is_compatible_with('m'):
                 positive = 'up'
-                to_units = 'km'
+                to_units = height_units
+            elif units.is_compatible_with('Pa'):
+                positive = 'down'
+                to_units = pressure_units
             elif units.is_compatible_with('K'):
                 positive = 'up'
-                to_units = 'K'
+                to_units = temperature_units
             if positive is None:
                 positive = 'up'
                 warnings._warn_climopy(f'Ambiguous positive direction for coordinate {name!r}. Assumed up.')  # noqa: E501
