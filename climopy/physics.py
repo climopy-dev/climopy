@@ -110,43 +110,43 @@ with warnings.catch_warnings():
         type_ = self.cf.vertical_type
         if type_ == 'temperature':
             data = self.vars['pseudo_density'] * self.coords['vertical_delta']
-        elif type_ == 'pressure':
-            ps = None
+            units = 'kg m^-2'
+        elif type_ in ('height', 'pressure'):
             data = bnds = self.coords['vertical_bnds']
+            scale = 1 if type_ == 'height' else const.g
+            units = 'm' if type_ == 'height' else 'kg m^-2'
+            surface = 'surface_' + ('altitude' if type_ == 'height' else 'air_pressure')
+            tropopause = ('z' if type_ == 'height' else '') + 'trop'
             if TROPOSPHERE and 'air_temperature' in self.vars:
                 # Contract too-high near-tropopause bounds onto tropopuse
-                pt = 0 * data + self.get('trop', add_cell_measures=False)
-                data = (data + 0 * pt).transpose(*pt.dims)
-                mask = data.data < pt.data
-                data.data[mask] = pt.data[mask]
-            if 'surface_air_pressure' in self.vars:
+                trop = 0 * data + self.get(tropopause, add_cell_measures=False)
+                data = (data + 0 * trop).transpose(*trop.dims)
+                mask = data.data < trop.data
+                data.data[mask] = trop.data[mask]
+            if surface in self.vars:
                 # Contract too-low near-surface bounds onto surface pressure
-                ps = 0 * data + self.vars['surface_air_pressure']
-                data = (data + 0 * ps).transpose(*ps.dims)
-                mask = data.data > ps.data
-                data.data[mask] = ps.data[mask]
+                sfc = 0 * data + self.vars[surface]
+                data = (data + 0 * sfc).transpose(*sfc.dims)
+                mask = data.data > sfc.data
+                data.data[mask] = sfc.data[mask]
                 # Expand too-high surface bounds onto surface pressure
-                idx = {'bnds': bnds.data.argmax()}  # e.g. single-level
-                if 'vertical' in bnds.cf.sizes:
-                    idx['vertical'] = bnds.isel(bnds=0).data.argmax()
-                    idx['bnds'] = bnds.cf.isel(vertical=0).data.argmax()
-                mask = data.climo[idx].data < ps.climo[idx].data
-                data.climo[idx].data[mask] = ps.climo[idx].data[mask]
+                if 'vertical' not in bnds.cf.sizes:
+                    idx = {'bnds': bnds.data.argmax()}  # e.g. single-level
+                else:
+                    ivert = bnds.isel(bnds=0).data.argmax()
+                    ibnds = bnds.cf.isel(vertical=0).data.argmax()
+                    idx = {'vertical': ivert, 'bnds': ibnds}
+                mask = data.climo[idx].data < sfc.climo[idx].data
+                data.climo[idx].data[mask] = sfc.climo[idx].data[mask]
             data = data.diff('bnds').isel(bnds=0)
-            data = data / const.g
-        elif type_ == 'hybrid':
-            raise NotImplementedError(
-                'Cell height for hybrid coordinates not yet implemented.'
-            )
+            data = data / scale
         else:
-            raise NotImplementedError(
-                f'Unknown cell height for vertical type {type_!r}.'
-            )
-        data = data.climo.to_units('kg m^-2')
+            raise NotImplementedError(f'Unknown cell height for vertical type {type_!r}.')  # noqa: E501
+        data = data.climo.to_units(units)
         if data.dims:  # non-scalar
-            data.data[data.data < 0] = ureg.Quantity(0, 'kg m^-2')
+            data.data[data.data < 0] = ureg.Quantity(0, units)
         elif data.data < 0:
-            data.data = ureg.Quantity(0, 'kg m^-2')
+            data.data = ureg.Quantity(0, units)
         data = data.fillna(0)  # seems to work without units in the 'fill' part
         data.name = 'cell_height'
         return data.climo.add_cell_measures(height=data)
