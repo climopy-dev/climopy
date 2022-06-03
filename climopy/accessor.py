@@ -1666,8 +1666,8 @@ class ClimoAccessor(object):
         measures : dict-like, optional
             Dictionary of cell measures. If none are provided, the default `width`,
             `depth`, `height`, and `duration` measures are automatically calculated.
-            If this is a DataArray, surface pressure will not be taken into account
-            and isentropic grids will error out.
+            If this is a DataArray, pressure level cell heights will not include
+            surface pressure and isentropic level cell heights cannot be computed.
         dataset : xarray.Dataset, optional
             The dataset associated with this `xarray.DataArray`. Needed when
             calculating cell measures automatically.
@@ -1708,6 +1708,8 @@ class ClimoAccessor(object):
                     continue
 
                 # Calculate new measures
+                # TODO: Permit passing keyword arguments to functions e.g.
+                # picking cell height filtered to the tropopause.
                 # NOTE: This catches RuntimeErrors emitted from _get_bounds if fail to
                 # calculate bounds and NotImplementedErrors from the definitions e.g.
                 # if there is no algorithm for cell height (child of RuntimeError)
@@ -1722,7 +1724,7 @@ class ClimoAccessor(object):
                             search_registry=False,
                             add_cell_measures=False
                         )
-                    except RuntimeError as err:
+                    except Exception as err:
                         if verbose:
                             print(f'Failed to add cell measure {measure!r} with name {name!r}. Error message: {err!s}')  # noqa: E501
                         continue
