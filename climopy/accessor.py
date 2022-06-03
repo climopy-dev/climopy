@@ -2478,14 +2478,15 @@ class ClimoAccessor(object):
         # Manage all Z axis units and interpret 'positive' direction if not set
         # (guess_coord_axis does not otherwise detect 'positive' attribute)
         for name in data.climo.cf.axes.get('Z', []):
-            da = data.climo.coords[name]  # returns quantity
+            da = data.climo.coords.get(name, quantify=False)
             sign = 0 if da.size < 2 else np.sign(da[1] - da[0])
-            units = da.climo.units  # always present
+            units = data.coords[name].attrs.get('units', None)
+            units = units if units is None else parse_units(units)
             to_units = positive = None
             if units is None:
                 pass
             elif units == 'level' or units == 'layer':  # ureg.__eq__ handles strings
-                positive = 'up'  # +ve vertical direction is increasing vals
+                positive = 'up'  # positive vertical direction is increasing values
             elif units == 'sigma_level':  # special CF unit
                 positive = 'down'
             elif units.is_compatible_with('m'):
@@ -2513,7 +2514,6 @@ class ClimoAccessor(object):
                     data[bounds] = bnds.climo.to_units(to_units)
                     if not bnds.climo._has_units:
                         bnds.attrs.pop('units')  # simply match level units
-            da = da.climo.dequantify()
             da.attrs.setdefault('positive', positive)
             data = data.assign_coords({da.name: da})
             if verbose:
