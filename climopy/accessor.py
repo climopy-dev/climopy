@@ -2392,7 +2392,9 @@ class ClimoAccessor(object):
         return data
 
     @_CFAccessor._clear_cache
-    def standardize_coords(self, verbose=False):
+    def standardize_coords(
+        self, verbose=False, height_units='km', pressure_units='hPa', temperature_units='K',  # noqa: E501
+    ):
         """
         Infer and standardize coordinates to satisfy CF conventions with the help of
         `~cf_xarray.CFAccessor.guess_coord_axis` and `cf_xarray.CFAccessor.rename_like`.
@@ -2419,6 +2421,12 @@ class ClimoAccessor(object):
         ----------
         verbose : bool, optional
             If ``True``, print statements are issued.
+        height_units : 'km'
+            The destination units for height-like vertical coordinates.
+        pressure_units : 'hPa'
+            The destination units for pressure-like vertical coordinates.
+        temperature_units : 'K'
+            The destination units for temperature-like vertical coordinates.
 
         Examples
         --------
@@ -2470,15 +2478,15 @@ class ClimoAccessor(object):
                 positive = 'up'  # +ve vertical direction is increasing vals
             elif units == 'sigma_level':  # special CF unit
                 positive = 'down'
-            elif units.is_compatible_with('Pa'):
-                positive = 'down'
-                to_units = 'hPa'
             elif units.is_compatible_with('m'):
                 positive = 'up'
-                to_units = 'km'
+                to_units = height_units
+            elif units.is_compatible_with('Pa'):
+                positive = 'down'
+                to_units = pressure_units
             elif units.is_compatible_with('K'):
                 positive = 'up'
-                to_units = 'K'
+                to_units = temperature_units
             if positive is None:
                 positive = 'up'
                 warnings._warn_climopy(f'Ambiguous positive direction for coordinate {name!r}. Assumed up.')  # noqa: E501
