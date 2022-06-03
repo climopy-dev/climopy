@@ -1113,7 +1113,7 @@ class _CoordsQuantified(object):
             distance between the closest coordinate centers away from the edgemost
             centers. Default is ``True``, which should yield correct results when
             working with datasets whose coordinate centers cover the entire domain (360
-            degrees of longitude, 180 degrees of latitude, and 1013.25 hectoPascals of
+            degrees of longitude, 180 degrees of latitude, and 1013.25 hectopascals of
             pressure), as with datasets modified with `~ClimoAccessor.enforce_global`.
         """
         tup = self._parse_key(key, **kwargs)  # potentially limit search
@@ -2477,6 +2477,8 @@ class ClimoAccessor(object):
 
         # Manage all Z axis units and interpret 'positive' direction if not set
         # (guess_coord_axis does not otherwise detect 'positive' attribute)
+        # WARNING: While CF convention does not specify unit string format, seems
+        # that cdo requires exactly short-form 'Pa' or 'hPa' for pressure detection.
         for name in data.climo.cf.axes.get('Z', []):
             da = data.climo.coords.get(name, quantify=False)
             sign = 0 if da.size < 2 else np.sign(da[1] - da[0])
@@ -2506,6 +2508,7 @@ class ClimoAccessor(object):
                 data = data.isel({name: slice(None, None, -1)})
             if to_units:
                 da = da.climo.to_units(to_units)
+                da.attrs['units'] = to_units  # use this exact string
                 bounds = da.attrs.get('bounds', None)
                 if isinstance(data, xr.Dataset) and bounds in data:
                     bnds = data[bounds]
