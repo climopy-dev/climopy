@@ -624,12 +624,12 @@ class _CFAccessor(object):
         if da is None:
             return 'unknown'
         units = da.climo.units
-        if units.is_compatible_with('K'):
-            return 'temperature'
+        if units.is_compatible_with('m'):
+            return 'height'
         elif units.is_compatible_with('Pa'):
             return 'pressure'
-        elif units.is_compatible_with('m'):
-            return 'height'
+        elif units.is_compatible_with('K'):
+            return 'temperature'
         else:
             return 'unknown'
 
