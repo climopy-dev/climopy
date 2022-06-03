@@ -2395,7 +2395,12 @@ class ClimoAccessor(object):
 
     @_CFAccessor._clear_cache
     def standardize_coords(
-        self, verbose=False, height_units='km', pressure_units='hPa', temperature_units='K',  # noqa: E501
+        self,
+        verbose=False,
+        height_units='km',
+        pressure_units='hPa',
+        temperature_units='K',  # noqa: E501
+        descending_levels=False,
     ):
         """
         Infer and standardize coordinates to satisfy CF conventions with the help of
@@ -2421,14 +2426,16 @@ class ClimoAccessor(object):
 
         Parameters
         ----------
-        verbose : bool, optional
+        verbose : bool, default: False
             If ``True``, print statements are issued.
-        height_units : 'km'
+        height_units : str, default: 'km'
             The destination units for height-like vertical coordinates.
-        pressure_units : 'hPa'
+        pressure_units : str, default: 'hPa'
             The destination units for pressure-like vertical coordinates.
-        temperature_units : 'K'
+        temperature_units : str, default: 'K'
             The destination units for temperature-like vertical coordinates.
+        descending_levels : bool, default: False
+            Whether vertical levels should be descending with increasing index.
 
         Examples
         --------
@@ -2472,6 +2479,7 @@ class ClimoAccessor(object):
         # (guess_coord_axis does not otherwise detect 'positive' attribute)
         for name in data.climo.cf.axes.get('Z', []):
             da = data.climo.coords[name]  # returns quantity
+            sign = 0 if da.size < 2 else np.sign(da[1] - da[0])
             units = da.climo.units  # always present
             to_units = positive = None
             if units is None:
@@ -2492,7 +2500,7 @@ class ClimoAccessor(object):
             if positive is None:
                 positive = 'up'
                 warnings._warn_climopy(f'Ambiguous positive direction for coordinate {name!r}. Assumed up.')  # noqa: E501
-            if da.size > 1 and da[1] < da[0]:
+            if sign != 0 and sign != 1 - 2 * descending_levels:
                 da = da.isel({name: slice(None, None, -1)})
                 data = data.isel({name: slice(None, None, -1)})
             if to_units:
