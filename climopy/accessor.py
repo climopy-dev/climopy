@@ -5,6 +5,7 @@ A pair of `xarray accessors \
 for working with pint units and CF variables, calculating transformed and derived
 quantities, and reducing dimensions in myrid ways.
 """
+import datetime
 import functools
 import itertools
 import math
@@ -22,7 +23,7 @@ from .cfvariable import CFVariableRegistry, vreg
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
 from .internals import _first_unique, docstring, quack, warnings
-from .unit import encode_units, latex_units, parse_units, ureg
+from .unit import _latitude_units, _longitude_units, decode_units, encode_units, ureg
 
 __all__ = [
     'ClimoAccessor',
@@ -47,6 +48,7 @@ CFVARIABLE_ARGS = (
 # Arguments passed to parse key
 PARSEKEY_ARGS = (
     'add_cell_measures',
+    'kw_derive',
     'quantify',
     'search_vars',
     'search_coords',
@@ -54,6 +56,13 @@ PARSEKEY_ARGS = (
     'search_transformations',
     'search_registry',
 )
+
+# Regular expressions compiled for speed
+REGEX_BOUNDS = re.compile(r'\A(.*?)(?:_(top|bot(?:tom)?|del(?:ta)?s?|b(?:ou)?nds?))?\Z')
+REGEX_IGNORE = re.compile(r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z')  # variable suffixes to ignore  # noqa: E501
+REGEX_MODIFY = re.compile(r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|_ratio)?\Z')  # variable suffixes implying changes  # noqa: E501
+REGEX_REPR_COMMA = re.compile(r'\A(\w+),(\s*)(.*)\Z')  # content around first comma
+REGEX_REPR_PAREN = re.compile(r'\A.*?\((.*)\)\Z')  # content inside first parentheses
 
 # Custom cell measures and associated coordinates. Naming conventions are consistent
 # with existing 'cell' style names and avoid conflicts with axes names / standard names.
@@ -85,15 +94,15 @@ if _cf_regex:
     _cf_patterns = all(isinstance(_, re.Pattern) for _ in _cf_accessor.regex.values())
     _cf_strings = all(isinstance(_, str) for _ in _cf_regex.values())
     _cf_regex.update({
-        'longitude': '(?:x|nav_)?(?:lon|g?lam)',
-        'latitude': '(?:y|nav_)?(?:lat|g?phi)',
+        'longitude': '(?:[a-z_]*)(?:lon|lam)',  # includes e.g. 'longitude' or 'lambda'
+        'latitude': '(?:[a-z_]*)(?:lat|phi)',  # includes e.g. 'latitude'
         'vertical': (
-            r'z\Z|(?:[a-z_]+)?(?:le?v|g?dep)|pres|sigma|h(?:ei)?ght|altitude'
+            r'z\Z|(?:[a-z_]*)le?v|g?dep(?:th)?|pres|sigma|h(?:ei)?ght|altitude'
             r'|isobar(?:ic)?|isotherm(?:al)?|isentrop(?:e|ic)|top_bottom|bottom_top'
         ),
         'time': r't\Z|time|date|datetime|lag|min|hour|day|week|month|year',
-        'X': r'x\Z|i\Z|n(?:lon|phi|i)',
-        'Y': r'y\Z|j\Z|n(?:lat|phi|j)',
+        'X': r'x\Z|i\Z|n(?:lon|lam)',
+        'Y': r'y\Z|j\Z|n(?:lat|phi)',
     })
     _cf_regex['Z'] = _cf_regex['vertical']
     _cf_regex['T'] = _cf_regex['time']
@@ -101,6 +110,18 @@ if _cf_regex:
         _cf_regex.update({key: re.compile(value) for key, value in _cf_regex.items()})
     elif not _cf_strings:
         warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate regexes.')  # noqa: E501
+
+# Expand regexes for coordinate detection
+# NOTE: The default criteria only sees 'degree_E' not 'deg_E', and 'degree_east' not
+# 'degree_East'. This is annoying so we make it as flexible as custom unit definition.
+_cf_criteria = getattr(_cf_accessor, 'coordinate_criteria', None)
+if _cf_criteria:
+    for key, opt in zip(('longitude', 'latitude'), (_longitude_units, _latitude_units)):
+        _cf_criteria[key]['units'] = tuple(  # skip definition and abbreviation indices
+            s.strip() for i, s in enumerate(opt.split('=')) if i not in (1, 2)
+        )
+if not _cf_criteria:
+    warnings._warn_climopy('cf_xarray API changed. Cannot update coordinate criteria.')
 
 # Mean and average templates
 _template_meansum = """
@@ -338,6 +359,7 @@ def _manage_coord_reductions(func):
     @functools.wraps(func)
     def _wrapper(self, dim=None, *, keep_attrs=None, manage_coords=True, **kwargs):
         # Call wrapped function
+        # TODO: Consider adding 'keepdims' options that calls expand_dims().
         # NOTE: Existing scalar coordinates should be retained by xarray
         attrs = self.data.attrs
         coords = self.data.coords
@@ -345,7 +367,9 @@ def _manage_coord_reductions(func):
         if not manage_coords:
             return result
 
-        # Treat lost coordinates
+        # Replace lost dimension coordinates with scalar NaNs
+        # NOTE: All cell measure adjustments are handled inside _integral_or_average
+        # -- allow mean or sum to automatically drop since they are not weights aware.
         coords_lost = coords.keys() - result.coords.keys()
         keep_attrs = xr.core.options._get_keep_attrs(keep_attrs)
         if keep_attrs:
@@ -357,28 +381,8 @@ def _manage_coord_reductions(func):
             except KeyError:
                 measure = None
             if prev.ndim == 1 and not measure:
-                # Replace lost dimension coordinates with scalar NaNs. Drop 0D cell
-                # measure coordinates, as that information is no longer needed
                 coord = xr.DataArray(np.nan, name=name, attrs=coords[name].attrs)
                 result = result.assign_coords({name: coord})
-            if prev.ndim > 1 and measure and prev.sizes.keys() & result.sizes.keys():
-                # Replace lost cell measures using unweighted sum. Drop non-cell measure
-                # coordinates; usually makes no sense to get an 'average' coordinate
-                # TODO: Support preserving measures for max, min, etc.
-                if func.__name__ in ('sum', 'integral'):
-                    method = prev.climo.sum
-                elif func.__name__ in ('mean', 'average'):
-                    method = prev.climo.mean
-                else:
-                    continue  # skip max, min, etc. for now
-                if not dim:  # entire domain
-                    dim = 'volume'
-                if isinstance(dim, str):
-                    dim = (dim,)
-                dim = tuple(d for m in dim for d in CELL_MEASURE_COORDS.get(m, (m,)))
-                coord = method(dim, manage_coords=False, **kwargs)
-                result = result.assign_coords({name: coord})
-
         return result
 
     return _wrapper
@@ -427,7 +431,7 @@ def _while_quantified(func):
             data = data.copy(deep=False)
             quantified = set()
             for da in data.values():
-                if not da.climo._is_quantity and not da.climo._is_bounds:
+                if not da.climo._is_quantity and not da.climo._bounds_coordinate:
                     da.climo._quantify()
                     quantified.add(da.name)
         elif not self._is_quantity:
@@ -897,8 +901,10 @@ class _CoordsQuantified(object):
         if quantify:
             dest = dest.climo.quantify()
         if transformation:
-            dest.name = None  # ensure name is modified
-            dest = transformation(dest)  # adjusts name if it is unset
+            dest.name = None  # ensure register_derivation applies new name
+            dest = transformation(dest)  # transform possibly with dummy function
+            if '_get_copy' == transformation.__name__:  # manually add back name
+                dest.name = coord.name
 
         # Return coords with cleaned up attributes. Only long_name and standard_name
         # are kept if math was performed.
@@ -911,7 +917,49 @@ class _CoordsQuantified(object):
 
         return dest
 
-    def _get_bounds(self, coord, sharp_cutoff=True):
+    @staticmethod
+    def _get_deltas(coord):
+        """
+        Get deltas accounting for possible monthly and annual time coordinates.
+        """
+        # NOTE: For some reason subtacting cftime object arrays works but subtracting
+        # timedelta from object arrays fails. Have to use the '.data' attributes.
+        # NOTE: This attempts to auto-detect the non-uniform datetime increments of
+        # one month or one year. Otherwise e.g. month weightings will be incorrect.
+        center = coord.data[1:] - coord.data[:-1]
+        lower = center[0]  # assume identical
+        upper = center[-1]  # assume identical
+        if quack._is_timelike(coord):
+            year, month, day = coord.dt.year.data, coord.dt.month.data, coord.dt.day.data  # noqa: E501
+            day_same = np.max(day) - np.min(day) <= 3  # e.g. a center or end day
+            month_same = np.all(month == month[0])  # exactly equal
+            annual = np.all(year[1:] - year[:-1] != 0) and month_same and day_same
+            monthly = np.all(month[1:] - month[:-1] != 0) and day_same
+            if np.issubdtype(coord.dtype, np.datetime64):
+                cls = datetime.datetime
+            else:
+                cls = type(coord.data[0])  # cftime class
+            idate = cls(year[0], month[0], day[0])
+            edate = cls(year[-1], month[-1], day[-1])
+            if annual:
+                iyear, eyear = year[0] - 1, year[-1] + 1
+                lower = idate - cls(iyear, month[0], day[0])
+                upper = cls(eyear, month[-1], day[-1]) - edate
+            if monthly:
+                imonth, emonth = month[0] - 1, month[-1] + 1
+                iyear, eyear = year[0] - 1 * (imonth == 0), year[-1] + 1 * (emonth == 13)  # noqa: E501
+                imonth, emonth = (imonth - 1) % 12 + 1, (emonth - 1) % 12 + 1
+                lower = idate - cls(iyear, imonth, day[0])
+                upper = cls(eyear, emonth, day[-1]) - edate
+            if np.issubdtype(coord.dtype, np.datetime64):  # note cftime uses datetime
+                lower = np.timedelta64(lower)  # no-op if already timedelta64
+                upper = np.timedelta64(upper)
+        lower = np.atleast_1d(lower)
+        upper = np.atleast_1d(upper)
+        deltas = np.concatenate((lower, center, upper))
+        return deltas
+
+    def _get_bounds(self, coord, sharp_cutoff=False):
         """
         Return bounds inferred from the coordinates or generated on-the-fly. See
         `.get` for `sharp_cutoff` details.
@@ -948,8 +996,7 @@ class _CoordsQuantified(object):
             bnds.data = bnds.climo.magnitude  # strip units if they exist
             bnds.attrs.clear()
             bnds.attrs.update(coord.attrs)  # add back attrs stripped by xarray
-            bdim = bnds.dims[bnds.shape.index(2)]  # bounds dimension name
-            return bnds.transpose(..., bdim)  # put bounds dimension on final axis
+            return bnds.transpose(..., bnds.dims[bnds.shape.index(2)])  # move bnds axis
 
         # Special consideration for singleton longitude, latitude, and height
         # dimensions! Consider 'bounds' to be entire domain.
@@ -975,31 +1022,25 @@ class _CoordsQuantified(object):
             if not quack._is_scalar(coord):
                 bounds = bounds[None, :]
 
-        # Cell bounds for time coordinates. Unlike spatial cells, time cell coordinates
-        # almost always indicates the end of the cell rather than the center.
-        # WARNING: Requires standard_name set to 'time'
-        elif coord.name in coordinates.get('time', ()):
-            diffs = coord.data[1:] - coord.data[:-1]
-            diffs = np.hstack((diffs[:1], diffs))
-            upper = coord.data
-            lower = upper - diffs
-            bounds = np.hstack((lower[:, None], upper[:, None]))
-
         # Construct default cell bounds
-        elif quack._is_numeric(coord):
-            if sharp_cutoff:
-                delta1 = delta2 = 0
-            else:
-                delta1 = 0.5 * np.diff(coord.data[:2])
-                delta2 = 0.5 * np.diff(coord.data[-2:])
-            edges = np.concatenate(
-                (
-                    coord.data[:1] - delta1,
-                    0.5 * (coord.data[1:] + coord.data[:-1]),
-                    coord.data[-1:] + delta2
+        # TODO: Consider implementing a similar methodology for selecting from forward,
+        # backward, or centered differences inside diff.py. However so far not much use.
+        elif quack._is_numeric(coord) or quack._is_timelike(coord):
+            delta_method = 'centered' if quack._is_numeric(coord) else 'forward'
+            deltas = self._get_deltas(coord)
+            if delta_method == 'forward':
+                parts = (coord.data, coord.data[-1:] + deltas[-1])
+            elif delta_method == 'backward':
+                parts = (coord.data[:1] - deltas[0], coord.data)
+            elif delta_method == 'centered':
+                scale = 0.0 if sharp_cutoff else 0.5
+                parts = (
+                    coord.data[:1] - scale * deltas[0],
+                    coord.data[:-1] + 0.5 * deltas[1:-1],
+                    coord.data[-1:] + scale * deltas[-1],
                 )
-            )
-            bounds = np.hstack((edges[:-1, None], edges[1:, None]))
+            bounds = np.concatenate(parts)
+            bounds = np.hstack((bounds[:-1, None], bounds[1:, None]))
 
         # Non-numeric fallback
         else:
@@ -1025,7 +1066,7 @@ class _CoordsQuantified(object):
         # Return new DataArray
         bounds = xr.DataArray(
             bounds,
-            name=coord.name + '_bnds',
+            name=(coord.name or 'unknown') + '_bnds',
             dims=(*coord.dims[:1], 'bnds'),  # nameless 'bnds' dimension
             coords=coord.coords,
             attrs=coord.attrs,  # could include units
@@ -1046,8 +1087,7 @@ class _CoordsQuantified(object):
         # Interpret bounds specification
         if not isinstance(key, str):
             raise TypeError(f'Invalid key {key!r}. Must be string.')
-        m = re.match(r'\A(.*?)(?:_(top|bot(?:tom)?|del(?:ta)?|b(?:ou)?nds))?\Z', key)
-        key, flag = m.groups()  # fix bounds flag
+        key, flag = REGEX_BOUNDS.match(key).groups()
         flag = flag or ''
 
         # Find native coordinate
@@ -1106,15 +1146,15 @@ class _CoordsQuantified(object):
         search_transformations : bool, default: True
             Whether to perform registered transformations of coordinates.
         sharp_cutoff : bool, default: True
-            The cutoff behavior used when calculating default non-datetime coordinate
-            bounds in the event that an explicit ``'bounds'`` variable is unavailable.
-            When ``True``, the end coordinate centers are also treated as coordinate
-            edges. When ``False``, the end coordinate edges are calculated as half the
-            distance between the closest coordinate centers away from the edgemost
-            centers. Default is ``True``, which should yield correct results when
-            working with datasets whose coordinate centers cover the entire domain (360
-            degrees of longitude, 180 degrees of latitude, and 1013.25 hectopascals of
-            pressure), as with datasets modified with `~ClimoAccessor.enforce_global`.
+            The behavior used to calculate ending cell weights for non-datetime
+            coordinates in the event that an explicit ``'bounds'`` variable is
+            unavailable. When ``True``, the end coordinate centers are also treated as
+            coordinate edges. When ``False``, the end coordinate edges are calculated as
+            half the distance between the closest coordinate centers away from the
+            edgemost centers. Default is ``True``, which should yield correct results
+            when working with datasets whose coordinate centers cover the entire domain
+            (360 degrees of longitude, 180 degrees of latitude, and 1013.25 hectopascals
+            of pressure), as with datasets modified by `~ClimoAccessor.enforce_global`.
         """
         tup = self._parse_key(key, **kwargs)  # potentially limit search
         if tup is None:
@@ -1163,7 +1203,7 @@ class _VarsQuantified(object):
         """
         Is a valid variable.
         """
-        return self._parse_key(key) is not None
+        return self._parse_key(key, quantify=None) is not None
 
     def __getattr__(self, attr):
         """
@@ -1271,39 +1311,37 @@ class ClimoAccessor(object):
         """
         Reassign a `pint.Quantity` indexer to units of relevant coordinate.
         """
-        def _dequantify_value(value, units, scalar=True):
+        def _dequantify_value(value, units):
             if isinstance(value, xr.DataArray):
                 # Strip non-dimensional coordinates to avoid indexer/indexee conflicts
                 # WARNING: Keep DataArray indexers as DataArrays! Xarray can read from
                 # them, and coords could be interpreted by _iter_by_indexer_coords.
-                if value.climo._has_units and value.dtype.kind != 'b':
+                if value.climo._has_units and value.dtype.kind != 'b':  # no masks
                     value = value.climo.to_units(units)
                 value = value.climo.dequantify()
                 value = value.squeeze(drop=True)
                 value = value.drop_vars(value.coords.keys() - value.sizes.keys())
-            elif isinstance(value, pint.Quantity):
+            if isinstance(value, pint.Quantity):
                 value = value.to(units).magnitude
             if np.asarray(value).size == 1:
                 value = np.asarray(value).item()  # pull out of ndarray or DataArray
-            elif scalar:
-                raise ValueError(f'Expected scalar indexer, got {value=}.')
             return value
 
         # Update indexers to handle quantities and slices of quantities
         data = self.data
         indexers_scaled = {}
         for name, sel in indexers.items():
-            if (coord := data.climo.coords.get(name)) is not None:
+            units = None
+            coord = data.climo.coords.get(name, None)
+            if coord is not None and quack._is_numeric(coord.data):
                 units = coord.climo.units
-            else:
-                units = None
             if isinstance(sel, slice):
-                start = _dequantify_value(sel.start, units, scalar=True)
-                stop = _dequantify_value(sel.stop, units, scalar=True)
-                step = _dequantify_value(sel.step, units, scalar=True)
+                start = _dequantify_value(sel.start, units)
+                stop = _dequantify_value(sel.stop, units)
+                step = _dequantify_value(sel.step, units)
                 indexers_scaled[name] = slice(start, stop, step)
             else:
-                indexers_scaled[name] = _dequantify_value(sel, units, scalar=False)
+                indexers_scaled[name] = _dequantify_value(sel, units)
 
         return indexers_scaled
 
@@ -1343,7 +1381,9 @@ class ClimoAccessor(object):
         except KeyError:
             pass
         if src == dest:
-            return lambda da: da.copy()
+            def _get_copy(da):
+                return da.copy()
+            return _get_copy
         # Find the transformation
         for (isrc, idest), transformation in TRANSFORMATIONS.items():
             try:
@@ -1356,8 +1396,11 @@ class ClimoAccessor(object):
                 return func
             # Perform nested invocation of transformations. Inner func goes from
             # A --> ?, then outer func from ? --> B (returned above)
-            if outer := self._find_this_transformation(idest, dest):  # noqa: E501
-                return lambda da, **kwargs: outer(transformation(da, **kwargs))
+            if outer := self._find_this_transformation(idest, dest):
+                @functools.wraps(transformation)
+                def _get_nested(da, **kwargs):
+                    return outer(transformation(da, **kwargs))
+                return _get_nested
 
     def _find_params(self, allow_empty=False, return_reference=False):
         """
@@ -1442,7 +1485,7 @@ class ClimoAccessor(object):
             idata = getattr(idata, func)(indexer, **kwargs)
 
             # Repair output
-            for dim, value in indexer.items():
+            for dim in indexer:
                 # Preserve attributes of indexed coordinate
                 # NOTE: This is critical for CF interpretation of coords! Right now
                 # interp drops attrs. See: https://github.com/pydata/xarray/issues/4239
@@ -1495,7 +1538,7 @@ class ClimoAccessor(object):
         indexers, _ = self._parse_indexers(indexers, **kwargs)
         if not single:
             return tuple(indexers)
-        elif len(indexers) > 1:
+        elif len(indexers) != 1:
             raise ValueError(f'Expected one dimension, got {len(indexers)}.')
         else:
             return tuple(indexers)[0]
@@ -1514,6 +1557,8 @@ class ClimoAccessor(object):
         """
         Parse and translate keyword dimension indexers.
         """
+        opts = list(self.data.coords.keys())
+        opts.extend(name for idx in self.data.indexes.values() for name in idx.names)
         dims = self.data.dims
         coords = self.data.coords
         indexers = indexers or {}
@@ -1523,7 +1568,7 @@ class ClimoAccessor(object):
         for key in tuple(indexers):
             # Translate indexer name
             dim = key
-            if dim in dims and dim not in coords:  # but not coordinates
+            if dim in dims and dim not in opts:  # but not coordinates
                 if include_no_coords:
                     indexers_filtered[dim] = indexers.pop(key)
                     continue
@@ -1542,7 +1587,7 @@ class ClimoAccessor(object):
                     raise RuntimeError(f'Coordinate {key!r} is scalar.')
             # Validate indexer
             if (
-                dim in coords
+                dim in opts
                 or include_pseudo and dim in ('area', 'volume')
                 or search_transformations and self._find_any_transformation(coords.values(), dim)  # noqa: E501
             ):
@@ -1551,9 +1596,6 @@ class ClimoAccessor(object):
             elif not allow_kwargs:
                 raise ValueError(f'Invalid argument or unknown dimension {key!r}.')
 
-        # Warn if empty
-        if not indexers_filtered:
-            raise ValueError(f'No valid indexers found in kwargs {indexers!r}.')
         return indexers_filtered, indexers
 
     def _parse_truncate_args(self, **kwargs):
@@ -1655,7 +1697,13 @@ class ClimoAccessor(object):
 
     @_CFAccessor._clear_cache
     def add_cell_measures(
-        self, measures=None, *, dataset=None, override=False, verbose=False, **kwargs
+        self, measures=None, *,
+        dataset=None,
+        override=False,
+        verbose=False,
+        surface=False,
+        tropopause=False,
+        **kwargs
     ):
         """
         Add cell measures to `~xarray.DataArray.coords`, remove cell measures missing
@@ -1666,13 +1714,18 @@ class ClimoAccessor(object):
         measures : dict-like, optional
             Dictionary of cell measures. If none are provided, the default `width`,
             `depth`, `height`, and `duration` measures are automatically calculated.
-            If this is a DataArray, pressure level cell heights will not include
-            surface pressure and isentropic level cell heights cannot be computed.
         dataset : xarray.Dataset, optional
             The dataset associated with this `xarray.DataArray`. Needed when
-            calculating cell measures automatically.
+            either `surface` or `tropopause` is ``True``.
+        surface : bool, optional
+            Whether to bound height cells at the surface. Requires `dataset` unless
+            this is already a `~xarray.Dataset` or the dependencies are in `.coords`.
+        tropopause : bool, optional
+            Whether to bound height cells at the tropopause. Requires `dataset` unless
+            this is already a `~xarray.Dataset` or the dependencies are in `.coords`.
         override : bool, optional
-            Whether to override existing cell measures. Default is ``False``.
+            Whether to override existing cell measures with automatically
+            constructed versions. Default is ``False``.
         verbose : bool, optional
             If ``True``, print statements are issued.
         **kwargs
@@ -1694,49 +1747,43 @@ class ClimoAccessor(object):
             action = 'ignore'
 
         # Add default cell measures
-        if not measures:
+        # NOTE: This skips measures that already exist in coordinates and
+        # measures that aren't subset of existing spatial coordinates.
+        if override or not measures:
             stopwatch('init')
+            times = cf.coordinates.get('time', None)
+            times = times and data.coords[times[0]]
             for measure in ('width', 'depth', 'height', 'duration'):
-                # Skip measures that already exist in coordinates and measures that
-                # aren't subset of existing spatial coordinates
-                if (
-                    not override
-                    and measure in cf.cell_measures
-                    and cf.cell_measures[measure][0] in data.coords
-                    or set(CELL_MEASURE_COORDS[measure]) - set(cf.coordinates)
-                ):
+                if set(CELL_MEASURE_COORDS[measure]) - set(cf.coordinates):
                     continue
-
-                # Calculate new measures
-                # TODO: Permit passing keyword arguments to functions e.g.
-                # picking cell height filtered to the tropopause.
-                # NOTE: This catches RuntimeErrors emitted from _get_bounds if fail to
-                # calculate bounds and NotImplementedErrors from the definitions e.g.
-                # if there is no algorithm for cell height (child of RuntimeError)
-                name = 'cell_' + measure
+                if measure == 'duration' and times is not None and times.size == 1 and np.isnan(times.data):  # noqa: E501
+                    continue
+                kw = {}
+                name = cf.cell_measures.get(measure, (f'cell_{measure}',))[0]
+                if measure == 'height':
+                    kw = {'surface': surface, 'tropopause': tropopause}
+                if name in data.coords:
+                    if override:
+                        data = data.drop_vars(name)
+                    else:
+                        continue
                 with warnings.catch_warnings():
                     warnings.simplefilter(action)  # possibly ignore warnings
-                    try:
-                        weight = dataset.climo._get_item(
-                            name,
-                            search_cf=False,
-                            search_transformations=False,
-                            search_registry=False,
-                            add_cell_measures=False
-                        )
-                    except Exception as err:
-                        if verbose:
-                            print(f'Failed to add cell measure {measure!r} with name {name!r}. Error message: {err!s}')  # noqa: E501
-                        continue
-                    else:
-                        if weight.sizes.keys() - data.sizes.keys():
-                            continue  # e.g. 'width' for data with no latitude dim
-                        if verbose:
-                            print(f'Added cell measure {measure!r} with name {name!r}.')
-                        weight.name = name  # just in case
-                        measures[measure] = weight
-                    finally:
-                        stopwatch(measure)
+                    weight = dataset.climo._get_item(
+                        name,
+                        search_cf=False,
+                        search_transformations=False,
+                        search_registry=False,
+                        add_cell_measures=False,
+                        kw_derive=kw,
+                    )
+                    if weight.sizes.keys() - data.sizes.keys():
+                        continue  # e.g. 'width' for data with no latitude dimension
+                    if verbose:
+                        print(f'Added cell measure {measure!r} with name {name!r}.')
+                    weight.name = name  # just in case
+                    measures[measure] = weight
+                    stopwatch(measure)
 
         # Add measures as dequantified coordinate variables
         # TODO: Stop adding cell measures attribute to whole dataset
@@ -1764,7 +1811,7 @@ class ClimoAccessor(object):
                 if da.name is None:
                     raise ValueError('Input cell measures must have names.')
                 data.coords[da.name] = da.climo.dequantify()
-                if isinstance(obj, xr.DataArray) and obj.climo._is_bounds:
+                if isinstance(obj, xr.DataArray) and obj.climo._bounds_coordinate:
                     continue
                 measures_new.append((measure, da.name))
             obj.attrs['cell_measures'] = cf._encode_attr(measures_new)
@@ -2153,8 +2200,8 @@ class ClimoAccessor(object):
     def replace_coords(self, indexers=None, **kwargs):
         """
         Return a copy with coordinate values added or replaced (if they already exist).
-        Unlike `~.assign_coords`, this automatically copies unset attributes from
-        existing coordinates to the input coordinates, including the unit string.
+        Unlike `~.assign_coords`, this supports units and automatically copies unset
+        attributes from existing coordinates to the input coordinates.
 
         Parameters
         ----------
@@ -2177,10 +2224,10 @@ class ClimoAccessor(object):
             coord = coord.climo.dequantify()
             prev = self.data.coords.get(name, None)
             if prev is not None:
-                if coord.climo._has_units:
-                    coord = coord.climo.to_units(prev.climo.units)  # may raise error
+                if coord.climo._has_units and prev.climo._has_units:
+                    coord = coord.climo.to_units(prev.climo.units)
                     coord.attrs['units'] = prev.attrs['units']  # *always* identical
-                for key, value in prev.attrs.items():
+                for key, value in prev.attrs.items():  # possibly impose default units
                     coord.attrs.setdefault(key, value)  # avoid overriding
             indexers_new[name] = coord
         return self.data.assign_coords(indexers_new)
@@ -2399,8 +2446,9 @@ class ClimoAccessor(object):
         verbose=False,
         height_units='km',
         pressure_units='hPa',
-        temperature_units='K',  # noqa: E501
+        temperature_units='K',
         descending_levels=False,
+        prefix_levels=False,
     ):
         """
         Infer and standardize coordinates to satisfy CF conventions with the help of
@@ -2436,6 +2484,10 @@ class ClimoAccessor(object):
             The destination units for temperature-like vertical coordinates.
         descending_levels : bool, default: False
             Whether vertical levels should be descending with increasing index.
+        prefix_levels : bool, default: False
+            Whether vertical levels should always be named ``'lev'`` or include
+            a prefix indicating the type (i.e. ``'z'`` for height, ``'p'`` for
+            pressure, ``'t'`` for temperature, and nothing for unknown types).
 
         Examples
         --------
@@ -2479,12 +2531,22 @@ class ClimoAccessor(object):
         # (guess_coord_axis does not otherwise detect 'positive' attribute)
         # WARNING: While CF convention does not specify unit string format, seems
         # that cdo requires exactly short-form 'Pa' or 'hPa' for pressure detection.
+        prefix = None
         for name in data.climo.cf.axes.get('Z', []):
             da = data.climo.coords.get(name, quantify=False)
             sign = 0 if da.size < 2 else np.sign(da[1] - da[0])
+            if name in data.climo.cf.cell_measures:
+                print(
+                    f'Warning: CF accessor interpreted {name!r} as both a vertical '
+                    'axis and cell measure. This can happen due to existing cell '
+                    'measure variables with vertical-sounding names or when calling '
+                    'add_cell_measures before standardize_coords on a new file.'
+                )
+                del da.attrs['axis']
+                continue
             units = data.coords[name].attrs.get('units', None)
-            units = units if units is None else parse_units(units)
-            to_units = positive = None
+            units = units if units is None else decode_units(units)
+            to_units = positive = prefix = None
             if units is None:
                 pass
             elif units == 'level' or units == 'layer':  # ureg.__eq__ handles strings
@@ -2492,12 +2554,15 @@ class ClimoAccessor(object):
             elif units == 'sigma_level':  # special CF unit
                 positive = 'down'
             elif units.is_compatible_with('m'):
+                prefix = 'z'
                 positive = 'up'
                 to_units = height_units
             elif units.is_compatible_with('Pa'):
+                prefix = 'p'
                 positive = 'down'
                 to_units = pressure_units
             elif units.is_compatible_with('K'):
+                prefix = 't'
                 positive = 'up'
                 to_units = temperature_units
             if positive is None:
@@ -2512,10 +2577,11 @@ class ClimoAccessor(object):
                 bounds = da.attrs.get('bounds', None)
                 if isinstance(data, xr.Dataset) and bounds in data:
                     bnds = data[bounds]
-                    if not bnds.climo._has_units:
+                    b = bnds.climo._has_units
+                    if not b:
                         bnds.attrs['units'] = encode_units(units)
-                    data[bounds] = bnds.climo.to_units(to_units)
-                    if not bnds.climo._has_units:
+                    data[bounds] = bnds = bnds.climo.to_units(to_units)
+                    if not b:
                         bnds.attrs.pop('units')  # simply match level units
             da.attrs.setdefault('positive', positive)
             data = data.assign_coords({da.name: da})
@@ -2528,10 +2594,11 @@ class ClimoAccessor(object):
         # Rename longitude, latitude, vertical, and time coordinates if present
         # WARNING: If multiples of each coordinate type are found, this triggers error
         names = {}
+        levels = f'{prefix}lev' if prefix and prefix_levels else 'lev'
         coords = {  # dummy CF-compliant coordinates used with rename_like
             'lon': ('lon', [], {'standard_name': 'longitude'}),
             'lat': ('lat', [], {'standard_name': 'latitude'}),
-            'lev': ('lev', [], {'positive': 'up'}),
+            levels: (levels, [], {'positive': 'up'}),
             'time': ('time', [], {'standard_name': 'time'}),
         }
         coords_prev = data.climo.cf.coordinates
@@ -2548,8 +2615,8 @@ class ClimoAccessor(object):
         for name, coord in data.coords.items():
             # Delete bounds variables for DataArrays, to prevent CF warning issue
             if not isinstance(data, xr.Dataset):
-                if 'bounds' in da.attrs:
-                    del da.attrs['bounds']
+                if 'bounds' in coord.attrs:
+                    del coord.attrs['bounds']
                 continue
             # Delete bounds indicators when the bounds variable is missing
             bounds = coord.attrs.get('bounds')
@@ -2578,7 +2645,7 @@ class ClimoAccessor(object):
         return data
 
     @_CFAccessor._clear_cache
-    def truncate(self, bounds=None, *, ignore_extra=False, dataset=None, **kwargs):
+    def truncate(self, bounds=None, *, dataset=None, ignore_extra=False, **kwargs):
         """
         Restrict the coordinate range using `ClimoAccessor.interp`. Conceptually,
         inserts conincident centers and boundaries that mark the new edges of the
@@ -2608,10 +2675,10 @@ class ClimoAccessor(object):
         # NOTE: This uses the unit-friendly accessor sel method. Range is limited
         # *exactly* by interpolating onto requested bounds.
         data = self.data
-        src = dataset or data
+        source = dataset or data
         bounds = bounds or {}
         bounds.update(kwargs)
-        bounds, kwargs = src.climo._parse_truncate_args(**bounds)
+        bounds, kwargs = source.climo._parse_truncate_args(**bounds)
         if kwargs and not ignore_extra:
             raise ValueError(f'truncate() got unexpected keyword args {kwargs}.')
         if any(_.size > 2 for _ in bounds.values()):
@@ -2623,7 +2690,7 @@ class ClimoAccessor(object):
             dim = re.sub(r'_lim\Z', '', dim)
             data_orig = data
             coord_orig = data.coords[dim]  # must be unquantified
-            bnds_orig = src.climo.coords._get_bounds(coord_orig, sharp_cutoff=True)
+            bnds_orig = source.climo.coords._get_bounds(coord_orig, sharp_cutoff=True)
             attrs = coord_orig.attrs.copy()
 
             # Interpolate to new edges. When 'truncating' outside the coordinate range,
@@ -2765,7 +2832,7 @@ class ClimoAccessor(object):
         if not methods:
             return
         for da in self._iter_data_vars():
-            if da.climo._is_bounds:
+            if da.climo._bounds_coordinate:
                 continue
             da.attrs['cell_methods'] = self.cf._encode_attr(
                 da.attrs.get('cell_methods', None), methods.items()
@@ -2991,6 +3058,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             methods = meta.climo.cf._decode_attr(meta.attrs.get('cell_methods', ''))
             for coord, da in meta.coords.items():
                 coordinate = None
+                if coord in ('area', 'volume'):
+                    continue
                 try:
                     coordinate = meta.climo.cf._encode_name(coord, 'coordinates')
                 except KeyError:
@@ -3000,7 +3069,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 elif coord == name:
                     pass
                 elif da.size == 1 and not da.isnull():
-                    units = parse_units(da.attrs['units']) if 'units' in da.attrs else 1
+                    units = decode_units(da.attrs['units']) if 'units' in da.attrs else 1  # noqa: E501
                     if np.issubdtype(da.data.dtype, np.str):  # noqa: E501
                         kw_methods['label'] = [da.item()]
                     else:
@@ -3014,7 +3083,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 coordinate = meta.climo.cf._encode_name(meta.name, 'coordinates')
             except KeyError:
                 coordinate = None
-            if coordinate in kw_methods and name not in data.coords and not data.climo._is_bounds:  # noqa: E501
+            if coordinate in kw_methods and name not in data.coords and not data.climo._bounds_coordinate:  # noqa: E501
                 if parent_name is None:
                     raise RuntimeError(f'Unknown parent name for coordinate {name!r}.')
                 if parent_name not in data.coords:
@@ -3030,6 +3099,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 raise RuntimeError(f'Parent variable {parent_name!r} unused.')
 
         # Create the CFVariable
+        # NOTE: Variables are only useful if they are seamless for new users,
+        # so should forego warnings when we automatically add new ones.
+        # warnings._warn_climopy(f'Automatically added {var!r} to the registry.')
         reg = self.variable_registry
         standard_name = kw_attrs.pop('standard_name', None)
         for identifier in (name, standard_name):
@@ -3041,32 +3113,34 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 pass
         var = reg.define(name, standard_name=standard_name, **kw_attrs)
         var = var.modify(accessor=self, **kw_methods)
-        warnings._warn_climopy(f'Automatically added {var!r} to the registry.')
         return var
 
-    def _cf_repr(self, brackets=True, maxlength=None, varwidth=None, **kwargs):
+    def _cf_repr(self, brackets=True, varwidth=None, maxlength=None, padlength=None, **kwargs):  # noqa: E501
         """
         Get representation even if `cfvariable` is not present.
         """
         # Get content inside CFVariable(...) repr
-        try:
-            var = self._cf_variable(**kwargs)
-        except AttributeError:
-            repr_ = self.data.name or 'unknown'
+        if coordinate := self._bounds_coordinate:
+            repr_ = f'{self.data.name}, coordinate_bounds, coordinate={coordinate!r}'
         else:
-            repr_ = re.match(r'\A.*?\((.*)\)\Z', repr(var)).group(1)
+            try:
+                var = self._cf_variable(**kwargs)
+            except AttributeError:
+                repr_ = self.data.name or 'unknown'
+            else:
+                repr_ = REGEX_REPR_PAREN.match(repr(var)).group(1)
 
         # Align names and truncate key=value pairs
-        if varwidth is not None and (m := re.match(r'\A(\w+),\s*(.*)\Z', repr_)):
-            grp1, grp2 = m.groups()  # pad between canonical name and subsequent info
-            repr_ = grp1[:varwidth] + ',' + ' ' * (varwidth - len(grp1)) + grp2
-        if maxlength is not None and len(repr_) > maxlength:
-            repr_ = repr_[:maxlength - 4]
+        padlength = padlength or 0
+        if varwidth is not None and (m := REGEX_REPR_COMMA.match(repr_)):
+            name, _, info = m.groups()  # pad between canonical name and subsequent info
+            repr_ = name[:varwidth] + ',' + ' ' * (varwidth - len(name)) + info
+        if maxlength is not None and len(repr_) > maxlength - padlength:
+            repr_ = repr_[:maxlength - padlength - 4]
             repr_ = repr_[:repr_.rfind(' ')] + ' ...'
         if brackets:
-            repr_ = re.sub(r'\A(\w+),(\s*)(.*)\Z', r'\1\2<\3>', repr_)
-
-        return repr_
+            repr_ = REGEX_REPR_COMMA.sub(r'\1\2<\3>', repr_)
+        return ' ' * padlength + repr_
 
     def _expand_ellipsis(self, key):
         """
@@ -3077,14 +3151,46 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             key = dict(zip(self._data.dims, labels))
         return key
 
+    def _budget_reduce_kwargs(self, method):
+        """
+        Automatically determine reduction keyword arguments for the ``'latitude'``
+        or ``'strength``' of an energy or momentum budget term.
+        """
+        # WARNING: Flux convergence terms are subgroups of flux terms, not tendency
+        kw = {}
+        reg = self.variable_registry
+        name = self.data.name
+        content = name in reg.energy or name in reg.momentum
+        tendency = name in reg.energy_flux or name in reg.acceleration
+        transport = name in reg.meridional_energy_flux or name in reg.meridional_momentum_flux  # noqa: E501
+        if not content and not transport and not tendency:
+            raise ValueError(f'Invalid parameter {name!r}.')
+        if self.cf.sizes.get('vertical', 1) > 1:
+            kw['vertical'] = 'int'  # NOTE: order of reduction is important
+        kw['longitude'] = 'avg' if content or tendency else 'int'
+        if method == 'strength':
+            kw['latitude'] = 'absmax'
+        elif method == 'latitude':
+            kw['latitude'] = 'absargmax'
+        else:
+            raise ValueError(f'Invalid energy or momentum reduce method {method!r}.')
+        return kw
+
     @_CFAccessor._clear_cache
     @_while_quantified
     def reduce(
-        self, indexers=None, dataset=None, centroid=False, weight=None, mask=None,
+        self,
+        indexers=None,
+        # method='interp',  # TODO: change back for cmip results!
+        method=None,
+        weight=None,
+        mask=None,
+        invert=False,
+        dataset=None,
         **kwargs
     ):
         """
-        Reduce the dimension of a `xarray.DataArray` with arbitrary method(s).
+        Reduce the dimension of a `xarray.DataArray` with arbitrary operation(s).
 
         Parameters
         ----------
@@ -3093,7 +3199,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             "reduction modes" for the dimensions. Values can be any of the following:
 
             ===============  =========================================================
-            Reduction mode   Description
+            Reduce operator  Description
             ===============  =========================================================
             array-like       The value(s) at this location using ``self.interp``.
             param-spec       Parameter name passed to ``self.get``, e.g. ``'trop'``.
@@ -3122,19 +3228,22 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             ``'hist'``       *For time dimension only.* The histogram.
             ===============  =========================================================
 
-        dataset : `xarray.Dataset`, optional
-            The associated dataset. This is needed for 2D reduction
-            of isentropic data, and may also be needed for 2D reduction
-            of horizontal data with 2D latitude/longitude coords in the future.
-        centroid : bool, optional
-            Get the value-weighted average wavenumber using
-            `~ClimoDataArrayAccessor.centroid`. Units are distance.
+        method : str, optional
+            The method to use for simple selections. Passed to `~xarray.DataArray.sel`.
+            Use ``'interp'`` to interpolate instead of selecting.
         weight : str or `xarray.DataArray`, optional
             Additional weighting parameter name or `xarray.DataArray`, used for
             averages and integrations. Mass weighting is applied automatically.
         mask : {None, 'land', 'sea', 'trop', 'pv'}, optional
             The 2-dimensional mask to apply before taking the weighted average.
             Presets will be added to this.
+        invert : bool, optional
+            Whether to invert the data before and after the reduction. Can be
+            useful for e.g. averages of timescales or wavelengths.
+        dataset : `xarray.Dataset`, optional
+            The associated dataset. This is needed for 2D reduction
+            of isentropic data, and may also be needed for 2D reduction
+            of horizontal data with 2D latitude/longitude coords in the future.
         **indexers_kwargs
             The keyword arguments form of `indexers`.
             One of `indexers` or `indexers_kwargs` must be provided.
@@ -3158,54 +3267,71 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # Initial stuff
         data = self.data
+        if invert:
+            with xr.set_options(keep_attrs=True):
+                data = 1.0 / data
         name = data.name
         dims = data.dims
-        src = dataset or data
-        find_names = (
-            'min', 'max', 'absmin', 'absmax', 'argmax', 'argmin',
-            'absargmin', 'absargmax', 'argzero',
-        )
-        average_names = {
-            'int': ('integral', {}),
-            'avg': ('average', {}),
-            'anom': ('anomaly', {}),
-            'lcumint': ('cumintegral', {}),
-            'rcumint': ('cumintegral', {'reverse': True}),
-            'lcumavg': ('cumaverage', {}),
-            'rcumavg': ('cumaverage', {'reverse': True}),
-            'lcumanom': ('cumanomaly', {}),
-            'rcumanom': ('cumanomaly', {'reverse': True}),
-            'mean': ('mean', {}),
-            'sum': ('sum', {}),
+        source = dataset or data
+        hist_keys = ('bins',)
+        avg_keys = ('skipna', 'weight')  # see _native_reduce
+        cov_keys = ('lag', 'ilag', 'maxlag', 'imaxlag')
+        find_keys = ('diff', 'which', 'centered', 'maxn', 'seed', 'sep', 'dim_track')
+        # slope_keys = ('adjust', 'bounds')  # TODO: remove
+        timescale_keys = ('maxlag', 'imaxlag', 'maxlag_fit', 'imaxlag_fit', 'bounds')
+        reduce_operators = {
+            'autocorr': ('autocorr', cov_keys, {}),
+            'autocovar': ('autocovar', cov_keys, {}),
+            'centroid': ('centroid', (), {}),
+            'hist': ('hist', hist_keys, {}),
+            'int': ('integral', avg_keys, {}),
+            'avg': ('average', avg_keys, {}),
+            'anom': ('anomaly', avg_keys, {}),
+            'lcumint': ('cumintegral', avg_keys, {}),
+            'rcumint': ('cumintegral', avg_keys, {'reverse': True}),
+            'lcumavg': ('cumaverage', avg_keys, {}),
+            'rcumavg': ('cumaverage', avg_keys, {'reverse': True}),
+            'lcumanom': ('cumanomaly', avg_keys, {}),
+            'rcumanom': ('cumanomaly', avg_keys, {'reverse': True}),
+            'mean': ('mean', avg_keys, {}),
+            'sum': ('sum', avg_keys, {}),
+            'std': ('var', avg_keys, {}),
+            'var': ('var', avg_keys, {}),
+            'min': ('min', find_keys, {}),
+            'max': ('max', find_keys, {}),
+            'absmin': ('absmin', find_keys, {}),
+            'absmax': ('absmax', find_keys, {}),
+            'argmin': ('argmin', find_keys, {}),
+            'argmax': ('argmax', find_keys, {}),
+            'argzero': ('argloc', find_keys, {'value': 0}),
+            'absargmin': ('absargmin', find_keys, {}),
+            'absargmax': ('absargmax', find_keys, {}),
+            # 'slope': ('slope', slope_keys, {}),  # TODO: remove
+            'timescale': ('timescale', timescale_keys, {}),
         }
-        method_keys = {  # keyword args that can be passed to different methods
-            'autocorr': ('lag', 'ilag', 'maxlag', 'imaxlag'),
-            'autocovar': ('lag', 'ilag', 'maxlag', 'imaxlag'),
-            'average': ('skipna',),
-            'find': ('dim_track', 'diff', 'which', 'centered', 'nmax', 'seed', 'sep'),
-            'hist': ('bins',),
-            'slope': (),
-            'timescale': ('maxlag', 'imaxlag', 'maxlag_fit', 'imaxlag_fit'),
-        }
+        opts = [*data.sizes, 'area', 'volume']  # see also _parse_indexers
+        opts.extend(name for idx in data.indexes.values() for name in idx.names)
+        for key in opts:  # remove conflicting names
+            reduce_operators.pop(key, None)
         if mask is not None:
             raise NotImplementedError('Mask application not yet implemented')
-        if centroid:
-            raise NotImplementedError('Centroid calculation not yet implemented')
 
         # Parse indexers
-        # NOTE: Prefer dataset here to allow for things like lat_min='ehf_lat'
-        # NOTE: Include 'pseudo' indexers of already-reduced dims for integration
+        # NOTE: Include 'pseudo' indexers of already-reduced dimensions for
+        # integration (e.g. longitude 'integral' to multiply by band width).
         indexers, kwargs = self._parse_indexers(
             indexers, include_scalar=True, include_pseudo=True, **kwargs
         )
         if isinstance(weight, str):
-            if dataset is None:  # supplied by get
+            if not isinstance(source, xr.Dataset):  # supplied by get
                 raise ValueError(f'Dataset required to infer weighting {weight!r}.')
-            weight = dataset.climo[weight]
+            weight = source.climo[weight]
 
-        # Parse truncation args
-        kw_trunc, kwargs = src.climo._parse_truncate_args(**kwargs)
-        if kw_trunc:
+        # Parse truncate args
+        # NOTE: _parse_truncate ensures all bounds passed are put into DataArrays with
+        # a 'startstop' dim, an at least singleton 'track' dim, and matching shapes.
+        kw_trunc, kwargs = source.climo._parse_truncate_args(**kwargs)
+        if kw_trunc:  # translate truncation selection array
             sample = tuple(kw_trunc.values())[0]
             dims_sample = sample.dims[1:]  # exclude 'startstop'
             datas = np.empty(sample.shape[1:], dtype='O')
@@ -3216,62 +3342,67 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             datas = np.array([None])
             coords = {}
 
-        # Iterate through bounds combinations across dimensions
-        # NOTE: _parse_truncate ensures all bounds passed are put into DataArrays with
-        # a 'startstop' dim, an at least singleton 'track' dim, and matching shapes.
+        # Iterate through bounds combinations across dimensions. This is necessary
+        # for e.g. reduce(lat='int', latmin='ehf_lat') on data with a time axis.
         used_kw = set()
-        for idx in np.ndindex(datas.shape):  # ignore 'startstop' dimension
+        for idx in np.ndindex(datas.shape):
             # Limit range exactly be interpolating to bounds
-            # NOTE: Common to use e.g. reduce(lat='int', latmin='ehf_lat') for data
-            # with e.g. time axis. Here we are iterating through extra axes.
             isel_trunc = dict(zip(dims_sample, idx))
             isel_data = {dim: i for dim, i in zip(dims_sample, idx) if dim != 'track'}
             ikw_trunc = {k: tuple(v.isel(isel_trunc).data) for k, v in kw_trunc.items()}
-            idata = data.isel(isel_data).climo.truncate(dataset=dataset, **ikw_trunc)
+            idata = data.isel(isel_data)
+            if ikw_trunc:  # can also call with empty kwargs but this is for clarity
+                idata = idata.climo.truncate(dataset=dataset, **ikw_trunc)
             iweight = weight
             if iweight is not None:
                 iweight = data.isel(isel_data).climo.truncate(dataset=dataset, **ikw_trunc)  # noqa: E501
 
             # Single dimension reductions
             # WARNING: Need to include *coords* so we can 'reduce' singleton lon
-            for dim, method in indexers.items():
+            for dim, indexer in indexers.items():
                 # Various simple reduction modes
-                # NOTE: Integral does not need dataset because here we are only
-                # integrating unknown dimensions; attenuated spatial ones earlier.
-                # TODO: Add '_hist' entry to __getitem__ that (1) gets jet latitudes
-                # with argmax and (2) calls hist on the resulting latitudes.
-                if isinstance(method, str) and (
-                    method in method_keys
-                    or method in find_names
-                    or method in average_names
-                ):
-                    kw = {}
-                    if method in find_names:
-                        keys = method_keys['find']
-                        if method == 'argzero':
-                            method = 'argloc'  # with default value=0
-                    elif method in average_names:
-                        method, kw = average_names[method]
-                        keys = method_keys['average']
-                        kw.update({'weight': iweight})
-                    kw.update({k: kwargs[k] for k in kwargs.keys() & set(keys)})
-                    idata = getattr(idata.climo, method)(dim, **kw)
+                # For example: climo.get('ta', area='avg')
+                if isinstance(indexer, str) and indexer in reduce_operators:
+                    indexer, keys, kw = reduce_operators[indexer]
+                    for key in set(keys) & set(kwargs):
+                        kw[key] = kwargs[key]
+                    if 'weight' in keys:
+                        kw['weight'] = iweight
+                    idata = getattr(idata.climo, indexer)(dim, **kw)
                     used_kw |= kw.keys()
 
                 # Select single or multiple points with interpolation
                 # For example: climo.get('dtdy', lev='avg', lat='ehf_lat')
                 else:
-                    loc = getattr(method, 'magnitude', method)
+                    loc = getattr(indexer, 'magnitude', indexer)
+                    coord = idata.coords.get(dim, np.array((), dtype=object))
+                    kw_method = {}
+                    if method != 'interp' and quack._is_numeric(coord):
+                        kw_method['method'] = method
                     if dim in self.cf.coordinates.get('time', ()):
                         idata = idata.climo.sel_time({dim: loc})
-                    elif quack._is_numeric(loc):  # i.e. not datetime, string, etc.
+                    elif method == 'interp' and np.isscalar(loc) and quack._is_numeric(loc) and loc not in coord:  # noqa: E501
                         idata = idata.climo.interp({dim: loc})
+                    elif quack._is_numeric(loc) or not quack._is_numeric(coord):
+                        idata = idata.climo.sel({dim: loc}, **kw_method)
                     else:
+                        msg = (
+                            f'Invalid reduce operator or variable spec {loc!r}: %s. '
+                            f'Valid methods are: ' + ', '.join(reduce_operators) + '.'
+                        )
+                        if not isinstance(source, xr.Dataset):
+                            msg %= 'variable specs require a source dataset'
+                            raise ValueError(msg)
                         try:
-                            loc = dataset.climo.get(loc)
+                            loc = source.climo.get(loc)
+                        except KeyError:
+                            msg %= f'failed to treat {loc!r} as variable spec'
+                            raise ValueError(msg)
+                        try:
                             idata = idata.climo.interp({dim: loc})
-                        except (KeyError, ValueError, AttributeError):
-                            raise ValueError(f'Invalid {method=}.')
+                        except ValueError:
+                            msg %= f'failed to interpolate to variable spec {loc!r}'
+                            raise ValueError(msg)
 
             # Add to list of reductions along different subselections
             datas[idx] = idata
@@ -3282,22 +3413,28 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             raise ValueError('Unexpected kwargs: ' + ', '.join(map(repr, extra_kw)))
 
         # Concatente with combine_nested, then fix weird dimension reordering
-        data = xr.combine_nested(
-            datas.tolist(),
-            concat_dim=dims_sample,
-            join='exact',
-            compat='identical',
-            combine_attrs='identical',
-        )
+        if datas.ndim == 1:
+            data = datas[0]
+        else:
+            data = xr.combine_nested(
+                datas.tolist(),
+                concat_dim=dims_sample,
+                join='exact',
+                compat='identical',
+                combine_attrs='identical',
+            )
         data = data.assign_coords(coords)
         data = data.transpose(..., *(dim for dim in dims if dim in data.dims))
-        if data.sizes['track'] == 1:
+        if 'track' in data.sizes and data.sizes['track'] == 1:
             data = data.isel(track=0, drop=True)
 
         # Possibly add back name
         # TODO: Figure out which functions remove the name!
         if data.name is None:
             data.name = name
+        if invert:
+            with xr.set_options(keep_attrs=True):
+                data = 1.0 / data
         return data
 
     @_while_quantified
@@ -3317,11 +3454,13 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         and averaging functions.
         """
         # Apply truncations to data and extra weight
-        # NOTE: Great way
+        # TODO: Consider removing general truncation utilities and perform
+        # domain-limited reductions using cell weights instead. Much faster.
+        # TODO: Support averaging data arrays without units. Only
+        # integration should require automatic unit adjustment.
         dims = dims or ('volume',)
         data = self.data.climo.truncate(**kwargs)
-        name = data.name
-        cell_method = 'integral' if integral else 'average'
+        cell_method = 'integral' if kwargs.get('integral') else 'average'
         weights_explicit = []  # quantification necessary for integral()
         weights_implicit = []  # quantification not necessary, slows things down a bit
         if weight is not None:
@@ -3330,29 +3469,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         # Translate dims. When none are passed, interpret this as integrating over the
         # entire atmosphere. Support irregular grids by preferring 'volume' or 'area'
-        dims_orig = self._parse_dims(dims, include_scalar=True, include_pseudo=True)
-        dims_std = tuple(
-            coordinate for coordinate, names in self.cf.coordinates.items()
-            if any(dim in names for dim in dims_orig)
-        )
-        # Handle special case: Integral along a latitude line without integration
-        # over longitude applies unnormalized 'cell depth' latitude weights (km) and
-        # normalized longitude and vertical weights. In practice however we almost
-        # always integrate over just longitude or both longitude or latitude... and
-        # therefore we want unnormalized 'cell width' longitude (cosine latitude)
-        # weights. Here we manually add these with a warning message.
-        if 'latitude' in dims_std and 'longitude' not in dims_std:
-            warnings._warn_climopy(
-                f'Only latitude {cell_method} was specified, but almost always '
-                'want to integrate over just longitudes or both longitudes and '
-                'latitudes. Adding longitude as an integration dimension.'
-            )
-            dims_orig = ('longitude', *dims_orig)
-
-        # Translate 'area' to longitude latitude and 'volume' to
-        # all dimensions if these cell measures are not present.
         # NOTE: This permits 2D and 3D cell measures for non-standard grids and using
         # 'area' and 'volume' as shorthands for 1D cell measures for standard grids
+        dims_orig = self._parse_dims(dims, include_scalar=True, include_pseudo=True)
         dims_orig = list(dims_orig)
         if 'volume' in dims_orig and 'volume' not in self.cf.cell_measures:
             dims_orig.remove('volume')
@@ -3374,7 +3493,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 try:
                     coordinate = self.cf._encode_name(dim, 'coordinates')
                 except KeyError:
-                    raise ValueError(f'Missing {cell_method} dimension {dim!r}.')
+                    raise ValueError(
+                        f'Missing {cell_method} dimension {dim!r}. Is not a '
+                        'CF-recognized time or space coordinate.'
+                    )
                 names = (dim,)
                 measure = COORD_CELL_MEASURE[coordinate]
                 coordinates = (coordinate,)
@@ -3387,15 +3509,15 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                         names += (self.cf._decode_name(coord, 'coordinates'),)
                     except KeyError:
                         raise ValueError(
-                            f'Missing {cell_method} coordinate {{!r}}. If data is '
-                            'already reduced you may need to call add_scalar_coords.'
+                            f'Missing {dim} {cell_method} coordinate {coord!r}. If data '  # noqa: E501
+                            'is already reduced you may need to call add_scalar_coords.'
                         )
             try:  # is cell measure missing from dictionary?
                 key = self.cf._decode_name(measure, 'cell_measures', search_registry=False, return_if_missing=True)  # noqa: E501
             except KeyError:
                 raise ValueError(
-                    f'Missing cell measure {measure!r} for {cell_method} dimension '
-                    f'{dim!r}. You may need to call add_cell_measures.'
+                    f'Missing cell measure {measure!r} for {dim} {cell_method}. You '
+                    'may need to call add_cell_measures first.'
                 )
             try:  # is cell measure missing from coords? (common for external source)
                 weight = self.cf._src[key]
@@ -3408,22 +3530,94 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             measures.add(measure)
             weights_explicit.append(weight.climo.quantify())
 
-        # Add unquantified cell measure weights for measures whose dimensions match any
-        # of the dimensions we are already integrating over (e.g. 'depth' is added
-        # for an areal integral to account for differing cell thickness)
+        # Add unquantified cell measure weights for measures whose dimensions match
+        # any of the dimensions we are integrating over (e.g. 'width' for 'latitude').
+        # WARNING: Critical here to skip coordinates that were previously *integrated*
+        # over. For example given a vertical integral followed by an area average or
+        # a longitude integral followed by a latitude cumulative integral, the weights
+        # are already factored in, so applying them again would amount to a pressure
+        # width squared weighting or a cosine squared weighting.
+        cell_methods = self.cf._decode_attr(data.attrs.get('cell_methods', ''))
         for measure, (varname,) in self.cf.cell_measures.items():
             if measure in measures:  # explicit weight
                 continue
             if varname not in data.coords:  # already reduced or accidentally missing
                 continue
+            names = []
+            coords = CELL_MEASURE_COORDS[measure]
+            for coord in coords:
+                try:
+                    names.append(self.cf._decode_name(coord, 'coordinates'))
+                except KeyError:
+                    names.clear()
+                    break
+            if any(
+                method == 'integral'
+                and (keys == tuple(names) or (len(keys) == 1 and keys[0] == measure))
+                for keys, method in cell_methods
+            ):
+                continue
             weight = data.coords[varname]
             if set(dims) & set(weight.dims):
                 weights_implicit.append(weight.climo.dequantify())
 
-        # Use math.prod to reduce items in list
+        # Get weighted average or integral and replace lost cell measures
+        # NOTE: Critical here to bypass weighting by the measure itself. For example
+        # after a longitude integral want to weight longitude average cell heights by
+        # longitude widths, but do not want to weight cell heights by cell heights.
+        data = data.climo._weighted_driver(
+            dims,
+            weights_explicit,
+            weights_implicit,
+            integral=integral,
+            cumulative=cumulative,
+            reverse=reverse,
+            skipna=skipna,
+            update_methods=True,
+            keep_attrs=False,  # defer to _manage_coord_reductions
+        )
+        for i, weights in enumerate((weights_explicit, weights_implicit)):
+            for weight in weights:
+                wgts_explicit = [w for w in weights_explicit if w.name != weight.name]
+                wgts_implicit = [w for w in weights_implicit if w.name != weight.name]
+                if not weight.sizes.keys() & data.sizes.keys():
+                    continue
+                weight = weight.climo.dequantify()
+                weight = weight.climo._weighted_driver(
+                    dims,
+                    wgts_explicit,
+                    wgts_implicit,
+                    integral=bool(i == 0),
+                    cumulative=cumulative,
+                    reverse=reverse,
+                    skipna=skipna,
+                    update_methods=False,
+                    keep_attrs=True,
+                )
+                data = data.assign_coords({weight.name: weight})
+        return data
+
+    def _weighted_driver(
+        self,
+        dims,
+        weights_explicit,
+        weights_implicit,
+        integral=False,
+        cumulative=False,
+        reverse=False,
+        skipna=None,
+        update_methods=False,
+        keep_attrs=False,
+    ):
+        """
+        Carry out a weighted integral or average with the input explicit and
+        implicit weight arrays selected by `_integral_or_average`.
+        """
+        # Get weights
         # NOTE: numpy.prod just returns 0 for some reason. math.prod seems to work
         # with arbitrary objects, similar to builtin sum()
         one = xr.DataArray(1)  # ensure returned 'weight' is DataArray
+        data = self.data
         weights = (*weights_explicit, *weights_implicit)
         if integral:
             normalize_denom = True
@@ -3431,27 +3625,39 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             weight_denom = math.prod(weights_implicit, start=one)
         else:
             normalize_denom = False
-            weight_num = weight_denom = math.prod(weights, start=one).climo.dequantify()
+            weight = math.prod(weights, start=one).climo.dequantify()
+            weight_num = weight_denom = weight
 
         # Run integration
+        # NOTE: This permits e.g. longitude 'integration' along scalar longitude
+        # coordinate, i.e. zero summation dimensions but the 'integration' is applied
+        # with weights. So always use original dimensions when recording cell methods.
+        # NOTE: Previously enforced latitude reductions to include longitude using a
+        # warning, but this is now obsolete, since (cosine-weighted) longitude widths
+        # are auto-included as implicit weights since they include a latitude dimension.
         dims_sum = tuple(dim for dim in dims if dim in data.dims)
-        data = (
-            data.climo._weighted_sum(
-                dims_sum,
-                weight_num,
-                skipna=skipna,
-                cumulative=cumulative,
-                reverse=reverse
-            ) / data.climo._sum_of_weights(
-                dims_sum,
-                weight_denom,
-                normalize=normalize_denom,
-                cumulative=cumulative,
-                reverse=reverse,
-            )
+        numer = data.climo._weighted_sum(
+            dims_sum,
+            weight_num,
+            skipna=skipna,
+            cumulative=cumulative,
+            reverse=reverse
         )
-        data.climo.update_cell_methods({tuple(dims): cell_method})
-        data.name = name
+        denom = data.climo._sum_of_weights(
+            dims_sum,
+            weight_denom,
+            normalize=normalize_denom,
+            cumulative=cumulative,
+            reverse=reverse,
+        )
+        data = numer / denom
+        if keep_attrs:
+            attrs = self.data.attrs
+            data.attrs.update(attrs)
+        if update_methods:
+            cell_method = 'integral' if integral else 'average'
+            data.climo.update_cell_methods({tuple(dims): cell_method})
+        data.name = self.data.name
         return data
 
     def _weighted_sum(
@@ -3463,16 +3669,22 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # NOTE: Prefer xr.dot to multiplication, broadcasting, and summation because
         # xr.dot doesn't have to build extra giant array. See xarray weighted.py source
+        # NOTE: Recent versions of xr.dot seem to strip coordinate attributes unless
+        # keep_attrs is used. Consider submitting bug report.
         data = self.data
+        zero = weights.dtype.type(0)
+        weights = weights.fillna(zero)
         if skipna or skipna is None and data.dtype.kind in 'cfO':
-            data = data.fillna(0.0)  # works with pint quantities
-        if cumulative:
-            if len(dims) > 1:
+            zero = data.dtype.type(0)
+            data = data.fillna(zero)  # works with pint quantities
+        with xr.set_options(keep_attrs=True):
+            if not cumulative:
+                res = xr.dot(data, weights, dims=dims)
+            elif len(dims) == 1:
+                isel = {dims[0]: slice(None, None, -1) if reverse else slice(None)}
+                res = (data * weights).isel(isel).cumsum(dims).isel(isel)
+            else:
                 raise ValueError('Too many dimensions for cumulative integration.')
-            isel = {dims[0]: slice(None, None, -1) if reverse else slice(None)}
-            res = (data * weights).isel(isel).cumsum(dims).isel(isel)
-        else:
-            res = xr.dot(data, weights, dims=dims)
         return res
 
     def _sum_of_weights(
@@ -3482,18 +3694,27 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Return the sum of weights, accounting for NaN data values and masking where
         weights sum to zero. Optionally sum cumulatively.
         """
+        # NOTE: The normalize step permits integration over dimensions scaled by
+        # implicit weights (e.g. latitude normalized by longitude width). Critical
+        # to mirror the body of the weight summation inside the normalize block.
         mask = self.data.notnull().astype(int)
-        if normalize:  # needed for denominator when integrating
-            mask = mask / xr.ones_like(mask).sum(dims)
-        if cumulative:
-            if len(dims) > 1:
+        zero = weights.dtype.type(0)
+        weights = weights.fillna(zero)
+        with xr.set_options(keep_attrs=True):
+            if not cumulative:
+                res = xr.dot(mask, weights, dims=dims)
+            elif len(dims) == 1:
+                isel = {dims[0]: slice(None, None, -1) if reverse else slice(None)}
+                res = (mask * weights).isel(isel).cumsum(dims).isel(isel)
+            else:
                 raise ValueError('Too many dimensions for cumulative integration.')
-            isel = {dims[0]: slice(None, None, -1) if reverse else slice(None)}
-            res = (mask * weights).isel(isel).cumsum(dims).isel(isel)
-        else:
-            res = xr.dot(mask, weights, dims=dims)
-        res = res.where(res != 0.0)  # 0.0 --> NaN; works with pint.Quantity data
-        return res
+        if normalize:  # needed for denominator when integrating
+            if not cumulative:
+                res = res / xr.dot(mask, mask, dims=dims)
+            else:
+                isel = {dims[0]: slice(None, None, -1) if reverse else slice(None)}
+                res = res / xr.ones_like(mask).isel(isel).cumsum(dims).isel(isel)
+        return res.where(res != 0)  # 0 --> NaN; works with pint.Quantity data
 
     @_CFAccessor._clear_cache
     @_manage_coord_reductions  # need access to cell_measures, so put before keep_attrs
@@ -4046,7 +4267,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         dim = self.cf._decode_name(dim, 'axes', 'coordinates')
         data = self.data
-        data, _, _ = var.linefit(data.climo.coords[dim], data)
+        data, *_ = var.linefit(data.climo.coords[dim], data)
         data.climo.update_cell_methods({dim: 'slope'})
         return data
 
@@ -4071,7 +4292,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             maxlag = 50.0  # default value is 50 days
         if dim != 'lag':
             time, data = var.autocorr(time, data, maxlag=maxlag, imaxlag=imaxlag)
-        data, _, _ = var.rednoisefit(time, data, maxlag=maxlag, imaxlag=imaxlag, **kwargs)  # noqa: E501
+        data, *_ = var.rednoisefit(time, data, maxlag=maxlag, imaxlag=imaxlag, **kwargs)  # noqa: E501
         data.climo.update_cell_methods({dim: 'timescale'})
         return data
 
@@ -4106,14 +4327,14 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         return param
 
     @_while_quantified
-    def to_units(self, units, context='climo'):
+    def to_units(self, units, context=None):
         """
         Return a copy converted to the desired units.
 
         Parameters
         ----------
         units : str or `pint.Unit`
-            The destination units. Strings are parsed with `~.unit.parse_units`.
+            The destination units. Strings are parsed with `~.unit.decode_units`.
         context : str or `pint.Context`, optional
             The `pint context <https://pint.readthedocs.io/en/0.10.1/contexts.html>`_.
             Default is the ClimoPy context ``'climo'`` (see `~.unit.ureg` for details).
@@ -4122,7 +4343,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             raise ValueError('Data should be quantified.')
         data = self.data.copy(deep=False)
         if isinstance(units, str):
-            units = parse_units(units)
+            units = decode_units(units)
         args = (context,) if context else ()
         try:
             data.data = data.data.to(units, *args)  # NOTE: not ito()
@@ -4176,8 +4397,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         units = self.cfvariable.standard_units
         if units is None:  # unspecified "standard" units
             units = self.units  # just convert to current units
-        try:
-            data = self.to_units(units)
+        try:  # WARNING: should remove this and only apply context when requested
+            data = self.to_units(units, context='climo')
         except Exception:
             raise RuntimeError(
                 f'Failed to convert {self.data.name!r} from current units '
@@ -4196,7 +4417,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Return a copy of the `xarray.DataArray` with underlying data converted to
         `pint.Quantity` using the ``'units'`` attribute. If the data is already
         quantified, nothing is done. If the ``'units'`` attribute is missing, a warning
-        is raised. Units are parsed with `~.unit.parse_units`.
+        is raised. Units are parsed with `~.unit.decode_units`.
         """
         # WARNING: In-place conversion resulted in endless bugs related to
         # ipython %autoreload, was departure from metpy convention, was possibly
@@ -4217,15 +4438,22 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data.climo._dequantify()
         return data
 
-    def _quantify(self):
+    def _quantify(self, units=None):
         """
         In-place version of `~ClimoDataArrayAccessor.quantify`.
         """
         # NOTE: This won't affect shallow DataArray or Dataset copy parents
         data = self.data
-        if isinstance(data.data, pint.Quantity) or not quack._is_numeric(data.data):
-            pass
+        if np.issubdtype(data.data.dtype, np.timedelta64):
+            data.data = data.data.astype('timedelta64[ns]').astype(int) * 1e-9 * ureg.s
+        if not quack._is_numeric(data.data) or isinstance(data.data, pint.Quantity):
+            if units is None:
+                units = data.attrs.get('units', None)
+            if units is not None:
+                warnings._warn_climopy(f'Ignoring {units=}. Data is non-numeric or already quantified.')  # noqa: E501
         else:
+            if units is not None:
+                data.attrs['units'] = encode_units(units)
             data.data = data.data * self.units  # may raise error
         data.attrs.pop('units', None)
 
@@ -4281,12 +4509,12 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         The units of this `~xarray.DataArray` as a `pint.Unit`, taken from the
         underlying `pint.Quantity` or the ``'units'`` attribute. Unit strings are
-        parsed with `~.unit.parse_units`.
+        parsed with `~.unit.decode_units`.
         """
         if isinstance(self.data.data, pint.Quantity):
             return self.data.data.units
         elif 'units' in self.data.attrs:
-            return parse_units(self.data.attrs['units'])
+            return decode_units(self.data.attrs['units'])
         else:
             raise RuntimeError(
                 'Units not present in attributes or as pint.Quantity '
@@ -4294,24 +4522,13 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             )
 
     @property
-    def units_label(self):
+    def _bounds_coordinate(self):
         """
-        The units of this `~xarray.DataArray` formatted LaTeX-style. Suitable for
-        adding text to matplotlib figures. This works even when a
-        `~ClimoDataArrayAccessor.cfvariable` is not available (see also the
-        `units_label` `~.cfvariable.CFVariable` property).
+        Boolean indiating whether data is a coordinate bounds.
         """
-        # NOTE: When pint parses units string, the associated _units dictionary
-        # retains original insertion order. No need to hang onto old string.
-        units = self.units
-        try:
-            units_standard = self.cfvariable.units_standard
-        except AttributeError:
-            pass
-        else:
-            if units_standard is not None and units == parse_units(units_standard):
-                return latex_units(units_standard)
-        return latex_units(units)
+        for da in self.data.coords.values():
+            if self.data.name == da.attrs.get('bounds', object()):
+                return da.name
 
     @property
     def _has_units(self):
@@ -4326,16 +4543,6 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         Return whether data is quantified.
         """
         return isinstance(self.data.data, pint.Quantity)
-
-    @property
-    def _is_bounds(self):
-        """
-        Return whether data is a coordinate bounds.
-        """
-        key = self.data.name
-        coords = self.data.coords
-        sentinel = object()
-        return any(key == da.attrs.get('bounds', sentinel) for da in coords.values())
 
 
 @xr.register_dataset_accessor('climo')
@@ -4355,7 +4562,6 @@ class ClimoDatasetAccessor(ClimoAccessor):
 
     @_CFAccessor._clear_cache
     def __repr__(self):
-        pad = 4
         data = self.data
         rows = ['<climopy.ClimoDatasetAccessor>']
         width = max(
@@ -4369,7 +4575,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
                 continue
             rows.append(row)
             rows.extend(
-                pad * ' ' + da.climo._cf_repr(varwidth=width + 2, maxlength=88 - pad)
+                da.climo._cf_repr(maxlength=88, padlength=4, varwidth=width + 2)
                 for da in src.values()
             )
         return '\n'.join(rows)
@@ -4379,7 +4585,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         """
         Is a dataset variable or derived coordinate.
         """
-        return self._parse_key(key) is not None
+        return self._parse_key(key, quantify=None) is not None
 
     def __dir__(self):
         """
@@ -4415,7 +4621,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         else:
             return self._get_item(key)  # with weights attached
 
-    def _get_item(self, key, add_cell_measures=True, **kwargs):
+    def _get_item(self, key, kw_derive=None, add_cell_measures=True, **kwargs):
         """
         Return a quantified DataArray with weights optionally added. This is separated
         from `_parse_key` to facilitate fast `__contains__`.
@@ -4424,9 +4630,10 @@ class ClimoDatasetAccessor(ClimoAccessor):
         tup = self._parse_key(key, **kwargs)
         if not tup:
             raise KeyError(f'Invalid variable name {key!r}.')
+        kw_derive = kw_derive or {}
         type_, data = tup
         if callable(data):
-            data = data()  # ta-da!
+            data = data(**kw_derive)  # ta-da!
 
         # Add units and cell measures
         if data.name is None:
@@ -4442,7 +4649,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         if 'k' in data.dims:
             dims = ('lev', 'k', 'lat', 'c')
         else:
-            dims = (d for a in self.data.values() for d in a.dims if not a.climo._is_bounds)  # noqa: E501
+            dims = (d for a in self.data.values() for d in a.dims if not a.climo._bounds_coordinate)  # noqa: E501
         dims = _first_unique(dims)
         data = data.transpose(..., *(dim for dim in dims if dim in data.dims))
 
@@ -4471,9 +4678,8 @@ class ClimoDatasetAccessor(ClimoAccessor):
             raise TypeError(f'Invalid key {key!r}. Must be string.')
         if search_vars:
             da = self.vars.get(key, search_registry=search_registry, **kwargs)
-            regex = r'\A(.*?)(_zonal|_horizontal|_atmosphere)?(_timescale|_autocorr)?\Z'
             if da is not None:  # noqa: E501
-                da.name = re.sub(regex, r'\1', da.name)
+                da.name = REGEX_IGNORE.sub(r'\1', da.name)
                 return 'var', da
 
         # Return a coord, transformation, or derivation
@@ -4525,7 +4731,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
     # @functools.lru_cache(maxsize=64)  # TODO: fix issue where recursion breaks cache
     def get(
         self,
-        *keys,
+        key,
         standardize=False,
         units=None,
         normalize=False,
@@ -4550,13 +4756,15 @@ class ClimoDatasetAccessor(ClimoAccessor):
             * Prepend ``abs_`` to return the absolute value of the result.
             * Append ``_latitude`` or ``_strength`` to return vertically and zonally
               integrated energy and momentum budget maxima or latitudes of maxima.
-            * Append ``_1``, ``_2``, ``_anomaly``, or ``_ratio`` to make a selection or
-              take an anomaly pair difference using `~ClimoAccessor.sel_pair`.
+            * Append ``_1``, ``_2``, ``_anomaly``, or ``_ratio`` to make a selection
+              or take an anomaly pair difference using `~ClimoAccessor.sel_pair`.
 
-            All names can be replaced with 2-tuples of the form ('name', kwargs) to
-            pass keyword arguments positionally.
+            All names can be replaced with 2-tuples of the form ``('name', kwargs)``
+            to pass keyword arguments positionally.
         quantify : bool, default: True
             Whether to quantify the data with `~ClimoDataArrayAccessor.quantify()`.
+        kw_derive : dict, optional
+            Additional keyword arguments to pass to the derivation function.
         add_cell_measures : bool, default: True
             Whether to add default cell measures to the coordinates.
         search_coords : bool, default: True
@@ -4599,46 +4807,34 @@ short_suffix : str, optional
         data : xarray.DataArray
             The data.
         """
-        # Get the variable, translating meta-variable actions and interpreting
-        # CFVariable attributes passed as keyword arguments.
-        # TODO: Avoid name conflicts with functions and variables?
-        if len(keys) != 1:
-            raise TypeError(f'Expected one positional argument, got {len(keys)}.')
-        attrs = {key: kwargs.pop(key) for key in CFVARIABLE_ARGS if key in kwargs}
-        regex = r'\A(abs_)?(.*?)(_latitude|_strength)?(_1|_2|_anomaly|_ratio)?\Z'
-        abs, key, reduce, pair = re.match(regex, *keys).groups()
-        kw = {key: kwargs.pop(key) for key in tuple(kwargs) if key in PARSEKEY_ARGS}
-        data = self._get_item(key, **kw)
+        # Parse the input key
+        if isinstance(key, str):
+            pass
+        elif np.iterable(key) and len(key) == 2 and isinstance(key[0], str) and isinstance(key[1], dict):  # noqa: E501
+            key, kwargs = key[0], {**kwargs, **key[1]}
+        else:
+            raise ValueError(f'Invalid {key=}. Must be string or 2-tuple.')
 
-        # Automatically determine 'reduce' kwargs for energy and momentum budget
-        # WARNING: Flux convergence terms are subgroups of flux terms, not tendency
-        if reduce := reduce and reduce.strip('_'):
-            content = key in vreg.energy or key in vreg.momentum
-            tendency = key in vreg.energy_flux or key in vreg.acceleration
-            transport = key in vreg.meridional_energy_flux or key in vreg.meridional_momentum_flux  # noqa: E501
-            if not content and not transport and not tendency:
-                raise ValueError(f'Invalid parameter {key!r}.')
-            if data.climo.cf.sizes.get('vertical', 1) > 1:
-                kwargs['vertical'] = 'int'  # NOTE: order of reduction is important
-            kwargs['longitude'] = 'avg' if content or tendency else 'int'
-            kwargs['latitude'] = 'absmax' if reduce == 'strength' else 'absargmax'
+        # Get the variable, translating meta-variable actions and attributes.
+        flag_abs, key, flag_reduce, flag_pair = REGEX_MODIFY.match(key).groups()
+        kw_reduce = kwargs.copy()
+        kw_attrs = {k: kw_reduce.pop(k) for k in CFVARIABLE_ARGS if k in kw_reduce}
+        kw_getitem = {k: kw_reduce.pop(k) for k in PARSEKEY_ARGS if k in kw_reduce}
+        quantify = kw_getitem.get('quantify', None)
+        data = self._get_item(key, **kw_getitem)
 
         # Reduce dimensionality using keyword args
-        # WARNING: For timescale variables take inverse before and after possible
-        # average. Should move this kludge away.
-        if kwargs:
-            invert = any(key in v for s in ('tau', 'timescale') if (v := vreg.get(s)))
-            if invert:
-                with xr.set_options(keep_attrs=True):
-                    data = 1.0 / data
-                warnings._warn_climopy(f'Taking inverse reduced inverse of {key!r}.')
+        if quantify is not None and quantify:  # TODO: fix bug! not applied yet!
+            data = data.climo.quantify()
+        if quantify is not None and not quantify:  # TODO: fix bug! not applied yet!
+            data = data.climo.dequantify()
+        if flag_reduce := flag_reduce and flag_reduce.strip('_'):
+            kw_reduce.update(data.climo._budget_reduce_kwargs(flag_reduce))
+        if kw_reduce:
             try:
-                data = data.climo.reduce(dataset=self.data, **kwargs)
+                data = data.climo.reduce(dataset=self.data, **kw_reduce)
             except Exception:
-                raise ValueError(f'Failed to reduce data {key!r} with kwargs {kwargs}.')
-            if invert:
-                with xr.set_options(keep_attrs=True):
-                    data = 1.0 / data
+                raise ValueError(f'Failed to reduce data {key!r} with {kw_reduce}.')
 
         # Normalize the data
         if normalize:
@@ -4649,16 +4845,14 @@ short_suffix : str, optional
             data = data.climo.runmean(time=runmean)
 
         # Take the absolute value, accounting for attribute-stripping xarray bug
-        if abs:
-            data = _keep_cell_attrs(np.abs)(data)
+        if flag_abs:
+            data = quack._keep_cell_attrs(np.abs)(data)
 
-        # Select pair only *after* doing all the math. This is a convenient way
-        # to get difference between reduced values
-        if pair:
-            data = data.climo.sel_pair(pair.strip('_'))
+        # Select the pair after doing all the math and reductions
+        if flag_pair:
+            data = data.climo.sel_pair(flag_pair.strip('_'))
 
-        # Modify the variable. This was used to compare storm track intensity changes
-        # under different temperature gradient adjustments.
+        # Modify the variable with another variable.
         for other, method in zip(
             (multiply, divide, add, subtract),
             ('mul', 'truediv', 'add', 'sub'),
@@ -4667,18 +4861,16 @@ short_suffix : str, optional
                 if isinstance(other, (str, tuple)):
                     other = self.get(other)
                 with xr.set_options(keep_attrs=True):
-                    data = getattr(data, '__' + method + '__')(other)
-                if isinstance(other, xr.DataArray):
-                    data.name = other.name
-                    data.attrs.update(other.attrs)
+                    data = getattr(data, f'__{method}__')(other)  # should keep name
 
         # Change the units
+        # WARNING: This is only place where 'context' is the default
         if units is not None:  # permit units='' to translate to dimensionless
-            data = data.climo.to_units(units)
+            data = data.climo.to_units(units, context='climo')
         elif standardize:
             data = data.climo.to_standard_units()
 
-        data.attrs.update(attrs)
+        data.attrs.update(kw_attrs)
         return data
 
     def quantify(self):
@@ -4687,7 +4879,7 @@ short_suffix : str, optional
         converted to `pint.Quantity` using the ``'units'`` attributes. Coordinate bounds
         variables are excluded. Already-quantified data is left alone.
         """
-        return self.data.map(lambda d: d if d.climo._is_bounds else d.climo.quantify())
+        return self.data.map(lambda d: d if d.climo._bounds_coordinate else d.climo.quantify())  # noqa: E501
 
     def dequantify(self):
         """

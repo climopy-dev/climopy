@@ -14,7 +14,7 @@ import pint
 from .internals import _make_stopwatch  # noqa: F401
 from .internals import ic  # noqa: F401
 from .internals import docstring, warnings
-from .unit import latex_units, parse_units
+from .unit import decode_units, format_units
 
 __all__ = [
     'vreg',  # pint convention
@@ -38,7 +38,7 @@ _params_cfvariable = """
 long_name : str, optional
     The plot-friendly variable name.
 standard_units : str, optional
-    The plot-friendly CF-compatible units string. Parsed with `~.unit.parse_units`.
+    The plot-friendly CF-compatible units string. Parsed with `~.unit.decode_units`.
 short_name : str, optional
     The shorter plot-friendly variable name. This is useful for describing
     the "category" of a variable and its descendents, e.g. "energy flux" for
@@ -134,10 +134,10 @@ class CFVariable(object):
         # ad hoc copy. The 'reference' variables in general should be conceptually
         # isolated and separate from any particular data.
         self._name = name
+        self._climo = None
         self._aliases = []  # manged through variable registry
         self._parents = []
         self._children = []
-        self._accessor = None
         self._registry = registry
         self.update(*args, **kwargs)
 
@@ -198,7 +198,7 @@ class CFVariable(object):
         prefix = prefix or ''
         suffix = suffix or ''
         name = ' '.join((prefix, name, suffix)).strip()
-        name = re.sub(r'\s\+', ' ', name)  # squeeze consecutive spaces
+        name = re.sub(r'\s+', ' ', name)  # squeeze consecutive spaces
         for modifier in ('strength', 'intensity'):
             for ending in ('latitude', 'anomaly', 'response'):
                 name = name.replace(f'{modifier} {ending}', ending)
@@ -219,12 +219,13 @@ class CFVariable(object):
         Whether to use the standard units or accessor units. Prefer the former so
         that subsequent labels match the `standard_units` ordering of subunits.
         """
-        if not self._accessor and self.standard_units is None:
+        if not self._climo and self.standard_units is None:
             raise RuntimeError(f'Variable {self.name!r} has no units and no accessor.')
-        return bool(
-            self._accessor and self.standard_units is not None
-            and self.units_pint != self._accessor.units
+        b = bool(
+            self._climo and self.standard_units is not None
+            and decode_units(self.standard_units) == self._climo.units
         )
+        return b
 
     @docstring.inject_snippets()
     def child(self, name, *args, other_parents=None, **kwargs):
@@ -291,7 +292,7 @@ class CFVariable(object):
         ----------
         %(params_cfupdate)s
         """
-        # Parse input names and apply prefixes and suffixes
+        # Parse inputs
         # NOTE: Important to add prefixes and suffixes to long_name *after* using
         # as default short_name. Common use case is to create "child" variables with
         # identical short_name using e.g. vreg.define('var', long_prefix='prefix')
@@ -374,6 +375,7 @@ class CFVariable(object):
         latitude = _as_set(latitude)
         vertical = _as_set(vertical)
         time = _as_set(time)
+        name = None
         for method in ('autocorr',):
             if m := re.match(rf'\A(.+)_{method}\Z', self.name):
                 name = m.group(1)
@@ -386,47 +388,47 @@ class CFVariable(object):
                 'Variable must have an assigned registry. Try creating with '
                 'CFVariableRegistry.define or looking up with CFVariableRegistry().'
             )
-        var = copy.copy(self)
-        var._accessor = accessor
-        if var.name[0] == 'c' and var.long_name and 'convergence' in var.long_name and _pop_integral(latitude):  # noqa: E501
-            var = reg._get_item(var.name[1:])  # Green's theorem; e.g. cehf --> ehf
-
-        # Apply basic overrides
-        kwmod = {  # update later!
+        self = copy.copy(self)
+        if name is not None:
+            self = reg._get_item(name)
+        if self.name[0] == 'c' and self.long_name and 'convergence' in self.long_name and _pop_integral(latitude):  # noqa: E501
+            self = reg._get_item(self.name[1:])  # Green's theorem; e.g. cehf --> ehf
+        kwpost = {  # update these later!
             key: kwargs.pop(key) for key in tuple(kwargs)
             if key in ('long_prefix', 'long_suffix', 'short_prefix', 'short_suffix')
         }
-        var.update(**kwargs)
+        self._climo = accessor
+        self.update(**kwargs)
 
         # Handle unit changes due to integration
         # NOTE: Vertical integration should always be with units kg/m^2
         # NOTE: Pint contexts apply required multiplication/division by c_p and g.
-        if var in reg.meridional_momentum_flux and _pop_integral(longitude):
+        if self in reg.meridional_momentum_flux and _pop_integral(longitude):
             units = 'TN' if _pop_integral(vertical) else 'TN 100hPa^-1'
-            var.update(
-                long_name=var.long_name.replace('flux', 'transport'),
+            self.update(
+                long_name=self.long_name.replace('flux', 'transport'),
                 short_name='momentum transport',
                 standard_units=units,
             )
-        elif var in reg.meridional_energy_flux and _pop_integral(longitude):
+        elif self in reg.meridional_energy_flux and _pop_integral(longitude):
             units = 'PW' if _pop_integral(vertical) else 'PW 100hPa^-1'
-            var.update(
-                long_name=var.long_name.replace('flux', 'transport'),
+            self.update(
+                long_name=self.long_name.replace('flux', 'transport'),
                 short_name='energy transport',
                 standard_units=units,
             )
         elif _pop_integral(vertical):
             # NOTE: Earth surface area is 500 x 10^12 m^2 and 10^12 is Tera,
             # 10^15 is Peta, 10^18 is Exa, 10^21 is Zeta.
-            if var in reg.energy:
+            if self in reg.energy:
                 units = 'ZJ' if _pop_integral(longitude, latitude) else 'MJ m^-2'
-                var.update(standard_units=units)  # same short name 'energy content'
-            elif var in reg.energy_flux:
+                self.update(standard_units=units)  # same short name 'energy content'
+            elif self in reg.energy_flux:
                 units = 'PW' if _pop_integral(longitude, latitude) else 'W m^-2'
-                var.update(standard_units=units)  # same short name 'energy flux'
-            elif var in reg.acceleration:  # includes flux convergence
+                self.update(standard_units=units)  # same short name 'energy flux'
+            elif self in reg.acceleration:  # includes flux convergence
                 units = 'TN' if _pop_integral(longitude, latitude) else 'Pa'
-                var.update(standard_units=units, short_name='eastward stress')
+                self.update(standard_units=units, short_name='eastward stress')
             else:
                 vertical.add('integral')  # raises error below
 
@@ -436,18 +438,18 @@ class CFVariable(object):
             ('longitude', 'latitude', 'vertical'),
             (longitude, latitude, vertical),
         ):
-            if 'integral' in methods:
+            if 'integral' in methods and 'standard_units' not in kwargs:
                 raise ValueError(
-                    f'Failed to adjust units for {name!r} with {dim}={methods!r}.'
+                    f'Failed to adjust units for {self.name!r} with {dim}={methods!r}.'
                 )
 
         # Latitude dimension reduction of variable in question
         args = latitude & {'argmin', 'argmax', 'argzero'}
         if args:
-            var.update(
+            self.update(
                 short_name='latitude',
                 standard_units='deg_north',
-                symbol=fr'\phi_{{{var.symbol}}}',
+                symbol=fr'\phi_{{{self.symbol}}}',
                 axis_formatter='deg',
                 long_suffix=f'{args.pop()[3:]} latitude',  # use the first one
                 # long_suffix='latitude',
@@ -455,7 +457,7 @@ class CFVariable(object):
 
         # Centroid reduction
         if 'centroid' in latitude:
-            var.update(
+            self.update(
                 long_suffix='centroid',
                 short_name='centroid',
                 standard_units='km',
@@ -464,23 +466,23 @@ class CFVariable(object):
 
         # Time dimension reductions of variable in question
         if 'timescale' in time:
-            var.update(  # modify existing
+            self.update(  # modify existing
                 long_suffix='e-folding timescale',
                 short_name='timesale',
                 standard_units='day',
-                symbol=fr'T_e({var.symbol})',
+                symbol=fr'T_e({self.symbol})',
                 axis_formatter=False,
             )
         elif 'autocorr' in time:
-            var.update(  # modify existing
+            self.update(  # modify existing
                 long_suffix='autocorrelation',
                 short_name='autocorrelation',
                 standard_units='',
-                symbol=fr'\rho({var.symbol})',
+                symbol=fr'\rho({self.symbol})',
                 axis_formatter=False,
             )
         elif 'hist' in time:
-            var.update(
+            self.update(
                 long_suffix='histogram',
                 short_name='count',
                 standard_units='',
@@ -489,19 +491,19 @@ class CFVariable(object):
 
         # Exact coordinates
         coords = [
-            rf'{method.magnitude}$\,${latex_units(method.units)}'
+            rf'{method.magnitude}$\,${format_units(method.units)}'
             if isinstance(method, pint.Quantity) else str(method)
             for methods in (longitude, latitude, vertical, time) for method in methods
             if isinstance(method, (pint.Quantity, numbers.Number))
         ]
         if coords:
-            var.update(long_suffix='at ' + ', '.join(coords))
+            self.update(long_suffix='at ' + ', '.join(coords))
         if any('normalized' in dim for dim in (longitude, latitude, vertical, time)):
-            var.update(standard_units='')
+            self.update(standard_units='')
 
         # Finally add user-specified prefixes and suffixes
-        var.update(**kwmod)
-        return var
+        self.update(**kwpost)
+        return self
 
     # Core properties
     @property
@@ -674,7 +676,7 @@ class CFVariable(object):
         from proplot import SigFigFormatter
         units = self.units_label.strip('$')
         symbol = self.symbol.strip('$')
-        accessor = self._accessor
+        accessor = self._climo
         formatter = self.scalar_formatter
         value = accessor.to_standard_units()
         value = value.climo.dequantify()
@@ -696,30 +698,20 @@ class CFVariable(object):
         return label
 
     @property
-    def units_pint(self):
-        """
-        The standard unit string translated to `pint.Unit`.
-        """
-        if self.standard_units is None:
-            raise RuntimeError(f'No standard units for variable {self!r}.')
-        else:
-            return parse_units(self.standard_units)
-
-    @property
     def units_label(self):
         """
-        The active accessor units or the standard units formatted for matplotlib
-        labels. When they are equivalent (as determined by `pint`), the
-        `~CFVariable.standard_units` string is used rather than the `pint.Unit` object.
-        This permits specifying a numerator and denominator by the position of the
-        forward slash in the standard units string. See `~.unit.latex_units` for
-        details.
+        The active accessor units formatted for matplotlib labels. If they are
+        equivalent to the `~CFVariable.standard_units` then this string is used
+        in order to preserve numerator and denominator grouping implied by the
+        forward slashes in the string. See `~.unit.format_units` for details.
         """
         if self._use_standard_units():  # this is factored out for debugging
             units = self.standard_units
+        elif 'units' in self._climo.data.attrs:
+            units = self._climo.data.units
         else:
-            units = self._accessor.units
-        return latex_units(units)  # style retaining ordering and whatnot
+            units = self._climo.data.data.units
+        return format_units(units)  # style retaining ordering and whatnot
 
 
 class CFVariableRegistry(object):
@@ -831,8 +823,8 @@ class CFVariableRegistry(object):
                 prev = self._get_item(identifier)
             except KeyError:
                 pass
-            else:
-                warnings._warn_climopy(f'Overriding variable {prev} with {var}.')
+            else:  # TODO: optionally enable
+                # warnings._warn_climopy(f'Overriding {prev} with {var}.')
                 for other in prev:  # iterate over self and all children
                     if other is var:  # i.e. we are trying to override a parent!
                         raise ValueError(f'Variable name conflict between {var} and parent {other}.')  # noqa: E501

@@ -10,6 +10,7 @@ import numpy as np
 import numpy.ma as ma
 import scipy.linalg as linalg
 import scipy.optimize as optimize
+import scipy.stats as stats
 
 from .internals import ic  # noqa: F401
 from .internals import context, docstring, quack, quant
@@ -206,6 +207,7 @@ def _covar_driver(
             print(f'Calculating {prefix}{suffix} to lag {maxlag} for axis size {naxis}.')  # noqa: E501
 
     # Mask data
+    # TODO: Revisit this! Currently very slow.
     z1 = ma.masked_invalid(z1)
     z2 = ma.masked_invalid(z2)
 
@@ -616,9 +618,39 @@ def hist(bins, y, /, axis=0):
     return ctx.data
 
 
+def _get_bounds(sigma, pctile, dof):
+    """
+    Get the lower and upper bounds on the distribution.
+
+    Parameters
+    ----------
+    sigma : float, optional
+        The standard error.
+    pctile : bool, float, or 2-tuple
+        The percentile range indicator.
+    dof : int
+        The degrees of freedom in the t-distribution.
+    """
+    if pctile is None or pctile is True or pctile is False:
+        pctile = (2.5, 97.5)
+    sigma = np.array(sigma)  # e.g. (M, N) array of flat extra dims (M) and fit dim (N)
+    pctile = np.atleast_1d(pctile)  # e.g. (2, K) array of (K) lower and upper bounds
+    if pctile.size == 1:
+        pctile = np.array([0.5 * pctile.item(), 100 - 0.5 * pctile.item()])
+    elif pctile.shape[0] != 2 or pctile.ndim > 2:
+        raise ValueError(f'Invalid percentiles {pctile}. Must be scalar or 2xN.')
+    dims = pctile.ndim + np.arange(sigma.ndim)
+    dist = stats.t(df=dof)
+    tstats = dist.ppf(0.01 * pctile)
+    tstats = np.expand_dims(tstats, axis=tuple(dims))  # e.g. (2, M, N) or (2, K, M, N)
+    dlower = tstats[0, ...] * sigma  # e.g. (M, N) or (K, M, N)
+    dupper = tstats[1, ...] * sigma  # e.g. (M, N) or (K, M, N)
+    return dlower, dupper
+
+
 @quack._lls_metadata
-@quant.while_dequantified(('=x', '=y'), ('=y / x', '=y / x', '=y'))
-def linefit(x, y, /, axis=0):
+@quant.while_dequantified(('=x', '=y'), ('=y / x', '=y / x', '', '=y', '=y', '=y'))
+def linefit(x, y, /, axis=0, adjust=True, pctile=None):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
 
@@ -633,17 +665,39 @@ def linefit(x, y, /, axis=0):
     dim : str, optional
         *For `xarray.DataArray` input only*.
         The named regression dimension.
+    adjust : bool, optional
+        Whether to adjust the standard error for the reduction in effective degrees
+        of freedom due to serial correlation. See :cite:`2015:thompson` for details.
+    pctile : bool, float, or 2-tuple, option
+        The percentile range used for the lower and upper bounds on the best-fit
+        line. If ``None`` or ``True`` a default 95-percentile range is used. If
+        float the percentile bounds ``(pctile / 2, 1 - pctile / 2)`` are used. If
+        2-tuple of float then these percentile bounds are used.
 
     Returns
     -------
     slope : array-like
         The slope estimates. The shape is the same as `y` but with
         dimension `axis` reduced to length 1.
-    stderr : array-like
-        The standard errors of the slope estimates. The shape is the
-        same as `slope`.
+    sigma : array-like
+        The standard errors of the slope estimates, optionally adjusted for
+        serial correlation (see `adjust`). The shape is the same as `slope`.
+    rsquare : array-like
+        The coefficient of determination $R^2$, i.e. the ratio of the explained
+        variance to the total variance and the square of the correlation coefficient.
     fit : array-like
-        The reconstructed best-fit line. The shape is the same as `y`.
+        The reconstructed best-fit line. The shape is the same as `y`. This
+        can be used to generate R-squared estimates.
+    fit_lower : array-like, optional
+        The lower bound best fit line fit based on `sigma`. Returned only
+        if `bounds` was passed.
+    fit_upper : array-like, optional
+        The lower bound best fit line fit based on `sigma`. Returned only
+        if `bounds` was passed.
+
+    References
+    ----------
+    .. bibliography:: ../docs/_bibfiles/regress.bib
 
     Examples
     --------
@@ -652,7 +706,7 @@ def linefit(x, y, /, axis=0):
     >>> state = np.random.RandomState(51423)
     >>> x = np.arange(500)
     >>> y = state.rand(10, 500) + 0.1 * x
-    >>> slope, stderr, fit = climo.linefit(x, y, axis=1)
+    >>> slope, *_ = climo.linefit(x, y, axis=1)
     >>> slope
     array([[0.10000399],
            [0.09997467],
@@ -665,62 +719,84 @@ def linefit(x, y, /, axis=0):
            [0.10014288],
            [0.10011434]])
     """
+    # NOTE: The 'covariance matrix' returned by polyfit just described the
+    # generalization of 2D matrix linear regression for arbitrary polynomials; still
+    # refers to the traditional definition for the simple linear regression standard
+    # error (i.e. sum of squared residuals normalized by x-variance and n - 2).
+    # See: https://en.wikipedia.org/wiki/Ordinary_least_squares#Assuming_normality
+    # See: https://en.wikipedia.org/wiki/Simple_linear_regression#Normality_assumption
+    # See: https://en.wikipedia.org/wiki/Standard_error#Correction_for_correlation_in_the_sample  # noqa: E501
     if x.ndim != 1 or x.size != y.shape[axis]:
         raise ValueError(
-            f'Invalid x-shape {x.shape} for regression along axis {axis} '
-            f'of y-shape {y.shape}.'
+            f'Invalid x-shape {x.shape} for regression along '
+            f'axis {axis} of y-shape {y.shape}.'
         )
 
-    with context._ArrayContext(y, push_right=axis) as ctx:
-        # Get regression coefficients. Flattened data is shape (K, N)
-        # where N is regression dimension. Permute to (N, K) then back again.
-        # N gets replaced with length-2 dimension (slope, offset).
+    with context._ArrayContext(y, push_left=axis) as ctx:
+        # Get regression coefficients. Flattened data is shape (K, N) where N is
+        # regression dimension (replaced with length-2 (slope, offset) dimension).
+        x = x[:, None]
         y = ctx.data
-        params, covar = np.polyfit(x, y.T, deg=1, cov=True)
-        params = np.fliplr(params.T)  # flip to (offset column 0, slope column 1)
+        params, covar = np.polyfit(x[:, 0], y, deg=1, cov=True)
+        offset = params[None, 1, :]
+        slope = params[None, 0, :]
+        fit = offset + x * slope
+        resid = y - fit  # prediction residual
 
-        # Get best-fit line and slope
-        fit = params[:, :1] + x * params[:, 1:]
-        slope = params[:, 1:]
+        # Get standard error, with optional adjustments for the reduction
+        # in effective degrees of freedom associated with serial correlation.
+        n = y.shape[0]
+        sigma2 = covar[None, 0, 0, :]  # standard error of slope estimate squared
+        kwargs = dict(axis=0, keepdims=True)
+        if adjust:  # serial correlation
+            mean = resid.mean(**kwargs)
+            numer = np.sum((resid[1:, :] - mean) * (resid[:-1, :] - mean), **kwargs)
+            denom = (n - 1) * resid.var(**kwargs)
+            auto = numer / denom  # autocorrelation scale factor
+            sigma2 *= (n - 2) / (n * ((1 - auto) / (1 + auto)) - 2)
 
-        # Get standard error
-        # See Dave's paper (TODO: add citation)
-        n = y.shape[1]
-        resid = y - fit  # residual
-        mean = resid.mean(axis=1, keepdims=True)
-        var = resid.var(axis=1, keepdims=True)
-        rho = np.sum(
-            (resid[:, 1:] - mean) * (resid[:, :-1] - mean), axis=1, keepdims=True,
-        ) / ((n - 1) * var)  # correlation factor
-        scale = (n - 2) / (n * ((1 - rho) / (1 + rho)) - 2)  # scale factor
-        stderr = np.sqrt(scale * covar[0, 0, :, None])
+        # Get lower and upper bounds using the joint probability
+        # distribution associated with uncerainty in both the offset and slope.
+        # NOTE: The following proves stderr from the covariance matrix is the same as
+        # the wikipedia formula: print(sigma2, resid.sum() / anom.sum() / (n - 2))
+        ysquare = (y - y.mean(**kwargs)) ** 2
+        rsquare = 1 - (resid ** 2).sum(**kwargs) / ysquare.sum(**kwargs)
+        xsquare = (x - x.mean()) ** 2
+        scales = np.sqrt(xsquare.sum() * (1 / n + xsquare / xsquare.sum()))
+        sigma = np.sqrt(sigma2)  # raw standard slope error
+        del_lower, del_upper = _get_bounds(sigma * scales, pctile, dof=n - 2)
+        fit_lower, fit_upper = fit + del_lower, fit + del_upper
 
         # Replace context data
-        ctx.replace_data(slope, stderr, fit)
+        npctile = fit_lower.ndim - fit.ndim
+        insert_left = [0, 0, 0, 0, npctile, npctile]
+        datas = (slope, sigma, rsquare, fit, fit_lower, fit_upper)
+        ctx.replace_data(*datas, insert_left=insert_left)
 
+    # Return permuted data
     return ctx.data
 
 
 @quack._lls_metadata
-@quant.while_dequantified(('=t', ''), ('=t', '=t', ''))
+@quant.while_dequantified(('=t', ''), ('=t', '=t', '', '', '', ''))
 def rednoisefit(
-    dt, a, /, maxlag=None, imaxlag=None, maxlag_fit=None, imaxlag_fit=None, axis=0
+    dt, a, /,
+    maxlag=None, imaxlag=None, maxlag_fit=None, imaxlag_fit=None, pctile=None, axis=0
 ):
     r"""
-    Return the :math:`e`-folding autocorrelation timescale for the input
-    autocorrelation spectra along an arbitrary axis. Depending on the length
-    of `axis`, the timescale is obtained with either of the following two
-    approaches:
+    Return the :math:`e`-folding timescale for the input lag-autocorrelation spectra
+    along an arbitrary axis. Depending on the length of `axis`, the timescale is
+    obtained with either of the following two approaches.
 
     1. Find the :math:`e`-folding timescale(s) for the pure red noise
        autocorrelation spectra :math:`\exp(-x\Delta t / \tau)` with the
-       least-squares best fit to the provided spectra.
+       least-squares `scipy.optimize.curve_fit` to the input spectra.
     2. Assume the process *is* pure red noise and invert the
-       red noise autocorrelation spectrum at lag 1 to solve for
+       red noise autocorrelation spectrum at lag-1 to solve for
        :math:`\tau = \Delta t / \log a_1`.
 
-    Approach 2 is used if `axis` is singleton or the data is scalar. In these
-    cases, the data is assumed to represent just the lag-1 autocorrelation.
+    Approach 2 is used if `axis` is singleton or the data are scalar. In these
+    cases, the data are assumed to represent just the lag-1 autocorrelation.
 
     Parameters
     ----------
@@ -735,19 +811,18 @@ def rednoisefit(
     maxlag_fit : float, optional
         The maximum time lag to include in the output pure red noise spectrum.
     imaxlag_fit : int, optional
-        As with `maxlag` but specifies the index instead of the physical time.
+        As with `maxlag_fit` but specifies the index instead of the physical time.
     axis : int, optional
-        The lag axis. Each slice along this axis should represent an
-        autocorrelation spectrum generated with `corr`.
-
-        * If `axis` is singleton, the data are assumed to be lag-1 autocorrelations
-          and the timescale is computed from the lag-1 pure red noise formula.
-        * If `axis` is non-singleton, the timescale is estimated from a least-squares
-          curve fit to a pure red noise spectrum up to `maxlag`.
-
+        The axis representing lag-autocorrelation spectra generated with `autocorr`. If
+        ``a.shape[axis]`` is singleton the data should be lag-1 autocorrelations.
     dim : str, optional
         *For `xarray.DataArray` input only*.
         The named lag dimension.
+    pctile : bool, float, or 2-tuple, option
+        The percentile range used for the lower and upper bounds on the best-fit
+        spectrum. If ``None`` or ``True`` a default 95-percentile range is used. If
+        float the percentile bounds ``(pctile / 2, 1 - pctile / 2)`` are used. If
+        2-tuple of float then these percentile bounds are used.
 
     Returns
     -------
@@ -760,6 +835,15 @@ def rednoisefit(
     fit : array-like
         The best fit autocorrelation spectrum. The shape is the same as `data`
         but with `axis` of length `nlag`.
+    rsquare : array-like
+        The coefficient of determination $R^2$, i.e. the ratio of the explained
+        variance to the total variance and the square of the correlation coefficient.
+    fit_lower : array-like, optional
+        The lower bound best fit autocorrelation spectrum based on `sigma`.
+        Returned only if `bounds` was passed.
+    fit_upper : array-like, optional
+        The upper bound best fit autocorrelation spectrum based on `sigma`.
+        Returned only if `bounds` was passed.
 
     Examples
     --------
@@ -768,8 +852,8 @@ def rednoisefit(
     >>> state = np.random.RandomState(51423)
     >>> data = climo.rednoise(0.8, 500, 10, state=state)
     >>> lag, auto = climo.autocorr(1, data, axis=0, maxlag=50)
-    >>> taus, sigmas, fit = climo.rednoisefit(lag, auto, axis=0)
-    >>> taus
+    >>> tau, *_ = climo.rednoisefit(lag, auto, axis=0)
+    >>> tau
     array([[5.97691453, 4.29275329, 4.91997185, 4.87781027, 3.46404331,
             4.23444888, 4.91852921, 4.39283164, 4.79466674, 3.81250855]])
 
@@ -793,37 +877,47 @@ def rednoisefit(
     if maxlag_fit is not None:
         imaxlag_fit = np.round(maxlag_fit / dt).astype(int)
 
-    with context._ArrayContext(a, push_right=axis) as ctx:
+    with context._ArrayContext(a, push_left=axis) as ctx:
         # Set defaults
         a = ctx.data
-        nlag = a.shape[1] - 1  # not including 0-lag entry
-        nextra = a.shape[0]
+        nlag = a.shape[0] - 1  # not including 0-lag entry
+        nextra = a.shape[1]
         imaxlag = max(1, nlag) if imaxlag is None else min(imaxlag, nlag)
         imaxlag_fit = imaxlag if imaxlag_fit is None else imaxlag_fit  # can be anything
         lags = np.arange(0, imaxlag + 1)  # lags for the curve fit
         lags_fit = np.arange(0, imaxlag_fit + 1)
 
-        # Iterate over dimensions
-        taus = np.empty((nextra, 1))
-        sigmas = np.empty((nextra, 1))
-        fit = np.empty((nextra, imaxlag_fit + 1))
+        # Scalar or least-squares estimates
+        pdims = np.atleast_1d(pctile).shape[1:]  # e.g. (2, K) array of percentiles
+        tau = np.empty((1, nextra))
+        sigma = np.empty((1, nextra))
+        rsquare = np.empty((1, nextra))
+        fit = np.empty((imaxlag_fit + 1, nextra))
+        fit_lower = np.empty((*pdims, imaxlag_fit + 1, nextra))
+        fit_upper = np.empty((*pdims, imaxlag_fit + 1, nextra))
         for i in range(nextra):
             if imaxlag <= 1:
-                # Scalar function
-                tau = -dt / np.log(a[i, -1])
-                sigma = 0
+                itau = -dt / np.log(a[-1, i])
+                isigma = 0
             else:
-                # Curve fit
-                tau, sigma = optimize.curve_fit(curve_func, lags, a[i, :])
-                sigma = np.sqrt(np.diag(sigma))
-                tau, sigma = tau[0], sigma[0]
-            # Timescales, uncertainty and the curve itself
-            taus[i, 0] = tau  # just store the timescale
-            sigmas[i, 0] = sigma
-            fit[i, :] = np.exp(-dt * lags_fit / tau)  # best-fit spectrum
+                itau, isigma = optimize.curve_fit(curve_func, lags, a[:, i])
+                itau, isigma = itau[0], np.sqrt(isigma[0, 0])
+            idel_lower, idel_upper = _get_bounds(isigma, pctile, dof=lags.size - 2)
+            tau[:, i] = itau
+            sigma[:, i] = isigma
+            fit[:, i] = np.exp(-dt * lags_fit / itau)
+            fit_lower[..., i] = np.exp(-dt * lags_fit / idel_upper[..., None])
+            fit_upper[..., i] = np.exp(-dt * lags_fit / idel_lower[..., None])
+        kwargs = dict(axis=0, keepdims=True)
+        anom = (a - a.mean(**kwargs)) ** 2
+        resid = (a - fit) ** 2
+        rsquare = 1 - resid.sum(**kwargs) / anom.sum(**kwargs)
 
         # Replace context data
-        ctx.replace_data(taus, sigmas, fit)
+        npctile = len(pdims)
+        insert_left = [0, 0, 0, 0, npctile, npctile]
+        datas = (tau, sigma, rsquare, fit, fit_lower, fit_upper)
+        ctx.replace_data(*datas, insert_left=insert_left)
 
     # Return permuted data
     return ctx.data

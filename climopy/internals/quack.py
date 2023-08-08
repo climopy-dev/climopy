@@ -14,6 +14,11 @@ from ..unit import ureg
 from . import ic  # noqa: F401
 from . import warnings
 
+try:
+    import cftime
+except ImportError:
+    cftime = None
+
 # Possibly make utilities public in future
 __all__ = []
 
@@ -60,7 +65,7 @@ def _interp_safe(x, xp, yp):
         units = yp_in.units
         yp_in = yp_in.magnitude
     if xp[1] - xp[0] < 0:
-        xp, yp = xp[::-1], yp_in[::-1]
+        xp, yp_in = xp[::-1], yp_in[::-1]
     y = np.interp(x, xp, yp_in)
     if units is not None:
         y = y * units
@@ -73,7 +78,11 @@ def _is_numeric(data):
     """
     Test if object is numeric, i.e. not string or datetime-like.
     """
-    return np.issubdtype(np.asarray(data).dtype, np.number)
+    data = getattr(data, 'magnitude', data)
+    dtype = getattr(data, 'dtype', None)
+    if dtype is None:
+        dtype = np.asarray(data).dtype
+    return np.issubdtype(dtype, np.number)
 
 
 def _is_scalar(data):
@@ -84,8 +93,31 @@ def _is_scalar(data):
     # WARNING: np.isscalar of dimensionless data returns False
     if isinstance(data, pint.Quantity):
         data = data.magnitude
-    data = np.asarray(data)
-    return data.ndim == 0
+    ndim = getattr(data, 'ndim', None)
+    if ndim is None:
+        ndim = np.asarray(data).ndim
+    return ndim == 0
+
+
+def _is_timelike(data):
+    """
+    Test if object is time-like data. Adpated from private xarray utility
+    ``_contains_datetime_like_objects`` inside ``core/common.py``.
+    """
+    dtype = data.dtype
+    if np.issubdtype(dtype, np.datetime64) or np.issubdtype(dtype, np.timedelta64):
+        return True
+    if cftime is None:
+        return False
+    array = data.data
+    if array.dtype != np.dtype('O') or not array.size:
+        return False
+    sample = array.ravel()[0]
+    if hasattr(sample, 'compute'):
+        sample = sample.compute()
+        if isinstance(sample, np.ndarray):
+            sample = sample.item()
+    return isinstance(sample, cftime.datetime)
 
 
 def _dataarray_from(
@@ -418,16 +450,29 @@ def _lls_metadata(func):
     def wrapper(*args, **kwargs):
         x, y = args  # *both* or *one* of these is dataarray
         x_in, y_in, kwargs = _dataarray_strip(x, y, **kwargs)
-        fit_val, fit_err, fit_line = func(x_in, y_in, **kwargs)
+        val, err, rsq, fit, fit_lower, fit_upper = func(x_in, y_in, **kwargs)
 
         # Build back the DataArray
         if isinstance(y, xr.DataArray):
-            dim_coords = {y.dims[kwargs['axis']]: None}
-            fit_val = _dataarray_from(y, fit_val, dim_coords=dim_coords)
-            fit_err = _dataarray_from(y, fit_err, dim_coords=dim_coords)
-            fit_line = _dataarray_from(y, fit_line)  # same everything
+            red_coords = {y.dims[kwargs['axis']]: None}
+            fit_coords = red_coords.copy()
+            if fit_lower.ndim > fit.ndim:
+                pctile = kwargs.get('pctile', None)
+                if pctile is None:
+                    raise ValueError('Expected percentile range.')
+                pctile = np.array(pctile)
+                if pctile.ndim != 2 or pctile.shape[0] != 2:
+                    raise ValueError('Expected 2 x N percentile range.')
+                fit_dims = ('pctile', *y.dims)
+                fit_coords['pctile'] = pctile[1, :] - pctile[0, :]
+            val = _dataarray_from(y, val, dim_coords=red_coords)
+            err = _dataarray_from(y, err, dim_coords=red_coords)
+            rsq = _dataarray_from(y, rsq, dim_coords=red_coords)
+            fit = _dataarray_from(y, fit)
+            fit_lower = _dataarray_from(y, fit_lower, dims=fit_dims, dim_coords=fit_coords)  # noqa: E501
+            fit_upper = _dataarray_from(y, fit_upper, dims=fit_dims, dim_coords=fit_coords)  # noqa: E501
 
-        return fit_val, fit_err, fit_line
+        return val, err, rsq, fit, fit_lower, fit_upper
 
     return wrapper
 

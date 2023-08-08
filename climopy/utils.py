@@ -123,7 +123,8 @@ def find(
         *For `xarray.DataArray` input only*.
         Named dimension along which zeros are "tracked".
     diff : int, optional
-        How many times to differentiate along the axis.
+        How many times to differentiate along the axis. The type of differentiation
+        used internally is controlled by `centered`.
     which : {'negpos', 'posneg', 'both'}, optional
         Whether to find values that go from negative to positive, positive to
         negative, or both.
@@ -207,29 +208,35 @@ def find(
         x0s, y0s = [], []
         nextra, nalong, nreduce = y.shape
         for i in range(nextra):
-            # Optionally take derivatives onto half-levels and interpolate to points
-            # on those half-levels.
-            # NOTE: Doesn't matter if units are degrees or meters for latitude.
+            # Optionally take half-level derivatives
             ix = x
             iy = dy = y[i, :, :]
-            if diff:  # not zero or None
-                if centered:
-                    dy = deriv_uneven(ix, iy, axis=-1, order=diff, keepedges=True)
-                else:
-                    iix, dy = deriv_half(ix, iy, axis=-1, order=diff)
-                    iiy = np.full(dy.shape, np.nan)
-                    for i in range(nalong):
-                        iiy[i, :] = np.interp(iix, ix, iy[i, :])
-                    iy = iiy
+            if not diff:  # not zero or None
+                pass
+            elif centered:
+                dy = deriv_uneven(ix, iy, axis=-1, order=diff, keepedges=True)
+            else:
+                iix, dy = deriv_half(ix, iy, axis=-1, order=diff)
+                iiy = np.full(dy.shape, np.nan)
+                for j in range(nalong):
+                    jx, jy = ix, iy[j, :]
+                    if invert := ix[1] > ix[0]:
+                        jx, jy = jx[::-1], jy[::-1]
+                    result = np.interp(iix, jx, jy)
+                    if invert:
+                        result = result[::-1]
+                    iiy[j, :] = result
+                ix = iix
+                iy = iiy
 
             # Find where sign switches from +ve to -ve and vice versa
             x0s_track, y0s_track = [], []
-            for k in range(nalong):
+            for j in range(nalong):
                 # Get indices where vals go positive [to zero] to negative or vice versa
                 # NOTE: Always have False where NaNs present
                 posneg = negpos = ()
                 with np.errstate(invalid='ignore'):
-                    ddy = np.diff(np.sign(dy[k, :]))
+                    ddy = np.diff(np.sign(dy[j, :]))
                 exact = np.zeros((ddy.size - 1,), dtype=bool)
                 if which in ('negpos', 'both'):
                     exact = exact | (ddy[:-1] == 1) & (ddy[1:] == 1)  # *exact* zeros
@@ -244,32 +251,38 @@ def find(
                 x0s_reduce, y0s_reduce = [], []
                 for idx in idxs:
                     x0s_reduce.append(ix[idx])
-                    y0s_reduce.append(iy[k, idx])
+                    y0s_reduce.append(iy[j, idx])
 
                 # Interpolate to inexact zero locations and values at those locations
-                for j, inexact in enumerate((negpos, posneg)):
-                    idxs, = np.where(inexact)  # NOTE: for empty array, yields nothing
-                    for idx in idxs:
-                        # Need dy to be *increasing* for numpy.interp to work
-                        if j == 0:
-                            slice_ = slice(idx, idx + 2)
-                        else:
-                            slice_ = slice(idx + 1, idx - 1, -1)
-                        jx = ix[slice_]
-                        jy = iy[k, slice_]
-                        jdy = dy[k, slice_]
-                        if jx.size in (0, 1):
-                            continue  # weird error
-                        x0 = np.interp(0, jdy, jx, left=np.nan, right=np.nan)
-                        if np.isnan(x0):  # no extrapolation!
+                # NOTE: First np.interp argument must be *increasing* for valid results
+                for k, inexact in enumerate((negpos, posneg)):
+                    idxs, = np.where(inexact)  # yields nothing for empty array
+                    for l, idx in enumerate(idxs):
+                        jx = ix[idx:idx + 2]
+                        jy = iy[j, idx:idx + 2]
+                        jdy = dy[j, idx:idx + 2]
+                        if jx.size != 2 or jdy.size != 2:  # should be impossible
+                            raise RuntimeError('Invalid number of interpolants.')
+                        rev = slice(None) if k == 0 else slice(None, None, -1)
+                        x0 = np.interp(0, jdy[rev], jx[rev], left=np.nan, right=np.nan)
+                        if np.isnan(x0):  # extrapolation not allowed
                             continue
-                        slice_ = slice(None) if jx[1] > jx[0] else slice(None, None, -1)
-                        y0 = np.interp(x0, jx[slice_], jy[slice_])
+                        rev = slice(None) if jx[1] > jx[0] else slice(None, None, -1)
+                        y0 = np.interp(x0, jx[rev], jy[rev])
                         x0s_reduce.append(x0)  # the locations
                         y0s_reduce.append(y0)  # the values
+                        # Debugging cmip tropopause height estimates
+                        # from . import const
+                        # nlon, nlat = nalong, nextra // 12
+                        # lon = (j * 360 / nlon + 180) % 360 - 180
+                        # lon = format(abs(lon), '03.0f') + 'WE'[lon >= 0]
+                        # lat = (i % nlat - nlat / 2) * 180 / nlat
+                        # lat = format(abs(lat), '02.0f') + 'SN'[lat >= 0]
+                        # idx = f'{l}/{len(idxs)}' + (' (!!!)' if len(idxs) > 1 else '')
+                        # print(lon, lat, idx, jx ** (1 / const.kappa), x0 ** (1 / const.kappa))  # noqa: E501
 
                 # Add to list
-                # NOTE: Must use lists because number of zeros varies
+                # NOTE: Must use lists because numbers of zeros vary
                 x0s_track.append(x0s_reduce)
                 y0s_track.append(y0s_reduce)
 

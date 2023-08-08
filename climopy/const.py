@@ -8,13 +8,13 @@ import math
 from .unit import ureg
 
 __all__ = [
-    'a', 'c', 'cp', 'cv', 'e', 'G', 'g', 'H', 'h',
+    'a', 'c', 'cp', 'cv', 'e', 'eps', 'G', 'g', 'H', 'h',
     'kappa', 'kb', 'Lf', 'Ls', 'Lv', 'Md', 'Mw', 'Na', 'Omega',
     'p0', 'pi', 'psfc', 'R', 'Rd', 'Rm', 'sigma', 'tau',
 ]
 
 #: `Gravitational constant\
-#: <https://en.wikipedia.org/wiki/Gravitational_constant>`__
+#: <https://glossary.ametsoc.org/wiki/Gravitation>`__
 G = ureg.Quantity(6.67408e-11, 'm^3 kg^-1 s^-2')
 
 #: Rule-of-thumb 7km atmospheric
@@ -28,15 +28,15 @@ Md = ureg.Quantity(28.9645e-3, 'kg mol^-1')
 Mw = ureg.Quantity(18.0153e-3, 'kg mol^-1')
 
 #: `Avogadro constant\
-#: <https://en.wikipedia.org/wiki/Avogadro_constant>`__.
+#: <https://glossary.ametsoc.org/wiki/Avogadro%27s_number>`__.
 Na = ureg.Quantity(6.02214e23, 'mol^-1')
 
 #: Earth `rotation rate\
-#: <https://en.wikipedia.org/wiki/Earth%27s_rotation#Angular_speed>`__
+#: <https://glossary.ametsoc.org/wiki/Angular_velocity_of_the_earth>`__
 Omega = ureg.Quantity(7.292115e-5, 'rad s^-1')
 
 #: `Ideal gas constant\
-#: <https://en.wikipedia.org/wiki/Gas_constant>`__
+#: <https://glossary.ametsoc.org/wiki/Gas_constant>`__
 R = ureg.Quantity(8.31446, 'J mol^-1 K^-1')
 
 #: Earth `mean radius\
@@ -77,15 +77,15 @@ Ls = ureg.Quantity(2.834e6, 'J kg^-1')
 e = ureg.Quantity(math.e, '')
 
 #: `Standard acceleration due to gravity\
-#: <https://en.wikipedia.org/wiki/Standard_gravity>`__
+#: <https://glossary.ametsoc.org/wiki/Standard_gravity>`__
 g = ureg.Quantity(9.80665, 'm s^-2')
 
 #: `Planck constant\
 #: <http://glossary.ametsoc.org/wiki/Planck%27s_constant>`__
 h = ureg.Quantity(6.62607e-34, 'J s')
 
-#: Earth `mean sea-level pressure\
-#: <https://en.wikipedia.org/wiki/Atmospheric_pressure#Mean_sea-level_pressure>`__
+#: `Standard atmospheric pressure\
+#: <https://glossary.ametsoc.org/wiki/Standard_atmospheric_pressure>`__
 psfc = ureg.Quantity(101325.0, 'Pa')
 
 #: Standard reference pressure
@@ -97,21 +97,32 @@ pi = ureg.Quantity(math.pi, '')
 #: :math:`\tau` (6.28318...)
 tau = ureg.Quantity(2.0 * math.pi, '')
 
+#: Standard `liquid water density\
+#: <https://glossary.ametsoc.org/wiki/Standard_density>`__
+rhow = ureg.Quantity(999.8, 'kg m^-3')
+
 #: Dry air gas constant
+#: (equivalent to :math:`R / M_d`)
 Rd = R / Md
 
 #: Water vapor gas constant
+#: (equivalent to :math:`R / M_w`)
 Rm = R / Mw
+
+#: Ratio of molar masses of vapor and dry air (used in
+#: converting vapor pressures to mass mixing ratios)
+eps = Mw / Md
 
 #: `Poisson constant\
 #: <http://glossary.ametsoc.org/wiki/Poisson_constant>`__
-#: for dry air. Equivalent to :math:`R_d / c_p`.
+#: for dry air (equivalent to :math:`R_d / c_p`)
 kappa = Rd / cp
 
 #: `Boltzmann constant\
 #: <https://en.wikipedia.org/wiki/Boltzmann_constant>`__
+#: (equivalent to :math:`R / N_a`)
 kb = R / Na
 
 #: `Stefan-Boltzmann constant\
 #: <https://en.wikipedia.org/wiki/Stefan–Boltzmann_constant>`__
-sigma = ((2 * (pi**5) * (kb**4)) / (15 * (h**3) * (c**2))).to('W K^-4 m^-2')
+sigma = ((2 * (pi ** 5) * (kb ** 4)) / (15 * (h ** 3) * (c ** 2))).to('W K^-4 m^-2')

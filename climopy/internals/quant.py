@@ -3,7 +3,6 @@
 Tools for working with pint quantities.
 """
 import functools
-import itertools
 import re
 
 import pint
@@ -231,15 +230,16 @@ def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_de
             n_expect = len(units_out)
             if not is_container_out and isinstance(result, tuple):
                 raise ValueError('Got tuple of return values, expected one value.')
-            if is_container_out and n_result != len(units_out_fmt):
-                raise ValueError(f'Expected {n_expect} return values, got {n_result}.')
+            if is_container_out and n_result > n_expect:
+                raise ValueError(f'Expected at most {n_expect} return values, got {n_result}.')  # noqa: E501
 
-            # Quantify output, but *only* if input were quantities
+            # Quantify output, but *only* if input were quantities. Bypass extra values
+            # to permit e.g. variable return arguments depending on input flags.
             result_new = []
             result_quantify = any(isinstance(arg, ureg.Quantity) for arg in args)
             if not is_container_out:
                 result = (result,)
-            for res, unit in itertools.zip_longest(result, units_out_fmt):
+            for res, unit in zip(result, units_out_fmt):
                 container, is_ref = _units_container(unit)
                 if is_ref:
                     unit = _replace_units(container, definitions)

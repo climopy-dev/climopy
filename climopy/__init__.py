@@ -25,7 +25,7 @@ from .internals.quant import *  # noqa: F401, F403
 from . import const  # noqa: F401
 from . import context  # noqa: F401
 from . import internals  # noqa: F401
-from . import physics  # noqa: F401
+from . import definitions  # noqa: F401
 
 # SCM versioning
 name = 'climopy'

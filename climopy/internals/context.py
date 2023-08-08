@@ -11,15 +11,16 @@ from . import _make_logger
 logger = _make_logger('ArrayContext', 'error')  # or 'info'
 
 
-def _exe_axis_moves(array, moves, reverse=False):
+def _do_axis_moves(array, moves, reverse=False):
     """
     Execute the input series of axis swaps.
     """
     slice_ = slice(None, None, -1) if reverse else slice(None)
     for move in moves[slice_]:
         move = move[slice_]
+        shape = array.shape
         array = np.moveaxis(array, *move)
-        logger.info(f'Move {move[0]} to {move[1]}: {array.shape}')
+        logger.info(f'Move {move[0]} to {move[1]}: {shape} to {array.shape}')
     return array
 
 
@@ -30,8 +31,6 @@ def _get_axis_moves(push_left, push_right, left_base=0, right_base=-1):
     logger.info(f'Push axes left: {push_left}')
     logger.info(f'Push axes right: {push_right}')
     moves = []
-    left_base = 0
-    right_base = -1
     for i, axis in enumerate(push_right):
         moves.append((axis, right_base))
         for push in (push_left, push_right):
@@ -176,6 +175,16 @@ class _ArrayContext(object):
         array([1, 5, 9])
         """
         # Parse arguments
+        # TODO: Somehow support push_left with insert_right and vice/versa. Not sure
+        # why but empirical testing reveals this will fail. For example try the
+        # following after changing `insert_left` back to `insert_right` in `linefit` and
+        # moving `fit_lower` axes to the end: pctile = np.array([[1 , 5], [99, 95]]))
+        # args = (np.arange(10), np.random.rand(10, 4, 3)) axis=0, pctile=pctile)
+        # *_, fit, fit_lower, fit_upper = climo.linefit(*args, axis=0, pctile=pctile)
+        if insert_left is not None and not self._push_left.size:
+            raise ValueError('Insert left must be combined with push_left.')
+        if insert_right is not None and not self._push_right.size:
+            raise ValueError('Insert left must be combined with push_left.')
         inserts_left, inserts_right = [], []
         for inserts, insert in zip((inserts_left, inserts_right), (insert_left, insert_right)):  # noqa: E501
             insert = np.atleast_1d(insert).tolist()
@@ -302,7 +311,7 @@ class _ArrayContext(object):
             push_left = self._push_left.copy()  # *must* be copy or replace_data fails!
             push_right = self._push_right.copy()
             moves = _get_axis_moves(push_left, push_right)
-            array = _exe_axis_moves(array, moves)
+            array = _do_axis_moves(array, moves)
 
             # Get new left shape
             ndim = array.ndim
@@ -343,13 +352,11 @@ class _ArrayContext(object):
         self._shapes = []
         self._moves = []
         for array, ishape, imoves in zip(arrays, shapes, moves):
-            logger.info('')
-            logger.info(f'Unflatten array: {array.shape}')
             if array.shape != ishape:
                 # WARNING: 'order' arg is invalid for dask arrays
-                logger.info(f'Reshape from {array.shape} to {ishape}')
+                logger.info(f'Unflatten array: {array.shape} to {ishape}')
                 array = np.reshape(array, ishape)
-            array = _exe_axis_moves(array, imoves, reverse=True)
+            array = _do_axis_moves(array, imoves, reverse=True)
             self._arrays.append(array)
 
     @property

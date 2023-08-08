@@ -18,12 +18,12 @@ simplefilter('error', category=pint.UnitStrippedWarning)
 simplefilter('ignore', category=xr.core.extensions.AccessorRegistrationWarning)
 
 # Warning class
-ClimoPyWarning = type('ClimoPyWarning', (UserWarning,), {})
+ClimopyWarning = type('ClimopyWarning', (UserWarning,), {})
 
 
 def _warn_climopy(message):
     """
-    Emit a `ClimoPyWarning` and try to show the stack level corresponding
+    Emit a `ClimopyWarning` and try to show the stack level corresponding
     to user code by jumping to the stack outside of climopy, numpy, scipy,
     pandas, xarray, pint, and scipy.
     """
@@ -39,4 +39,4 @@ def _warn_climopy(message):
             break
         frame = frame.f_back
         stacklevel += 1
-    warnings.warn(message, ClimoPyWarning, stacklevel=stacklevel)
+    warnings.warn(message, ClimopyWarning, stacklevel=stacklevel)
