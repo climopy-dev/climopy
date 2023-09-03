@@ -8,6 +8,7 @@ data
 
 # Development
 libby
+examples
 
 # Local docs builds
 docs/api
