@@ -456,6 +456,7 @@ def _lls_metadata(func):
         if isinstance(y, xr.DataArray):
             red_coords = {y.dims[kwargs['axis']]: None}
             fit_coords = red_coords.copy()
+            fit_dims = y.dims
             if fit_lower.ndim > fit.ndim:
                 pctile = kwargs.get('pctile', None)
                 if pctile is None:

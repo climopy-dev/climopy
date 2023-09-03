@@ -638,11 +638,12 @@ def _get_bounds(sigma, pctile, dof):
     if pctile.size == 1:
         pctile = np.array([0.5 * pctile.item(), 100 - 0.5 * pctile.item()])
     elif pctile.shape[0] != 2 or pctile.ndim > 2:
-        raise ValueError(f'Invalid percentiles {pctile}. Must be scalar or 2xN.')
+        raise ValueError(f'Invalid percentiles {pctile}. Must be scalar or 2 x N.')
+    dof = np.array(np.round(dof)).astype(int)
     dims = pctile.ndim + np.arange(sigma.ndim)
-    dist = stats.t(df=dof)
-    tstats = dist.ppf(0.01 * pctile)
-    tstats = np.expand_dims(tstats, axis=tuple(dims))  # e.g. (2, M, N) or (2, K, M, N)
+    dist = stats.t(df=dof)  # e.g. (M, N) degrees of freedom
+    pctile = np.expand_dims(pctile, tuple(dims))  # e.g. (2, 1, 1) or (2, K, 1, 1)
+    tstats = dist.ppf(0.01 * pctile)  # e.g. (2, M, N) or (2, K, M, N)
     dlower = tstats[0, ...] * sigma  # e.g. (M, N) or (K, M, N)
     dupper = tstats[1, ...] * sigma  # e.g. (M, N) or (K, M, N)
     return dlower, dupper
@@ -665,9 +666,11 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
     dim : str, optional
         *For `xarray.DataArray` input only*.
         The named regression dimension.
-    adjust : bool, optional
-        Whether to adjust the standard error for the reduction in effective degrees
-        of freedom due to serial correlation. See :cite:`2015:thompson` for details.
+    adjust : str or bool, optional
+        Whether to adjust the standard error for the reduction in effective degrees of
+        freedom due to serial correlation. Use ``True`` to use residual autocorrelation
+        or ``'x'`` or ``'y'`` to use autocorrelation in the original `x` or `y` series
+        themselves. See :cite:`2000:santer` and :cite:`2015:thompson` for details.
     pctile : bool, float, or 2-tuple, option
         The percentile range used for the lower and upper bounds on the best-fit
         line. If ``None`` or ``True`` a default 95-percentile range is used. If
@@ -697,7 +700,7 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
 
     References
     ----------
-    .. bibliography:: ../docs/_bibfiles/regress.bib
+    .. bibliography:: ../docs/_bibfiles/var.bib
 
     Examples
     --------
@@ -742,23 +745,43 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
         slope = params[None, 0, :]
         fit = offset + x * slope
         resid = y - fit  # prediction residual
-
-        # Get standard error, with optional adjustments for the reduction
-        # in effective degrees of freedom associated with serial correlation.
-        n = y.shape[0]
-        sigma2 = covar[None, 0, 0, :]  # standard error of slope estimate squared
         kwargs = dict(axis=0, keepdims=True)
-        if adjust:  # serial correlation
-            mean = resid.mean(**kwargs)
-            numer = np.sum((resid[1:, :] - mean) * (resid[:-1, :] - mean), **kwargs)
-            denom = (n - 1) * resid.var(**kwargs)
-            auto = numer / denom  # autocorrelation scale factor
-            sigma2 *= (n - 2) / (n * ((1 - auto) / (1 + auto)) - 2)
 
-        # Get lower and upper bounds using the joint probability
+        # Get optional adjustments for the reduction in effective
+        # degrees of freedom associated with serial correlation.
+        # WARNING: This follows Thompson et al. by applying autocorrelation factor
+        # to standard error instead of t statistics. However may be incorrect. Fewer
+        # samples does not mean standard deviation should be normalized differently,
+        # anomalies are still the same. Only means that the nonlinearly-derived
+        # percentile thresholds on the associated t-distribution should be taken
+        # for fewer degrees of freedom. For example why should standard error get
+        # multiplied by *1000* for a million samples instead of a billion? Talk to
+        # him about it, maybe works as linear approximation for small sample count.
+        if not adjust:  # no correction
+            factor = 1
+        else:  # serial correlation
+            if not isinstance(adjust, str):
+                series = resid
+            elif adjust == 'y':
+                series = y
+            elif adjust == 'x':
+                series = x
+            else:
+                raise ValueError(f"Invalid {adjust=}. Must be 'x' or 'y'.")
+            mean = series.mean(**kwargs)
+            numer = np.sum((series[1:, :] - mean) * (series[:-1, :] - mean), **kwargs)
+            denom = series.shape[0] * series.var(**kwargs)
+            auto = numer / denom  # autocorrelation scale factor
+            auto = np.where(auto < 0, 0, auto)
+            factor = ((1 - auto) / (1 + auto))
+
+        # Get standard error and fit bounds using the joint probability
         # distribution associated with uncerainty in both the offset and slope.
         # NOTE: The following proves stderr from the covariance matrix is the same as
-        # the wikipedia formula: print(sigma2, resid.sum() / anom.sum() / (n - 2))
+        # the wikipedia formula: print(sigma2, resid.sum() / xsquare.sum() / (n - 2))
+        n = y.shape[0]
+        sigma2 = covar[None, 0, 0, :]  # standard error of slope estimate squared
+        sigma2 *= (n - 2) / (n * factor - 2)
         ysquare = (y - y.mean(**kwargs)) ** 2
         rsquare = 1 - (resid ** 2).sum(**kwargs) / ysquare.sum(**kwargs)
         xsquare = (x - x.mean()) ** 2

@@ -11,6 +11,14 @@ from .internals import ic  # noqa: F401
 from .internals import warnings
 from .unit import ureg
 
+# Variables
+vreg.define('energy', 'energy', 'MJ m^-2 100hPa^-1')  # static/kinetic
+vreg.define('energy_flux', 'vertical energy flux', 'W m^-2 100hPa^-1')
+vreg.define('meridional_energy_flux', 'meridional energy flux', 'MJ m^-2 100hPa^-1 m s^-1')  # noqa: E501
+vreg.define('momentum', 'momentum', 'm s^-1')
+vreg.define('meridional_momentum_flux', 'meridional momentum flux', 'm^2 s^-2')
+vreg.define('acceleration', 'acceleration', 'm s^-1 day^-1')
+
 # Coordinates
 vreg.define('latitude', 'latitude', 'degrees_north', axis_scale='sine', axis_formatter='deg')  # noqa: E501
 vreg.define('longitude', 'longitude', 'degrees_east', axis_formatter='deg')
@@ -21,15 +29,6 @@ vreg.define('beta_parameter', 'beta parameter', 'm^-1 s^-1')
 vreg.define('reference_height', 'reference height', 'km')
 vreg.define('reference_density', 'reference density', 'kg m^-3')
 vreg.define('reference_potential_temperature', 'reference potential temperature', 'K')  # noqa: E501
-
-# Physical variables
-# TODO: Add to these
-vreg.define('energy', 'energy', 'MJ m^-2 100hPa^-1')  # static/kinetic
-vreg.define('energy_flux', 'vertical energy flux', 'W m^-2 100hPa^-1')
-vreg.define('meridional_energy_flux', 'meridional energy flux', 'MJ m^-2 100hPa^-1 m s^-1')  # noqa: E501
-vreg.define('momentum', 'momentum', 'm s^-1')
-vreg.define('meridional_momentum_flux', 'meridional momentum flux', 'm^2 s^-2')
-vreg.define('acceleration', 'acceleration', 'm s^-1 day^-1')
 
 
 # Register coordinate-related transformations
@@ -74,7 +73,7 @@ def cell_width(self):
     # NOTE: Add measures as coords to be consistent with result of ds['cell_width']
     # for datasets with measures already present in coordinates, while preventing
     # recalculation of exact same measures.
-    data = const.a * self.coords['cosine_latitude'] * self.coords['longitude_delta']  # noqa: E501
+    data = const.a * self.coords['cosine_latitude'] * self.coords['longitude_delta']
     data = data.astype(np.float32)
     data = data.climo.to_units('km')  # removes 'deg'
     data.name = 'cell_width'  # avoids calculation of other measures
@@ -145,6 +144,8 @@ def cell_height(self, surface=False, tropopause=False):
         raise NotImplementedError(f'Unknown cell height for vertical type {type_!r}.')  # noqa: E501
 
     # Apply surface and tropopause dependence
+    # NOTE: Algorithm most often fails in cold stably stratified regions
+    # e.g. near poles so use a low default tropopause pressure.
     if surface:
         # Contract too-low near-surface bounds onto surface pressure
         if bot in self:
@@ -166,8 +167,6 @@ def cell_height(self, surface=False, tropopause=False):
         data_loc[mask] = levs_loc[mask]
     if tropopause:
         # Contract too-high near-tropopause bounds onto tropopuse
-        # NOTE: Algorithm most often fails in cold stably stratified regions
-        # e.g. near poles so use a low default tropopause pressure.
         if top in self:
             dtop = self.get(top, add_cell_measures=False)
         else:

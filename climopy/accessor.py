@@ -394,20 +394,26 @@ def _matching_function(key, func, name):
     latter two cases a `name` keyword arguments is added with `functools.partial`.
     """
     if isinstance(key, str) and name == key:
-        return func
-    if isinstance(key, tuple) and name in key:
-        return functools.partial(func, name=name)
-    if isinstance(key, re.Pattern) and key.match(name):
-        return functools.partial(func, name=name)
+        result = func
+    elif isinstance(key, tuple) and name in key:
+        result = functools.partial(func, name=name)
+    elif isinstance(key, re.Pattern) and key.match(name):
+        result = functools.partial(func, name=name)
+    else:
+        result = None
+    return result
 
 
 def _keep_cell_attrs(func):
     """
-    Preserve attributes for duration of function call with `update_cell_attrs`.
+    Preserve attributes for duration of function call with `update_cell_attrs`. Ensure
+    others are dropped unless explicitly specified otherwise. Important so that
+    identifiers e.g. `standard_name` do not propagate to e.g. cell coordinates.
     """
     @functools.wraps(func)
     def _wrapper(self, *args, no_keep_attrs=False, **kwargs):
-        result = func(self, *args, **kwargs)  # must return a DataArray
+        with xr.set_options(keep_attrs=False):
+            result = func(self, *args, **kwargs)  # must return a DataArray
         if no_keep_attrs:
             return result
         if not isinstance(result, (xr.DataArray, xr.Dataset)):
@@ -867,16 +873,18 @@ class _CoordsQuantified(object):
         # WARNING: Get bounds before doing transformation because halfway points in
         # actual lattice may not equal halfway points after nonlinear transformation
         dest = coord
-        suffix = ''
+        suffix = tail = ''
         if flag:
             bnds = self._get_bounds(coord, **kwargs)
             if flag in ('bnds', 'bounds'):
                 return bnds.climo.quantify() if quantify else bnds
             if flag[:3] in ('bot', 'del'):
                 dest = bottom = bnds[..., 0]  # NOTE: scalar coord bnds could be 1D
+                tail = '_bottom'
                 suffix = ' bottom edge'
             if flag[:3] in ('top', 'del'):
                 dest = top = bnds[..., 1]
+                tail = '_top'
                 suffix = ' top edge'
             if flag[:3] == 'del':
                 # NOTE: If top and bottom are cftime or native python datetime,
@@ -884,7 +892,8 @@ class _CoordsQuantified(object):
                 # numpy timedelta64 array (not the case with numpy arrays). See:
                 # http://xarray.pydata.org/en/stable/time-series.html#creating-datetime64-data
                 dest = np.abs(top - bottom)  # e.g. lev --> z0, order reversed
-                suffix = ' thickness'
+                tail = '_delta'
+                suffix = ' delta'
 
         # Build quantified copy of coordinate array and take transformation
         # NOTE: coord.copy() and coord.copy(data=data) both fail, have to make
@@ -913,7 +922,7 @@ class _CoordsQuantified(object):
         if long_name := coord.attrs.get('long_name'):
             dest.attrs['long_name'] = long_name + suffix
         if standard_name := coord.attrs.get('standard_name'):
-            dest.attrs['standard_name'] = standard_name
+            dest.attrs['standard_name'] = standard_name + tail
 
         return dest
 
