@@ -1712,7 +1712,7 @@ class ClimoAccessor(object):
         verbose=False,
         surface=False,
         tropopause=False,
-        **kwargs
+        **measures_kwargs
     ):
         """
         Add cell measures to `~xarray.DataArray.coords`, remove cell measures missing
@@ -1720,9 +1720,9 @@ class ClimoAccessor(object):
 
         Parameters
         ----------
-        measures : dict-like, optional
-            Dictionary of cell measures. If none are provided, the default `width`,
-            `depth`, `height`, and `duration` measures are automatically calculated.
+        measures : str, sequence, or dict-like, optional
+            Dictionary of cell measures to add or sequence of measure names to
+            calculate. Default is `width`, `depth`, `height`, and `duration`.
         dataset : xarray.Dataset, optional
             The dataset associated with this `xarray.DataArray`. Needed when
             either `surface` or `tropopause` is ``True``.
@@ -1737,32 +1737,40 @@ class ClimoAccessor(object):
             constructed versions. Default is ``False``.
         verbose : bool, optional
             If ``True``, print statements are issued.
-        **kwargs
+        **measures_kwargs
             Cell measures passed as keyword args.
         """
+        # Initial stuff
+        # NOTE: If no dataset passed then get weights from temporary dataset. Ignore
+        # CF UserWarning and ClimoPyWarnings due to missing bounds and ClimoPyWarnings
+        # due to missing surface pressure coordinate for vertical bounds.
         stopwatch = _make_stopwatch(verbose=False)
         cf = self.cf
         data = self.data.copy(deep=False)
         action = 'default'
         measures = measures or {}
-        measures.update(kwargs)
+        requested = measures and not isinstance(measures, dict)
+        if isinstance(measures, dict):
+            names = ('width', 'depth', 'height', 'duration')
+        elif isinstance(measures, str):
+            names, measures = (measures,), {}
+        else:
+            names, measures = tuple(measures), {}
+        measures.update(measures_kwargs)
         if isinstance(data, xr.Dataset):
             dataset = data
         elif dataset is None:
-            # Get weights from temporary dataset. Ignore CF UserWarning and
-            # ClimoPyWarnings due to missing bounds and ClimoPyWarnings due
-            # to missing surface pressure coordinate for vertical bounds.
             dataset = data.to_dataset(name=data.name or 'unknown')
             action = 'ignore'
 
         # Add default cell measures
         # NOTE: This skips measures that already exist in coordinates and
         # measures that aren't subset of existing spatial coordinates.
-        if override or not measures:
+        if requested or not measures:
             stopwatch('init')
             times = cf.coordinates.get('time', None)
             times = times and data.coords[times[0]]
-            for measure in ('width', 'depth', 'height', 'duration'):
+            for measure in names:
                 if set(CELL_MEASURE_COORDS[measure]) - set(cf.coordinates):
                     continue
                 if measure == 'duration' and times is not None and times.size == 1 and np.isnan(times.data):  # noqa: E501
