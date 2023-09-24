@@ -3193,12 +3193,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             raise ValueError(f'Invalid energy or momentum reduce method {method!r}.')
         return kw
 
-    @_CFAccessor._clear_cache
-    @_while_quantified
+    @_CFAccessor._clear_cache  # subcommands use _while_quantified when necessary
     def reduce(
         self,
-        indexers=None,
         # method='interp',  # TODO: change back for cmip results!
+        indexers=None,
         method=None,
         weight=None,
         mask=None,
