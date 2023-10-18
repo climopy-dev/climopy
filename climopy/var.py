@@ -618,7 +618,7 @@ def hist(bins, y, /, axis=0):
     return ctx.data
 
 
-def _get_bounds(sigma, pctile, dof):
+def _dist_bounds(sigma, pctile, dof=None):
     """
     Get the lower and upper bounds on the distribution.
 
@@ -628,22 +628,23 @@ def _get_bounds(sigma, pctile, dof):
         The standard error.
     pctile : bool, float, or 2-tuple
         The percentile range indicator.
-    dof : int
-        The degrees of freedom in the t-distribution.
+    dof : int, optional
+        The degrees of freedom. If passed a t-distribution is used instead of normal.
     """
-    if pctile is None or pctile is True or pctile is False:
-        pctile = (2.5, 97.5)
     sigma = np.array(sigma)  # e.g. (M, N) array of flat extra dims (M) and fit dim (N)
-    pctile = np.atleast_1d(pctile)  # e.g. (2, K) array of (K) lower and upper bounds
-    if pctile.size == 1:
-        pctile = np.array([0.5 * pctile.item(), 100 - 0.5 * pctile.item()])
-    elif pctile.shape[0] != 2 or pctile.ndim > 2:
-        raise ValueError(f'Invalid percentiles {pctile}. Must be scalar or 2 x N.')
-    dof = np.array(np.round(dof)).astype(int)
-    dims = pctile.ndim + np.arange(sigma.ndim)
-    dist = stats.t(df=dof)  # e.g. (M, N) degrees of freedom
-    pctile = np.expand_dims(pctile, tuple(dims))  # e.g. (2, 1, 1) or (2, K, 1, 1)
-    tstats = dist.ppf(0.01 * pctile)  # e.g. (2, M, N) or (2, K, M, N)
+    tstats = np.array([-1, 1])
+    if pctile is not False:  # get percentile range
+        pctile = 95 if pctile is None or pctile is True else pctile
+        pctile = np.atleast_1d(pctile)  # e.g. (2, K) array of (K) lower-upper bounds
+        if pctile.size == 1:
+            pctile = np.array([50 - 0.5 * pctile.item(), 50 + 0.5 * pctile.item()])
+        if pctile.shape[0] != 2 or pctile.ndim > 2:
+            raise ValueError(f'Invalid percentiles {pctile}. Must be scalar or 2 x N.')
+        dof = dof if dof is None else np.array(np.round(dof)).astype(int)
+        dist = stats.norm() if dof is None else stats.t(df=dof)  # e.g. (M, N) d.o.f.
+        dims = pctile.ndim + np.arange(sigma.ndim)
+        pctile = np.expand_dims(pctile, tuple(dims))  # e.g. (2, 1, 1) or (2, K, 1, 1)
+        tstats = dist.ppf(0.01 * pctile)  # e.g. (2, M, N) or (2, K, M, N)
     dlower = tstats[0, ...] * sigma  # e.g. (M, N) or (K, M, N)
     dupper = tstats[1, ...] * sigma  # e.g. (M, N) or (K, M, N)
     return dlower, dupper
@@ -672,10 +673,11 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
         or ``'x'`` or ``'y'`` to use autocorrelation in the original `x` or `y` series
         themselves. See :cite:`2000:santer` and :cite:`2015:thompson` for details.
     pctile : bool, float, or 2-tuple, option
-        The percentile range used for the lower and upper bounds on the best-fit
-        line. If ``None`` or ``True`` a default 95-percentile range is used. If
-        float the percentile bounds ``(pctile / 2, 1 - pctile / 2)`` are used. If
-        2-tuple of float then these percentile bounds are used.
+        The percentile range used for the lower and upper bounds on the best-fit line.
+        If ``None`` or ``True`` a default 95-percentile range is used. If float this
+        represents the symmetric percentile range (e.g. ``pctile=90`` is equivalent to
+        ``pctile=(5, 95)``). If 2-tuple of float then these specific bounds are used. If
+        ``False`` then the one-sigma range is used instead of a percentie range.
 
     Returns
     -------
@@ -749,14 +751,8 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
 
         # Get optional adjustments for the reduction in effective
         # degrees of freedom associated with serial correlation.
-        # WARNING: This follows Thompson et al. by applying autocorrelation factor
-        # to standard error instead of t statistics. However may be incorrect. Fewer
-        # samples does not mean standard deviation should be normalized differently,
-        # anomalies are still the same. Only means that the nonlinearly-derived
-        # percentile thresholds on the associated t-distribution should be taken
-        # for fewer degrees of freedom. For example why should standard error get
-        # multiplied by *1000* for a million samples instead of a billion? Talk to
-        # him about it, maybe works as linear approximation for small sample count.
+        # NOTE: This follows Thompson et al. by applying autocorrelation factor
+        # to standard error instead of t statistics.
         if not adjust:  # no correction
             factor = 1
         else:  # serial correlation
@@ -787,7 +783,7 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
         xsquare = (x - x.mean()) ** 2
         scales = np.sqrt(xsquare.sum() * (1 / n + xsquare / xsquare.sum()))
         sigma = np.sqrt(sigma2)  # raw standard slope error
-        del_lower, del_upper = _get_bounds(sigma * scales, pctile, dof=n - 2)
+        del_lower, del_upper = _dist_bounds(sigma * scales, pctile, dof=n - 2)
         fit_lower, fit_upper = fit + del_lower, fit + del_upper
 
         # Replace context data
@@ -842,10 +838,11 @@ def rednoisefit(
         *For `xarray.DataArray` input only*.
         The named lag dimension.
     pctile : bool, float, or 2-tuple, option
-        The percentile range used for the lower and upper bounds on the best-fit
-        spectrum. If ``None`` or ``True`` a default 95-percentile range is used. If
-        float the percentile bounds ``(pctile / 2, 1 - pctile / 2)`` are used. If
-        2-tuple of float then these percentile bounds are used.
+        The percentile range used for the lower and upper bounds on the best-fit line.
+        If ``None`` or ``True`` a default 95-percentile range is used. If float this
+        represents the symmetric percentile range (e.g. ``pctile=90`` is equivalent to
+        ``pctile=(5, 95)``). If 2-tuple of float then these specific bounds are used. If
+        ``False`` then the one-sigma range is used instead of a percentie range.
 
     Returns
     -------
@@ -925,7 +922,7 @@ def rednoisefit(
             else:
                 itau, isigma = optimize.curve_fit(curve_func, lags, a[:, i])
                 itau, isigma = itau[0], np.sqrt(isigma[0, 0])
-            idel_lower, idel_upper = _get_bounds(isigma, pctile, dof=lags.size - 2)
+            idel_lower, idel_upper = _dist_bounds(isigma, pctile, dof=lags.size - 2)
             tau[:, i] = itau
             sigma[:, i] = isigma
             fit[:, i] = np.exp(-dt * lags_fit / itau)

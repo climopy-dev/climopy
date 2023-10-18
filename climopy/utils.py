@@ -366,7 +366,6 @@ def intersection(x, y1, y2, /, xlog=False):
     return px, py
 
 
-# TODO: Support pint quantities here
 def linetrack(xs, ys=None, /, nmax=None, seed=None, sep=None):  # noqa: E225
     """
     Track individual "lines" across lists of coordinates.
@@ -422,6 +421,7 @@ def linetrack(xs, ys=None, /, nmax=None, seed=None, sep=None):  # noqa: E225
            [23., nan, 50.]])
     """
     # Parse input
+    # TODO: Support pint quantities here. Currently does not work.
     if ys is None:
         ys = xs  # not pretty but this simplifies the loop code
     if sep is None:
