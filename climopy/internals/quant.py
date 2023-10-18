@@ -236,11 +236,12 @@ def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_de
             # Quantify output, but *only* if input were quantities. Bypass extra values
             # to permit e.g. variable return arguments depending on input flags.
             result_new = []
-            result_quantify = any(isinstance(arg, ureg.Quantity) for arg in args)
+            result_quantify = any(isinstance(arg, (str, ureg.Quantity)) for arg in args)
             if not is_container_out:
                 result = (result,)
             for res, unit in zip(result, units_out_fmt):
                 container, is_ref = _units_container(unit)
+                name = getattr(res, 'name', None)  # data frame or array name
                 if is_ref:
                     unit = _replace_units(container, definitions)
                 else:
@@ -251,6 +252,8 @@ def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_de
                     res = ureg.Quantity(res, unit)
                 if not result_quantify:
                     res = res.magnitude
+                if name is not None:
+                    res.name = name
                 result_new.append(res)
 
             # Return sanitized values

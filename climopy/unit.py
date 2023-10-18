@@ -75,17 +75,17 @@ REGEX_CONSTANTS = re.compile(r'\b([-+]?[0-9]+[a-zA-Z]+)')
 #: vertical pressure distance and terms normalized per unit mass per unit area
 #: (:math:`x \cdot g`).
 ureg = UnitRegistry(
+    # NOTE: Pint-xarray asserts that force_ndarray_like=True is required for scalar
+    # conversions to work but haven't run into issues so far, and encountered an
+    # issue due to negative integer exponentiation after enabling this option.
+    # See: https://pint-xarray.readthedocs.io/en/stable/creation.html#attaching-units
+    # See: https://github.com/hgrecco/pint/issues/1203
     # NOTE: If logging messages are enabled e.g. due to another module calling
     # logging.basicConfig() then the below will emit warnings. Can temporarily
     # disable these messages using 'on_redefinition'. Note also the below definitions
     # that overwrite existing definitions are always a superset of existing aliases
     # -- we only omit @alias to change the default long or short string repr.
     # See: https://github.com/hgrecco/pint/issues/1304
-    # NOTE: Pint-xarray asserts that force_ndarray_like=True is required for scalar
-    # conversions to work but haven't run into issues so far, and encountered an
-    # issue due to negative integer exponentiation after enabling this option.
-    # See: https://pint-xarray.readthedocs.io/en/stable/creation.html#attaching-units
-    # See: https://github.com/hgrecco/pint/issues/1203
     preprocessors=[
         lambda s: s.replace('%%', ' permille '),
         lambda s: s.replace('%', ' percent '),
@@ -105,31 +105,39 @@ ureg.define('permille = 0.001 = %%')
 
 # Common unit constants. These are used in things like meridional
 # gradients and vertical mass or energy budget terms.
-ureg.define('_10km = 10 * km = 10km')
-ureg.define('_100km = 100 * km = 100km')
-ureg.define('_1000km = 1000 * km = 1000km')
-ureg.define('_10hPa = 10 * hPa = 10hPa')
-ureg.define('_100hPa = 100 * hPa = 100hPa')
-ureg.define('_1000hPa = 1000 * hPa = 1000hPa')
-ureg.define('_10mb = 10 * mb = 10mb')
-ureg.define('_100mb = 100 * mb = 100mb')
-ureg.define('_1000mb = 1000 * mb = 1000mb')
+ureg.define('_10km = 10 km = 10km')
+ureg.define('_100km = 100 km = 100km')
+ureg.define('_1000km = 1000 km = 1000km')
+ureg.define('_10hPa = 10 hPa = 10hPa')
+ureg.define('_100hPa = 100 hPa = 100hPa')
+ureg.define('_1000hPa = 1000 hPa = 1000hPa')
+ureg.define('_10mb = 10 mb = 10mb')
+ureg.define('_100mb = 100 mb = 100mb')
+ureg.define('_1000mb = 1000 mb = 1000mb')
 
 # Time definitions. Uses 'yr' and 'hr' as default short-form year and hour, adds 'mon'
 # alias, ensures only 'day' and 'second' have single-character short-form.
-ureg.define('minute = 60 * second = min')
-ureg.define('hour = 60 * minute = hr = h')
-ureg.define('day = 24 * hour = d')
+ureg.define('minute = 60 second = min')
+ureg.define('hour = 60 minute = hr = h')
+ureg.define('day = 24 hour = d')
 ureg.define('month = year / 12 = mon')
-ureg.define('year = 365.25 * day = yr = annum = a')
+ureg.define('year = 365.25 day = yr = annum = a')
 
 # Calendar definitions. Puts 'julian_year' on its own instead of as part of 'year'
 # and adds other CF compliant calendars. See: https://en.wikipedia.org/wiki/Year
-ureg.define('julian_year = 365.25 * day = julian_year = julian')
-ureg.define('gregorian_year = 365.2425 * day = gregorian_year = gregorian = proleptic_gregorian = proleptic_gregorian_year')  # noqa: E501
-ureg.define('_366_day_year = 365 * day = _366_day = all_leap_year = allleap_year')
-ureg.define('_365_day_year = 365 * day = _365_day = no_leap_year = noleap_year')
-ureg.define('_360_day_year = 360 * day = _360_day')
+ureg.define('julian_year = 365.25 day = julian_year = julian')
+ureg.define('gregorian_year = 365.2425 day = gregorian_year = gregorian = proleptic_gregorian = proleptic_gregorian_year')  # noqa: E501
+ureg.define('_366_day_year = 365 day = _366_day = all_leap_year = allleap_year')
+ureg.define('_365_day_year = 365 day = _365_day = no_leap_year = noleap_year')
+ureg.define('_360_day_year = 360 day = _360_day')
+
+# Carbon concentration definitions. Generally just variations on mass and constant
+# definitions. Note Petagram = 10^15 grams and Gigaton = 10^9 10^3 10^3 = 10^15 gram.
+ureg.define('grams_carbon = 1 gram = gC')
+ureg.define('tonnes_carbon = 1e3 kilogram = tC')
+ureg.define('ppm = 1e-6 = parts_per_million')
+ureg.define('ppb = 1e-9 = parts_per_billion')
+ureg.define('ppt = 1e-12 = parts_per_trillion')
 
 # Vorticity definitions. Includes official 'PVU' unit and analogous (but fake)
 # 'VU' unit characteristic of magnitudes observed on earth.

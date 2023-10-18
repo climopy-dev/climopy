@@ -183,6 +183,7 @@ def _covar_driver(
     naxis = z1.shape[axis]  # length
 
     # Parse input args
+    # TODO: Consider default lag of '1' for autocorr
     npassed = sum(_ is not None for _ in (lag, ilag, maxlag, imaxlag))
     if npassed == 0:
         ilag = 0
@@ -727,10 +728,19 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
     # NOTE: The 'covariance matrix' returned by polyfit just described the
     # generalization of 2D matrix linear regression for arbitrary polynomials; still
     # refers to the traditional definition for the simple linear regression standard
-    # error (i.e. sum of squared residuals normalized by x-variance and n - 2).
+    # error (i.e. sum of squared residuals normalized by x-variance and n - 2). Try
+    # comparing these: print(sigma2, resid.sum() / xsquare.sum() / (n - 2))
     # See: https://en.wikipedia.org/wiki/Ordinary_least_squares#Assuming_normality
     # See: https://en.wikipedia.org/wiki/Simple_linear_regression#Normality_assumption
     # See: https://en.wikipedia.org/wiki/Standard_error#Correction_for_correlation_in_the_sample  # noqa: E501
+    # WARNING: This follows Thompson et al. by applying autocorrelation factor
+    # to standard error instead of t statistics. However may be incorrect. Fewer
+    # samples does not mean standard deviation should be normalized differently,
+    # anomalies are still the same. Only means that the nonlinearly-derived
+    # percentile thresholds on the associated t-distribution should be taken
+    # for fewer degrees of freedom. For example why should standard error get
+    # multiplied by *1000* for a million samples instead of a billion? Talk to
+    # him about it, maybe works as linear approximation for small sample count.
     if x.ndim != 1 or x.size != y.shape[axis]:
         raise ValueError(
             f'Invalid x-shape {x.shape} for regression along '
@@ -751,8 +761,6 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
 
         # Get optional adjustments for the reduction in effective
         # degrees of freedom associated with serial correlation.
-        # NOTE: This follows Thompson et al. by applying autocorrelation factor
-        # to standard error instead of t statistics.
         if not adjust:  # no correction
             factor = 1
         else:  # serial correlation
@@ -773,8 +781,6 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
 
         # Get standard error and fit bounds using the joint probability
         # distribution associated with uncerainty in both the offset and slope.
-        # NOTE: The following proves stderr from the covariance matrix is the same as
-        # the wikipedia formula: print(sigma2, resid.sum() / xsquare.sum() / (n - 2))
         n = y.shape[0]
         sigma2 = covar[None, 0, 0, :]  # standard error of slope estimate squared
         sigma2 *= (n - 2) / (n * factor - 2)
