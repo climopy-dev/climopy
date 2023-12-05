@@ -657,7 +657,7 @@ def _dist_bounds(sigma, pctile, dof=None, symmetric=None):
 
 @quack._lls_metadata
 @quant.while_dequantified(('=x', '=y'), ('=y / x', '=y / x', '', '=y', '=y', '=y'))
-def linefit(x, y, /, axis=0, adjust=True, pctile=None):
+def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
 
@@ -683,6 +683,9 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
         represents the symmetric percentile range (e.g. ``pctile=90`` is equivalent to
         ``pctile=(5, 95)``). If 2-tuple of float then these specific bounds are used. If
         ``False`` then the one-sigma range is used instead of a percentie range.
+    symmetric : bool, optional
+        Whether to interpret percentile arrays as symmetric ranges or specific
+        lower and upper bounds. Default is to only assume scalars are ranges.
 
     Returns
     -------
@@ -793,7 +796,9 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
         xsquare = (x - x.mean()) ** 2
         scales = np.sqrt(xsquare.sum() * (1 / n + xsquare / xsquare.sum()))
         sigma = np.sqrt(sigma2)  # raw standard slope error
-        del_lower, del_upper = _dist_bounds(sigma * scales, pctile, dof=n - 2)
+        del_lower, del_upper = _dist_bounds(
+            sigma * scales, pctile, dof=n - 2, symmetric=symmetric,
+        )
         fit_lower, fit_upper = fit + del_lower, fit + del_upper
 
         # Replace context data
@@ -809,8 +814,8 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None):
 @quack._lls_metadata
 @quant.while_dequantified(('=t', ''), ('=t', '=t', '', '', '', ''))
 def rednoisefit(
-    dt, a, /,
-    maxlag=None, imaxlag=None, maxlag_fit=None, imaxlag_fit=None, pctile=None, axis=0
+    dt, a, /, maxlag=None, maxlag_fit=None, imaxlag=None, imaxlag_fit=None,
+    axis=0, pctile=None, symmetric=None,
 ):
     r"""
     Return the :math:`e`-folding timescale for the input lag-autocorrelation spectra
@@ -853,6 +858,9 @@ def rednoisefit(
         represents the symmetric percentile range (e.g. ``pctile=90`` is equivalent to
         ``pctile=(5, 95)``). If 2-tuple of float then these specific bounds are used. If
         ``False`` then the one-sigma range is used instead of a percentie range.
+    symmetric : bool, optional
+        Whether to interpret percentile arrays as symmetric ranges or specific
+        lower and upper bounds. Default is to only assume scalars are ranges.
 
     Returns
     -------
@@ -932,7 +940,9 @@ def rednoisefit(
             else:
                 itau, isigma = optimize.curve_fit(curve_func, lags, a[:, i])
                 itau, isigma = itau[0], np.sqrt(isigma[0, 0])
-            idel_lower, idel_upper = _dist_bounds(isigma, pctile, dof=lags.size - 2)
+            idel_lower, idel_upper = _dist_bounds(
+                isigma, pctile, dof=lags.size - 2, symmetric=symmetric
+            )
             tau[:, i] = itau
             sigma[:, i] = isigma
             fit[:, i] = np.exp(-dt * lags_fit / itau)
