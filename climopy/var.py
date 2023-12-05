@@ -619,7 +619,7 @@ def hist(bins, y, /, axis=0):
     return ctx.data
 
 
-def _dist_bounds(sigma, pctile, dof=None):
+def _dist_bounds(sigma, pctile, dof=None, symmetric=None):
     """
     Get the lower and upper bounds on the distribution.
 
@@ -631,23 +631,27 @@ def _dist_bounds(sigma, pctile, dof=None):
         The percentile range indicator.
     dof : int, optional
         The degrees of freedom. If passed a t-distribution is used instead of normal.
+    symmetric : bool, optional
+        Whether to treat `pctile` as symmetric ranges instead of individual bounds.
     """
     sigma = np.array(sigma)  # e.g. (M, N) array of flat extra dims (M) and fit dim (N)
     tstats = np.array([-1, 1])
     if pctile is not False:  # get percentile range
         pctile = 95 if pctile is None or pctile is True else pctile
         pctile = np.atleast_1d(pctile)  # e.g. (2, K) array of (K) lower-upper bounds
-        if pctile.size == 1:
-            pctile = np.array([50 - 0.5 * pctile.item(), 50 + 0.5 * pctile.item()])
+        if pctile.size == 1:  # scalar array
+            pctile = pctile.item()
+        if symmetric or (symmetric is None and np.isscalar(pctile)):  # (2,) or (2, K)
+            pctile = np.array([50 - 0.5 * pctile, 50 + 0.5 * pctile])
         if pctile.shape[0] != 2 or pctile.ndim > 2:
             raise ValueError(f'Invalid percentiles {pctile}. Must be scalar or 2 x N.')
         dof = dof if dof is None else np.array(np.round(dof)).astype(int)
         dist = stats.norm() if dof is None else stats.t(df=dof)  # e.g. (M, N) d.o.f.
         dims = pctile.ndim + np.arange(sigma.ndim)
-        pctile = np.expand_dims(pctile, tuple(dims))  # e.g. (2, 1, 1) or (2, K, 1, 1)
-        tstats = dist.ppf(0.01 * pctile)  # e.g. (2, M, N) or (2, K, M, N)
-    dlower = tstats[0, ...] * sigma  # e.g. (M, N) or (K, M, N)
-    dupper = tstats[1, ...] * sigma  # e.g. (M, N) or (K, M, N)
+        pctile = np.expand_dims(pctile, tuple(dims))  # (2, 1, 1) or (2, K, 1, 1)
+        tstats = dist.ppf(0.01 * pctile)  # (2, M, N) or (2, K, M, N)
+    dlower = tstats[0, ...] * sigma  # (M, N) or (K, M, N)
+    dupper = tstats[1, ...] * sigma  # (M, N) or (K, M, N)
     return dlower, dupper
 
 
