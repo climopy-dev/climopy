@@ -656,7 +656,7 @@ def _dist_bounds(sigma, pctile, dof=None, symmetric=None):
 
 @quack._lls_metadata
 @quant.while_dequantified(('=x', '=y'), ('=y / x', '=y / x', '', '=y', '=y', '=y'))
-def linefit(x, y, /, axis=0, pctile=None, symmetric=None, correlation=True):
+def linefit(x, y, /, axis=0, correct=False, pctile=None, symmetric=None):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
 
@@ -671,6 +671,12 @@ def linefit(x, y, /, axis=0, pctile=None, symmetric=None, correlation=True):
     dim : str, optional
         *For `xarray.DataArray` input only*.
         The named regression dimension.
+    correct : str or bool, optional
+        Whether to correct the standard error for the reduction in effective degrees
+        of freedom due to serial correction. If ``'r'`` or ``True`` the residual time
+        series is used to estimate the correction factor. If ``'x'`` or ``'y'`` then
+        the `x` or `y` series are used to estimate the factor. See :cite:`2000:santer`
+        and :cite:`2015:thompson` for details.
     pctile : bool, float, or 2-tuple, option
         The percentile range used for the lower and upper bounds on the best-fit line.
         If ``None`` or ``True`` a default 95-percentile range is used. If float this
@@ -680,12 +686,6 @@ def linefit(x, y, /, axis=0, pctile=None, symmetric=None, correlation=True):
     symmetric : bool, optional
         Whether to interpret percentile arrays as symmetric ranges or specific
         lower and upper bounds. Default is to only assume scalars are ranges.
-    correlation : str or bool, optional
-        Whether to adjust the standard error for the reduction in effective degrees
-        of freedom due to serial correlation. If ``'r'`` or ``True`` the residual time
-        series is used to estimate the correction factor. If ``'x'`` or ``'y'`` then
-        the `x` or `y` series are used to estimate the factor. See :cite:`2000:santer`
-        and :cite:`2015:thompson` for details.
 
     Returns
     -------
@@ -694,7 +694,7 @@ def linefit(x, y, /, axis=0, pctile=None, symmetric=None, correlation=True):
         dimension `axis` reduced to length 1.
     sigma : array-like
         The standard errors of the slope estimates, optionally adjusted for
-        serial correlation (see `correlation`). The shape is the same as `slope`.
+        serial correlation (see `correct`). The shape is the same as `slope`.
     rsquare : array-like
         The coefficient of determination $R^2$, i.e. the ratio of the explained
         variance to the total variance and the square of the correlation coefficient.
@@ -761,17 +761,17 @@ def linefit(x, y, /, axis=0, pctile=None, symmetric=None, correlation=True):
 
         # Get optional adjustments for the reduction in effective
         # degrees of freedom associated with serial correlation.
-        if not correlation:  # no correction
+        if not correct:  # no correction
             factor = 1
         else:  # serial correlation
-            if correlation == 'r' or correlation is True:
+            if correct == 'r' or correct is True:
                 series = resid
-            elif correlation == 'y':
+            elif correct == 'y':
                 series = y
-            elif correlation == 'x':
+            elif correct == 'x':
                 series = x
             else:
-                raise ValueError(f"Invalid {correlation=}. Must be 'x' 'y' or 'r'.")
+                raise ValueError(f"Invalid {correct=}. Must be 'x' 'y' or 'r'.")
             mean = series.mean(**kwargs)
             numer = np.sum((series[1:, :] - mean) * (series[:-1, :] - mean), **kwargs)
             denom = series.shape[0] * series.var(**kwargs)
