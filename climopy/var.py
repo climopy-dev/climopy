@@ -656,7 +656,7 @@ def _dist_bounds(sigma, pctile, dof=None, symmetric=None):
 
 @quack._lls_metadata
 @quant.while_dequantified(('=x', '=y'), ('=y / x', '=y / x', '', '=y', '=y', '=y'))
-def linefit(x, y, /, axis=0, correct=False, pctile=None, symmetric=None):
+def linefit(x, y, /, axis=0, correct=True, pctile=None, symmetric=None):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
 
