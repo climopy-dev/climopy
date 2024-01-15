@@ -645,7 +645,6 @@ def _dist_bounds(sigma, pctile, dof=None, symmetric=None):
             pctile = np.array([50 - 0.5 * pctile, 50 + 0.5 * pctile])
         if pctile.shape[0] != 2 or pctile.ndim > 2:
             raise ValueError(f'Invalid percentiles {pctile}. Must be scalar or 2 x N.')
-        dof = dof if dof is None else np.array(np.round(dof)).astype(int)
         dist = stats.norm() if dof is None else stats.t(df=dof)  # e.g. (M, N) d.o.f.
         dims = pctile.ndim + np.arange(sigma.ndim)
         pctile = np.expand_dims(pctile, tuple(dims))  # (2, 1, 1) or (2, K, 1, 1)
@@ -657,7 +656,7 @@ def _dist_bounds(sigma, pctile, dof=None, symmetric=None):
 
 @quack._lls_metadata
 @quant.while_dequantified(('=x', '=y'), ('=y / x', '=y / x', '', '=y', '=y', '=y'))
-def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
+def linefit(x, y, /, axis=0, pctile=None, symmetric=None, correlation=True):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
 
@@ -672,20 +671,21 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
     dim : str, optional
         *For `xarray.DataArray` input only*.
         The named regression dimension.
-    adjust : str or bool, optional
-        Whether to adjust the standard error for the reduction in effective degrees of
-        freedom due to serial correlation. Use ``True`` to use residual autocorrelation
-        or ``'x'`` or ``'y'`` to use autocorrelation in the original `x` or `y` series
-        themselves. See :cite:`2000:santer` and :cite:`2015:thompson` for details.
     pctile : bool, float, or 2-tuple, option
         The percentile range used for the lower and upper bounds on the best-fit line.
         If ``None`` or ``True`` a default 95-percentile range is used. If float this
         represents the symmetric percentile range (e.g. ``pctile=90`` is equivalent to
-        ``pctile=(5, 95)``). If 2-tuple of float then these specific bounds are used. If
-        ``False`` then the one-sigma range is used instead of a percentie range.
+        ``pctile=(5, 95)``). If 2-tuple of float then these specific bounds are used.
+        If ``False`` then the one-sigma range is used instead of a percentie range.
     symmetric : bool, optional
         Whether to interpret percentile arrays as symmetric ranges or specific
         lower and upper bounds. Default is to only assume scalars are ranges.
+    correlation : str or bool, optional
+        Whether to adjust the standard error for the reduction in effective degrees
+        of freedom due to serial correlation. If ``'r'`` or ``True`` the residual time
+        series is used to estimate the correction factor. If ``'x'`` or ``'y'`` then
+        the `x` or `y` series are used to estimate the factor. See :cite:`2000:santer`
+        and :cite:`2015:thompson` for details.
 
     Returns
     -------
@@ -694,7 +694,7 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
         dimension `axis` reduced to length 1.
     sigma : array-like
         The standard errors of the slope estimates, optionally adjusted for
-        serial correlation (see `adjust`). The shape is the same as `slope`.
+        serial correlation (see `correlation`). The shape is the same as `slope`.
     rsquare : array-like
         The coefficient of determination $R^2$, i.e. the ratio of the explained
         variance to the total variance and the square of the correlation coefficient.
@@ -732,6 +732,7 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
            [0.10014288],
            [0.10011434]])
     """
+    # Initial stuff
     # NOTE: The 'covariance matrix' returned by polyfit just described the
     # generalization of 2D matrix linear regression for arbitrary polynomials; still
     # refers to the traditional definition for the simple linear regression standard
@@ -740,14 +741,6 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
     # See: https://en.wikipedia.org/wiki/Ordinary_least_squares#Assuming_normality
     # See: https://en.wikipedia.org/wiki/Simple_linear_regression#Normality_assumption
     # See: https://en.wikipedia.org/wiki/Standard_error#Correction_for_correlation_in_the_sample  # noqa: E501
-    # WARNING: This follows Thompson et al. by applying autocorrelation factor
-    # to standard error instead of t statistics. However may be incorrect. Fewer
-    # samples does not mean standard deviation should be normalized differently,
-    # anomalies are still the same. Only means that the nonlinearly-derived
-    # percentile thresholds on the associated t-distribution should be taken
-    # for fewer degrees of freedom. For example why should standard error get
-    # multiplied by *1000* for a million samples instead of a billion? Talk to
-    # him about it, maybe works as linear approximation for small sample count.
     if x.ndim != 1 or x.size != y.shape[axis]:
         raise ValueError(
             f'Invalid x-shape {x.shape} for regression along '
@@ -768,17 +761,17 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
 
         # Get optional adjustments for the reduction in effective
         # degrees of freedom associated with serial correlation.
-        if not adjust:  # no correction
+        if not correlation:  # no correction
             factor = 1
         else:  # serial correlation
-            if not isinstance(adjust, str):
+            if correlation == 'r' or correlation is True:
                 series = resid
-            elif adjust == 'y':
+            elif correlation == 'y':
                 series = y
-            elif adjust == 'x':
+            elif correlation == 'x':
                 series = x
             else:
-                raise ValueError(f"Invalid {adjust=}. Must be 'x' or 'y'.")
+                raise ValueError(f"Invalid {correlation=}. Must be 'x' 'y' or 'r'.")
             mean = series.mean(**kwargs)
             numer = np.sum((series[1:, :] - mean) * (series[:-1, :] - mean), **kwargs)
             denom = series.shape[0] * series.var(**kwargs)
