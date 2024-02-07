@@ -251,7 +251,9 @@ def decode_units(unit, /):
     """
     if isinstance(unit, str):
         unit = _to_pint_string(unit)
-    return ureg.parse_units(unit)
+    if not isinstance(unit, ureg.Unit):
+        unit = ureg.parse_units(unit)
+    return unit
 
 
 def encode_units(unit, /, long_form=None):

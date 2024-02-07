@@ -207,12 +207,9 @@ def _covar_driver(
         else:
             print(f'Calculating {prefix}{suffix} to lag {maxlag} for axis size {naxis}.')  # noqa: E501
 
-    # Mask data
-    # TODO: Revisit this! Currently very slow.
-    z1 = ma.masked_invalid(z1)
-    z2 = ma.masked_invalid(z2)
-
     # Means and permute
+    z1 = ma.masked_invalid(z1)  # TODO: revisit (currently slow)
+    z2 = ma.masked_invalid(z2)
     z1 = np.moveaxis(z1, axis, -1)
     mean1 = z1.mean(axis=-1, keepdims=True)  # keep dims for broadcasting
     if auto:
@@ -269,7 +266,9 @@ def _covar_driver(
             )[..., 0]
 
     # Return lags and covariance
-    return lags, np.moveaxis(covar, -1, axis)
+    covar = ma.filled(covar, np.nan)  # TODO: revisit (see above)
+    covar = np.moveaxis(covar, -1, axis)
+    return lags, covar
 
 
 @quack._covar_metadata
@@ -733,6 +732,9 @@ def linefit(x, y, /, axis=0, correct=True, pctile=None, symmetric=None):
            [0.10011434]])
     """
     # Initial stuff
+    # TODO: Add 'observed.regress_series' features, including manual user weights,
+    # automatic duration weights when regressing time, weighted standard error
+    # estimates, ignoring null values, and supporting unsorted regressees.
     # NOTE: The 'covariance matrix' returned by polyfit just described the
     # generalization of 2D matrix linear regression for arbitrary polynomials; still
     # refers to the traditional definition for the simple linear regression standard
