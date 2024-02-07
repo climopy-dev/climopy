@@ -1101,10 +1101,10 @@ class _CoordsQuantified(object):
         # Find native coordinate
         # WARNING: super() alone fails possibly because it returns the super() of
         # e.g. _DataArrayCoordsQuantified, which would be _CoordsQuantified.
-        cls = xr.core.coordinates.DataArrayCoordinates
+        sup = super(_CoordsQuantified, self)
         transformation = None
-        if cls.__contains__(self, key):
-            coord = cls.__getitem__(self, key)
+        if sup.__contains__(key):
+            coord = sup.__getitem__(key)
             return transformation, coord, flag
 
         # Find CF alias
@@ -1118,7 +1118,7 @@ class _CoordsQuantified(object):
         # WARNING: Cannot call native items() or values() because they call
         # overridden __getitem__ internally. So recreate coordinate mapping below.
         if search_transformations:
-            coords = (cls.__getitem__(self, key) for key in self)
+            coords = (sup.__getitem__(key) for key in self)
             if tup := data.climo._find_any_transformation(coords, key):
                 transformation, coord = tup
                 return transformation, coord, flag
