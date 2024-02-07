@@ -432,15 +432,16 @@ def _while_quantified(func):
     @functools.wraps(func)
     def _wrapper(self, *args, **kwargs):
         # Dequantify
+        # NOTE: Unlike public .quantify() this is no-op for array without units.
         data = self.data
         if isinstance(data, xr.Dataset):
             data = data.copy(deep=False)
             quantified = set()
             for da in data.values():
-                if not da.climo._is_quantity and not da.climo._bounds_coordinate:
+                if da.climo._has_units and not da.climo._bounds_coordinate:
                     da.climo._quantify()
                     quantified.add(da.name)
-        elif not self._is_quantity:
+        elif not self._is_quantity and 'units' in data.attrs:
             data = data.climo.quantify()
 
         # Main function
@@ -865,7 +866,7 @@ class _CoordsQuantified(object):
             raise KeyError(f'Invalid coordinate spec {key!r}.')
         return self._build_coord(*tup)
 
-    def _build_coord(self, transformation, coord, flag, quantify=True, **kwargs):
+    def _build_coord(self, transformation, coord, flag, **kwargs):
         """
         Return the coordinates, accounting for `CF` and `CFVariableRegistry` names.
         """
@@ -877,7 +878,7 @@ class _CoordsQuantified(object):
         if flag:
             bnds = self._get_bounds(coord, **kwargs)
             if flag in ('bnds', 'bounds'):
-                return bnds.climo.quantify() if quantify else bnds
+                return bnds
             if flag[:3] in ('bot', 'del'):
                 dest = bottom = bnds[..., 0]  # NOTE: scalar coord bnds could be 1D
                 tail = '_bottom'
@@ -907,8 +908,6 @@ class _CoordsQuantified(object):
             coords=coord.coords,
             attrs=coord.attrs.copy(),  # also copies over units
         )
-        if quantify:
-            dest = dest.climo.quantify()
         if transformation:
             dest.name = None  # ensure register_derivation applies new name
             dest = transformation(dest)  # transform possibly with dummy function
@@ -1102,9 +1101,10 @@ class _CoordsQuantified(object):
         # Find native coordinate
         # WARNING: super() alone fails possibly because it returns the super() of
         # e.g. _DataArrayCoordsQuantified, which would be _CoordsQuantified.
+        cls = xr.core.coordinates.DataArrayCoordinates
         transformation = None
-        if super(_CoordsQuantified, self).__contains__(key):
-            coord = super(_CoordsQuantified, self).__getitem__(key)
+        if cls.__contains__(self, key):
+            coord = cls.__getitem__(self, key)
             return transformation, coord, flag
 
         # Find CF alias
@@ -1118,7 +1118,7 @@ class _CoordsQuantified(object):
         # WARNING: Cannot call native items() or values() because they call
         # overridden __getitem__ internally. So recreate coordinate mapping below.
         if search_transformations:
-            coords = (super(_CoordsQuantified, self).__getitem__(key) for key in self)
+            coords = (cls.__getitem__(self, key) for key in self)
             if tup := data.climo._find_any_transformation(coords, key):
                 transformation, coord = tup
                 return transformation, coord, flag
@@ -1138,7 +1138,7 @@ class _CoordsQuantified(object):
                     return tup
 
     @_CFAccessor._clear_cache
-    def get(self, key, default=None, quantify=True, sharp_cutoff=True, **kwargs):
+    def get(self, key, default=None, quantify=None, sharp_cutoff=True, **kwargs):
         """
         Return the coordinate if it is present, otherwise return a default value.
 
@@ -1165,11 +1165,16 @@ class _CoordsQuantified(object):
             (360 degrees of longitude, 180 degrees of latitude, and 1013.25 hectopascals
             of pressure), as with datasets modified by `~ClimoAccessor.enforce_global`.
         """
-        tup = self._parse_key(key, **kwargs)  # potentially limit search
-        if tup is None:
-            return default
+        da = None
+        if tup := self._parse_key(key, **kwargs):  # potentially limit search
+            da = self._build_coord(*tup, sharp_cutoff=sharp_cutoff)  # noqa: E501
+        if da is None:
+            result = default
+        elif quantify or quantify is None and da.climo._has_units:
+            result = da.climo.quantify()
         else:
-            return self._build_coord(*tup, quantify=quantify, sharp_cutoff=sharp_cutoff)
+            result = da
+        return result
 
 
 class _DataArrayCoordsQuantified(
@@ -1212,7 +1217,7 @@ class _VarsQuantified(object):
         """
         Is a valid variable.
         """
-        return self._parse_key(key, quantify=None) is not None
+        return self._parse_key(key) is not None
 
     def __getattr__(self, attr):
         """
@@ -1265,7 +1270,7 @@ class _VarsQuantified(object):
                     return da
 
     @_CFAccessor._clear_cache
-    def get(self, key, default=None, quantify=True, **kwargs):
+    def get(self, key, default=None, quantify=None, **kwargs):
         """
         Return the variable if it is present, otherwise return a default value.
 
@@ -1282,11 +1287,12 @@ class _VarsQuantified(object):
         """
         da = self._parse_key(key, **kwargs)  # potentially limit search
         if da is None:
-            return default
-        elif quantify:
-            return da.climo.quantify()
+            result = default
+        elif quantify or quantify is None and da.climo._has_units:
+            result = da.climo.quantify()
         else:
-            return da
+            result = da
+        return result
 
 
 class ClimoAccessor(object):
@@ -1663,7 +1669,6 @@ class ClimoAccessor(object):
                 else:
                     if bound is None:
                         bound = getattr(data.coords[dim], mode)()
-                        # bound = getattr(data.climo.coords[dim].climo.magnitude, mode)()  # noqa: E501
                     bound = np.atleast_1d(bound)
                     if bound.ndim > 1:
                         raise ValueError('Too many dimensions for bounds {bound!r}.')
@@ -1965,6 +1970,8 @@ class ClimoAccessor(object):
         )
         if longitude and 'longitude' in self.cf.coordinates:
             coord = data.climo.coords['longitude']
+            if not coord.climo._has_units:
+                coord.climo._quantify(units=ureg.deg)
             lon = coord.name
             if coord.size > 1 and not np.isclose(coord[-1], coord[0] + 360 * ureg.deg):
                 edge = data.isel({lon: slice(-1, None)})
@@ -1977,6 +1984,8 @@ class ClimoAccessor(object):
         # units stripped and are transformed to 1. Submit github issue?
         if latitude and 'latitude' in self.cf.coordinates:
             coord = data.climo.coords['latitude']
+            if not coord.climo._has_units:
+                coord.climo._quantify(units=ureg.deg)
             if coord.size > 1:
                 lat = coord.name
                 parts = []
@@ -1995,6 +2004,7 @@ class ClimoAccessor(object):
         # Add pressure coordinates at surface and "top of atmosphere"
         if vertical and 'vertical' in self.cf.coordinates:
             coord = data.climo.coords['vertical']
+            coord = coord.climo.quantify()  # hard requirement
             if coord.climo.units.is_compatible_with('Pa'):
                 lev = coord.name
                 parts = []
@@ -3453,41 +3463,28 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 data = 1.0 / data
         return data
 
-    @_while_quantified
-    @_keep_cell_attrs
-    def _integral_or_average(
-        self,
-        dims,
-        weight=None,
-        integral=True,
-        cumulative=False,
-        reverse=False,
-        skipna=None,
-        **kwargs
-    ):
+    def _parse_weights(self, dims=None, weight=None, integral=False, **kwargs):
         """
-        Perform integration or average for all of climopy's weighted integration
-        and averaging functions.
+        Return weights associated with integration dimension and user-input.
         """
         # Apply truncations to data and extra weight
-        # TODO: Consider removing general truncation utilities and perform
-        # domain-limited reductions using cell weights instead. Much faster.
-        # TODO: Support averaging data arrays without units. Only
-        # integration should require automatic unit adjustment.
+        # TODO: Consider implementing general domain-limited reductions by modifying
+        # cell weights instead of these truncation utilities. Should be much faster.
         dims = dims or ('volume',)
-        data = self.data.climo.truncate(**kwargs)
-        cell_method = 'integral' if kwargs.get('integral') else 'average'
+        cell_method = 'integral' if integral else 'average'
         weights_explicit = []  # quantification necessary for integral()
         weights_implicit = []  # quantification not necessary, slows things down a bit
         if weight is not None:
-            weight = weight.climo.truncate(**kwargs)
-            weights_implicit.append(weight.climo.dequantify())
+            weight = weight.climo.dequantify()
+            weights_implicit.append(weight)
 
         # Translate dims. When none are passed, interpret this as integrating over the
         # entire atmosphere. Support irregular grids by preferring 'volume' or 'area'
         # NOTE: This permits 2D and 3D cell measures for non-standard grids and using
         # 'area' and 'volume' as shorthands for 1D cell measures for standard grids
-        dims_orig = self._parse_dims(dims, include_scalar=True, include_pseudo=True)
+        kwargs.setdefault('include_scalar', True)
+        kwargs.setdefault('include_pseudo', True)
+        dims_orig = self._parse_dims(dims, **kwargs)
         dims_orig = list(dims_orig)
         if 'volume' in dims_orig and 'volume' not in self.cf.cell_measures:
             dims_orig.remove('volume')
@@ -3542,9 +3539,10 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                     f'Missing cell measure {measure!r} variable {key!r} for '
                     f'{cell_method} dimension {dim!r}.'
                 )
+            weight = weight.climo.quantify()
             dims.extend(names)
             measures.add(measure)
-            weights_explicit.append(weight.climo.quantify())
+            weights_explicit.append(weight)
 
         # Add unquantified cell measure weights for measures whose dimensions match
         # any of the dimensions we are integrating over (e.g. 'width' for 'latitude').
@@ -3553,7 +3551,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # a longitude integral followed by a latitude cumulative integral, the weights
         # are already factored in, so applying them again would amount to a pressure
         # width squared weighting or a cosine squared weighting.
-        cell_methods = self.cf._decode_attr(data.attrs.get('cell_methods', ''))
+        data = self.data
+        cell_methods = data.attrs.get('cell_methods', '')
+        cell_methods = self.cf._decode_attr(cell_methods)
         for measure, (varname,) in self.cf.cell_measures.items():
             if measure in measures:  # explicit weight
                 continue
@@ -3575,12 +3575,42 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 continue
             weight = data.coords[varname]
             if set(dims) & set(weight.dims):
-                weights_implicit.append(weight.climo.dequantify())
+                weight = weight.climo.dequantify()
+                weights_implicit.append(weight)
+        return dims, weights_explicit, weights_implicit
 
+    @_while_quantified
+    @_keep_cell_attrs
+    def _integral_or_average(
+        self,
+        dims,
+        weight=None,
+        integral=True,
+        cumulative=False,
+        reverse=False,
+        skipna=None,
+        **kwargs
+    ):
+        """
+        Integrate or average along the input dimension.
+        """
         # Get weighted average or integral and replace lost cell measures
         # NOTE: Critical here to bypass weighting by the measure itself. For example
         # after a longitude integral want to weight longitude average cell heights by
         # longitude widths, but do not want to weight cell heights by cell heights.
+        data = self.data
+        data = data.climo.truncate(**kwargs)
+        dims, weights_explicit, weights_implicit = self._parse_weights(
+            dims, weight=weight, integral=integral
+        )
+        weights_explicit = [
+            weight.climo.truncate(ignore_extra=True, **kwargs)
+            for weight in weights_explicit
+        ]
+        weights_implicit = [
+            weight.climo.truncate(ignore_extra=True, **kwargs)
+            for weight in weights_implicit
+        ]
         data = data.climo._weighted_driver(
             dims,
             weights_explicit,
@@ -3838,8 +3868,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         for dim, window in indexers.items():
             if isinstance(window, ureg.Quantity):
                 coords = data.climo.coords[dim]
+                coords = coords.climo.quantify()  # hard requirement
                 window = np.round(window / (coords[1] - coords[0]))
-                window = int(window.climo.magnitude)
+                window = int(window.climo.to_base_units().climo.magnitude)
                 if window <= 0:
                     raise ValueError('Invalid window length.')
             data = spectral.runmean(data, window, dim=dim, **kwargs)
@@ -3873,7 +3904,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         )
         kwargs.pop('order', None)
         for dim, order in indexers.items():
-            coord = data.climo.coords[dim]
+            coord = coords[dim]
+            if coord.climo._has_units:
+                coord = data.climo.coords[dim]
             if centered:
                 kwargs.setdefault('keepedges', True)
                 data = diff.deriv_uneven(coord, data, order=order, **kwargs)
@@ -3907,7 +3940,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # wind budget under angular momentum conservation that requires cos_power == 2.
         y = self.coords['meridional_coordinate']
         cos = self.coords['cosine_latitude']
-        data = self.data
+        data = self.data  # possibly unquantified
         coords = data.coords
         kwargs['order'] = 1
         if centered:
@@ -3947,7 +3980,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
             kwargs['ilag'] = 1
-        _, data = var.autocorr(data.climo.coords[dim], data, dim=dim, **kwargs)
+        coord = data.climo.coords[dim]  # quantified if possible
+        _, data = var.autocorr(coord, data, dim=dim, **kwargs)
         data.climo.update_cell_methods({dim: 'correlation'})
         return data
 
@@ -3963,7 +3997,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         data = self.data
         if not kwargs.keys() & {'lag', 'ilag', 'maxlag', 'imaxlag'}:
             kwargs['ilag'] = 1
-        _, data = var.autocovar(data.climo.coords[dim], data, dim=dim, **kwargs)
+        coord = data.climo.coords[dim]  # quantified if possible
+        _, data = var.autocovar(coord, data, dim=dim, **kwargs)
         data.climo.update_cell_methods({dim: 'covariance'})
         return data
 
@@ -4058,7 +4093,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
 
         # Get precise local values using linear interpolation
         # NOTE: The find function applies pint units
-        coord = data.climo.coords[dim]  # return modifiable copy of coords
+        coord = data.climo.coords[dim]  # modifiable copy
         coord = coord.climo.dequantify()  # units not necessary
         locs, values = utils.find(coord, data, **kwargs)
         locs = locs.climo.dequantify()
@@ -4283,7 +4318,8 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         dim = self.cf._decode_name(dim, 'axes', 'coordinates')
         data = self.data
-        data, *_ = var.linefit(data.climo.coords[dim], data)
+        coord = data.climo.coords[dim]  # quantified if possible
+        data, *_ = var.linefit(coord, data)
         data.climo.update_cell_methods({dim: 'slope'})
         return data
 
@@ -4303,12 +4339,12 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         dim = self.cf._decode_name(dim, 'axes', 'coordinates')
         data = self.data
-        time = data.climo.coords[dim]
+        time = data.climo.coords[dim]  # quantified if possible
         if maxlag is None and imaxlag is None:
             maxlag = 50.0  # default value is 50 days
         if dim != 'lag':
             time, data = var.autocorr(time, data, maxlag=maxlag, imaxlag=imaxlag)
-        data, *_ = var.rednoisefit(time, data, maxlag=maxlag, imaxlag=imaxlag, **kwargs)  # noqa: E501
+        data, *_ = var.rednoisefit(time, data, maxlag=maxlag, imaxlag=imaxlag, **kwargs)
         data.climo.update_cell_methods({dim: 'timescale'})
         return data
 
@@ -4355,12 +4391,9 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             The `pint context <https://pint.readthedocs.io/en/0.10.1/contexts.html>`_.
             Default is the ClimoPy context ``'climo'`` (see `~.unit.ureg` for details).
         """
-        if not self._is_quantity:
-            raise ValueError('Data should be quantified.')
-        data = self.data.copy(deep=False)
-        if isinstance(units, str):
-            units = decode_units(units)
+        data = self.quantify()  # hard requirement
         args = (context,) if context else ()
+        units = decode_units(units)
         try:
             data.data = data.data.to(units, *args)  # NOTE: not ito()
         except Exception:
@@ -4377,7 +4410,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # NOTE: assign_coords has issues with multiple DataArray values. See:
         # https://github.com/pydata/xarray/issues/3483
-        data = self.data.copy(deep=False)
+        data = self.quantify()  # hard requirement
         data.data = data.data.to_base_units()
         if coords:
             data = data.assign_coords({
@@ -4393,7 +4426,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # NOTE: assign_coords has issues with multiple DataArray values. See:
         # https://github.com/pydata/xarray/issues/3483
-        data = self.data.copy(deep=False)
+        data = self.quantify()  # hard requirement
         data.data = data.data.to_compact_units()
         if coords:
             data = data.assign_coords({
@@ -4402,6 +4435,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             })
         return data
 
+    @_while_quantified
     def to_standard_units(self, coords=False):
         """
         Return a copy with the underyling data converted to the
@@ -4410,11 +4444,11 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         """
         # NOTE: assign_coords has issues with multiple DataArray values. See:
         # https://github.com/pydata/xarray/issues/3483
+        data = self.quantify()  # hard requirement
         units = self.cfvariable.standard_units
-        if units is None:  # unspecified "standard" units
-            units = self.units  # just convert to current units
+        units = self.units if units is None else decode_units(units)
         try:  # WARNING: should remove this and only apply context when requested
-            data = self.to_units(units, context='climo')
+            data.data = data.data.to(units, 'climo')
         except Exception:
             raise RuntimeError(
                 f'Failed to convert {self.data.name!r} from current units '
@@ -4601,7 +4635,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         """
         Is a dataset variable or derived coordinate.
         """
-        return self._parse_key(key, quantify=None) is not None
+        return self._parse_key(key) is not None
 
     def __dir__(self):
         """
@@ -4692,7 +4726,7 @@ class ClimoDatasetAccessor(ClimoAccessor):
         # Experiment.load()), or excluding suffixes when looking up in CFRegistry.
         if not isinstance(key, str):
             raise TypeError(f'Invalid key {key!r}. Must be string.')
-        if search_vars:
+        if search_vars:  # uses 'quantify' kwarg
             da = self.vars.get(key, search_registry=search_registry, **kwargs)
             if da is not None:  # noqa: E501
                 da.name = REGEX_IGNORE.sub(r'\1', da.name)
@@ -4702,15 +4736,15 @@ class ClimoDatasetAccessor(ClimoAccessor):
         # NOTE: Coordinate search rules out coordinate transformations
         # TODO: Make derivations look like transformations; define functions that
         # accept data arrays with particular names.
-        if search_coords:
+        if search_coords:  # uses 'quantify' kwarg
             coord = self.coords.get(key, search_registry=search_registry, **kwargs)
             if coord is not None:
                 return 'coord', coord
-        if search_derivations:
+        if search_derivations:  # ignores 'quantify' kwarg
             func = self._find_derivation(key)
             if func is not None:
                 return 'derivation', functools.partial(func, self)
-        if search_transformations:
+        if search_transformations:  # ignores 'quantify' kwarg
             tup = self._find_any_transformation(self.data.values(), key)
             if tup is not None:
                 return 'transformation', functools.partial(*tup)
@@ -4840,9 +4874,9 @@ short_suffix : str, optional
         data = self._get_item(key, **kw_getitem)
 
         # Reduce dimensionality using keyword args
-        if quantify is not None and quantify:  # TODO: fix bug! not applied yet!
+        if quantify or quantify is None and data.climo._has_units:  # for derivations
             data = data.climo.quantify()
-        if quantify is not None and not quantify:  # TODO: fix bug! not applied yet!
+        else:  # for derivations
             data = data.climo.dequantify()
         if flag_reduce := flag_reduce and flag_reduce.strip('_'):
             kw_reduce.update(data.climo._budget_reduce_kwargs(flag_reduce))
@@ -4950,12 +4984,21 @@ def register_derivation(dest, /, *, assign_name=True):
     def _decorator(func):
         @_keep_cell_attrs
         @functools.wraps(func)
-        def _wrapper(*args, **kwargs):
-            data = func(*args, **kwargs)
+        def _wrapper(self, **kwargs):
+            # WARNING: Accessors vars.get and coords.get no longer reliably return
+            # quantified arrays so explicitly quantify here. In future refactor
+            # branch will quantify individual arrays selected and passed to functions.
+            quantity = any(da.climo._is_quantity for da in self.data.values())
+            data = self.quantify()  # hard requirement
+            data = func(data.climo, **kwargs)
             if data is NotImplemented:
                 raise NotImplementedError(f'Derivation {func} is not implemnted.')
             if not isinstance(data, xr.DataArray):
                 raise TypeError(f'Derivation {func} did not return a DataArray.')
+            if quantity:  # in case
+                data = data.climo.quantify()
+            else:
+                data = data.climo.dequantify()
             if assign_name:
                 data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
             return data
@@ -5007,12 +5050,23 @@ def register_transformation(src, dest, /, *, assign_name=True):
     def _decorator(func):
         @_keep_cell_attrs
         @functools.wraps(func)
-        def _wrapper(*args, **kwargs):
-            data = func(*args, **kwargs)
+        def _wrapper(data, **kwargs):
+            # WARNING: Accessor coords.get no longer reliably returns quantified arrays
+            # so explicitly quantify here. In future refactor branch will quantify
+            # individual arrays selected and passed to functions.
+            if not isinstance(data, xr.DataArray):  # should be required
+                raise TypeError(f'Transformation {func} was not passed a DataArray.')
+            quantity = data.climo._is_quantity
+            data = data.climo.quantify()  # hard requirement
+            data = func(data, **kwargs)
             if data is NotImplemented:
                 raise NotImplementedError(f'Transformation {func} is not implemnted.')
             if not isinstance(data, xr.DataArray):
                 raise TypeError(f'Transformation {func} did not return a DataArray.')
+            if quantity:  # in case
+                data = data.climo.quantify()
+            else:
+                data = data.climo.dequantify()
             if assign_name:
                 data.name = dest if isinstance(dest, str) else kwargs.get('name', None)
             return data

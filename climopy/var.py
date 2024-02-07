@@ -207,12 +207,9 @@ def _covar_driver(
         else:
             print(f'Calculating {prefix}{suffix} to lag {maxlag} for axis size {naxis}.')  # noqa: E501
 
-    # Mask data
-    # TODO: Revisit this! Currently very slow.
-    z1 = ma.masked_invalid(z1)
-    z2 = ma.masked_invalid(z2)
-
     # Means and permute
+    z1 = ma.masked_invalid(z1)  # TODO: revisit (currently slow)
+    z2 = ma.masked_invalid(z2)
     z1 = np.moveaxis(z1, axis, -1)
     mean1 = z1.mean(axis=-1, keepdims=True)  # keep dims for broadcasting
     if auto:
@@ -269,7 +266,9 @@ def _covar_driver(
             )[..., 0]
 
     # Return lags and covariance
-    return lags, np.moveaxis(covar, -1, axis)
+    covar = ma.filled(covar, np.nan)  # TODO: revisit (see above)
+    covar = np.moveaxis(covar, -1, axis)
+    return lags, covar
 
 
 @quack._covar_metadata
@@ -657,7 +656,7 @@ def _dist_bounds(sigma, pctile, dof=None, symmetric=None):
 
 @quack._lls_metadata
 @quant.while_dequantified(('=x', '=y'), ('=y / x', '=y / x', '', '=y', '=y', '=y'))
-def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
+def linefit(x, y, /, axis=0, correct=True, pctile=None, symmetric=None):
     """
     Get linear regression along axis, ignoring NaNs. Uses `~numpy.polyfit`.
 
@@ -672,17 +671,18 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
     dim : str, optional
         *For `xarray.DataArray` input only*.
         The named regression dimension.
-    adjust : str or bool, optional
-        Whether to adjust the standard error for the reduction in effective degrees of
-        freedom due to serial correlation. Use ``True`` to use residual autocorrelation
-        or ``'x'`` or ``'y'`` to use autocorrelation in the original `x` or `y` series
-        themselves. See :cite:`2000:santer` and :cite:`2015:thompson` for details.
+    correct : str or bool, optional
+        Whether to correct the standard error for the reduction in effective degrees
+        of freedom due to serial correction. If ``'r'`` or ``True`` the residual time
+        series is used to estimate the correction factor. If ``'x'`` or ``'y'`` then
+        the `x` or `y` series are used to estimate the factor. See :cite:`2000:santer`
+        and :cite:`2015:thompson` for details.
     pctile : bool, float, or 2-tuple, option
         The percentile range used for the lower and upper bounds on the best-fit line.
         If ``None`` or ``True`` a default 95-percentile range is used. If float this
         represents the symmetric percentile range (e.g. ``pctile=90`` is equivalent to
-        ``pctile=(5, 95)``). If 2-tuple of float then these specific bounds are used. If
-        ``False`` then the one-sigma range is used instead of a percentie range.
+        ``pctile=(5, 95)``). If 2-tuple of float then these specific bounds are used.
+        If ``False`` then the one-sigma range is used instead of a percentie range.
     symmetric : bool, optional
         Whether to interpret percentile arrays as symmetric ranges or specific
         lower and upper bounds. Default is to only assume scalars are ranges.
@@ -694,7 +694,7 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
         dimension `axis` reduced to length 1.
     sigma : array-like
         The standard errors of the slope estimates, optionally adjusted for
-        serial correlation (see `adjust`). The shape is the same as `slope`.
+        serial correlation (see `correct`). The shape is the same as `slope`.
     rsquare : array-like
         The coefficient of determination $R^2$, i.e. the ratio of the explained
         variance to the total variance and the square of the correlation coefficient.
@@ -732,6 +732,10 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
            [0.10014288],
            [0.10011434]])
     """
+    # Initial stuff
+    # TODO: Add 'observed.regress_series' features, including manual user weights,
+    # automatic duration weights when regressing time, weighted standard error
+    # estimates, ignoring null values, and supporting unsorted regressees.
     # NOTE: The 'covariance matrix' returned by polyfit just described the
     # generalization of 2D matrix linear regression for arbitrary polynomials; still
     # refers to the traditional definition for the simple linear regression standard
@@ -740,14 +744,6 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
     # See: https://en.wikipedia.org/wiki/Ordinary_least_squares#Assuming_normality
     # See: https://en.wikipedia.org/wiki/Simple_linear_regression#Normality_assumption
     # See: https://en.wikipedia.org/wiki/Standard_error#Correction_for_correlation_in_the_sample  # noqa: E501
-    # WARNING: This follows Thompson et al. by applying autocorrelation factor
-    # to standard error instead of t statistics. However may be incorrect. Fewer
-    # samples does not mean standard deviation should be normalized differently,
-    # anomalies are still the same. Only means that the nonlinearly-derived
-    # percentile thresholds on the associated t-distribution should be taken
-    # for fewer degrees of freedom. For example why should standard error get
-    # multiplied by *1000* for a million samples instead of a billion? Talk to
-    # him about it, maybe works as linear approximation for small sample count.
     if x.ndim != 1 or x.size != y.shape[axis]:
         raise ValueError(
             f'Invalid x-shape {x.shape} for regression along '
@@ -768,17 +764,17 @@ def linefit(x, y, /, axis=0, adjust=True, pctile=None, symmetric=None):
 
         # Get optional adjustments for the reduction in effective
         # degrees of freedom associated with serial correlation.
-        if not adjust:  # no correction
+        if not correct:  # no correction
             factor = 1
         else:  # serial correlation
-            if not isinstance(adjust, str):
+            if correct == 'r' or correct is True:
                 series = resid
-            elif adjust == 'y':
+            elif correct == 'y':
                 series = y
-            elif adjust == 'x':
+            elif correct == 'x':
                 series = x
             else:
-                raise ValueError(f"Invalid {adjust=}. Must be 'x' or 'y'.")
+                raise ValueError(f"Invalid {correct=}. Must be 'x' 'y' or 'r'.")
             mean = series.mean(**kwargs)
             numer = np.sum((series[1:, :] - mean) * (series[:-1, :] - mean), **kwargs)
             denom = series.shape[0] * series.var(**kwargs)
