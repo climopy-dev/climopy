@@ -645,7 +645,7 @@ def _dist_bounds(sigma, pctile, dof=None, symmetric=None):
             pctile = np.array([50 - 0.5 * pctile, 50 + 0.5 * pctile])
         if pctile.shape[0] != 2 or pctile.ndim > 2:
             raise ValueError(f'Invalid percentiles {pctile}. Must be scalar or 2 x N.')
-        dof = dof if dof is None else np.array(np.round(dof)).astype(int)
+        dof = dof if dof is None else np.array(dof)
         dist = stats.norm() if dof is None else stats.t(df=dof)  # e.g. (M, N) d.o.f.
         dims = pctile.ndim + np.arange(sigma.ndim)
         pctile = np.expand_dims(pctile, tuple(dims))  # (2, 1, 1) or (2, K, 1, 1)
