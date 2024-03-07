@@ -1753,7 +1753,7 @@ class ClimoAccessor(object):
         cf = self.cf
         data = self.data.copy(deep=False)
         action = 'default'
-        measures = measures or {}
+        measures = measures or measures_kwargs
         requested = measures and not isinstance(measures, dict)
         if isinstance(measures, dict):
             names = ('width', 'depth', 'height', 'duration')
@@ -1761,12 +1761,10 @@ class ClimoAccessor(object):
             names, measures = (measures,), {}
         else:
             names, measures = tuple(measures), {}
-        measures.update(measures_kwargs)
         if isinstance(data, xr.Dataset):
             dataset = data
         elif dataset is None:
-            dataset = data.to_dataset(name=data.name or 'unknown')
-            action = 'ignore'
+            dataset, action = data.to_dataset(name=data.name or 'unknown'), 'ignore'
 
         # Add default cell measures
         # NOTE: This skips measures that already exist in coordinates and
