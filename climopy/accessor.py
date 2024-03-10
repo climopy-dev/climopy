@@ -3096,7 +3096,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 elif da.size == 1 and not da.isnull():
                     units = decode_units(da.attrs['units']) if 'units' in da.attrs else 1  # noqa: E501
                     if np.issubdtype(da.data.dtype, str):  # noqa: E501
-                        kw_methods['label'] = [da.item()]
+                        kw_methods[coordinate] = [da.item()]
                     else:
                         kw_methods[coordinate] = [units * da.item()]
 
