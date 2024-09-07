@@ -1348,7 +1348,7 @@ class ClimoAccessor(object):
         for name, sel in indexers.items():
             units = None
             coord = data.climo.coords.get(name, None)
-            if coord is not None and quack._is_numeric(coord.data):
+            if coord is not None and quack._is_numeric(coord.data) and coord.climo._has_units:  # noqa: 501
                 units = coord.climo.units
             if isinstance(sel, slice):
                 start = _dequantify_value(sel.start, units)
