@@ -1613,11 +1613,11 @@ class ClimoAccessor(object):
 
         return indexers_filtered, indexers
 
-    def _parse_truncate_args(self, **kwargs):
+    def _parse_truncate_args(self, strict=False, **kwargs):
         """
-        Parse arguments used to truncate data. Returns tuple of dictionaries used
-        to limit data range. Used by both `~ClimoAccessor.truncate` and
-        `~ClimoDataArrayAccessor.reduce`.
+        Parse arguments used to truncate data. Returns tuple of dictionaries used to
+        limit data range. If `strict` is ``True`` then `lim` suffix is required. Used
+        by both `~ClimoAccessor.truncate` and `~ClimoDataArrayAccessor.reduce`.
         """
         # Limit range of dimension reduction
         # NOTE: This permits *multiple* bounds that get reduced to 'track' dimension,
@@ -1634,11 +1634,11 @@ class ClimoAccessor(object):
             # things much easier if we can just detect special suffix without trying
             # to figure out if the rest of the string matches a dimension yet.
             m = re.match(r'\A(.*?)_(min|max|lim)\Z', key)
-            if not m:
+            if strict and not m:
                 continue
             if key not in kwargs:  # happens with e.g. latitude_min=x latitude_max=y
                 continue
-            dim, mode = m.groups()
+            dim, mode = m.groups() if m else (key, 'lim')
             try:
                 dim = self.cf._decode_name(dim, 'axes', 'coordinates')
             except KeyError:
@@ -3354,7 +3354,7 @@ class ClimoDataArrayAccessor(ClimoAccessor):
         # Parse truncate args
         # NOTE: _parse_truncate ensures all bounds passed are put into DataArrays with
         # a 'startstop' dim, an at least singleton 'track' dim, and matching shapes.
-        kw_trunc, kwargs = source.climo._parse_truncate_args(**kwargs)
+        kw_trunc, kwargs = source.climo._parse_truncate_args(strict=True, **kwargs)
         if kw_trunc:  # translate truncation selection array
             sample = tuple(kw_trunc.values())[0]
             dims_sample = sample.dims[1:]  # exclude 'startstop'
@@ -3501,13 +3501,14 @@ class ClimoDataArrayAccessor(ClimoAccessor):
             is_coord = dim in COORD_CELL_MEASURE
             is_measure = dim in CELL_MEASURE_COORDS
             if not is_coord and not is_measure:
+                msg = (
+                    f'Missing {cell_method} dimension {dim!r}. Is missing attributes '
+                    'or is not a CF-recognized time or space coordinate.'
+                )
                 try:
                     coordinate = self.cf._encode_name(dim, 'coordinates')
                 except KeyError:
-                    raise ValueError(
-                        f'Missing {cell_method} dimension {dim!r}. Is not a '
-                        'CF-recognized time or space coordinate.'
-                    )
+                    raise ValueError(msg)
                 names = (dim,)
                 measure = COORD_CELL_MEASURE[coordinate]
                 coordinates = (coordinate,)
@@ -3516,27 +3517,30 @@ class ClimoDataArrayAccessor(ClimoAccessor):
                 measure = dim if is_measure else COORD_CELL_MEASURE[dim]
                 coordinates = (dim,) if is_coord else CELL_MEASURE_COORDS[dim]
                 for coord in coordinates:
+                    msg = (
+                        f'Missing {dim} {cell_method} coordinate {coord!r}. If data '
+                        'is already reduced you may need to call add_scalar_coords().'
+                    )
                     try:
                         names += (self.cf._decode_name(coord, 'coordinates'),)
                     except KeyError:
-                        raise ValueError(
-                            f'Missing {dim} {cell_method} coordinate {coord!r}. If data '  # noqa: E501
-                            'is already reduced you may need to call add_scalar_coords.'
-                        )
+                        raise ValueError(msg)
+            msg = (
+                f'Missing cell measure {measure!r} for {dim} {cell_method}. Coordinate '
+                'attributes may be missing or you may need to call add_cell_measures().'
+            )
             try:  # is cell measure missing from dictionary?
                 key = self.cf._decode_name(measure, 'cell_measures', search_registry=False, return_if_missing=True)  # noqa: E501
             except KeyError:
-                raise ValueError(
-                    f'Missing cell measure {measure!r} for {dim} {cell_method}. You '
-                    'may need to call add_cell_measures first.'
-                )
+                raise ValueError(msg)
+            msg = (
+                f'Missing cell measure {measure!r} variable {key!r} for {cell_method} '
+                f'dimension {dim!r}. Coordinate may have been stripped by operation.'
+            )
             try:  # is cell measure missing from coords? (common for external source)
                 weight = self.cf._src[key]
             except KeyError:
-                raise ValueError(
-                    f'Missing cell measure {measure!r} variable {key!r} for '
-                    f'{cell_method} dimension {dim!r}.'
-                )
+                raise ValueError(msg)
             weight = weight.climo.quantify()
             dims.extend(names)
             measures.add(measure)

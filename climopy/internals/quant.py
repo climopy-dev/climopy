@@ -139,14 +139,16 @@ def _parse_args(units, *, quantify=False):
         for idx, arg in enumerate(args):
             if isinstance(arg, str):  # parse expressions e.g. '5cm'
                 arg = ureg.parse_expression(arg)
-            if isinstance(arg, pint.Quantity):
+            if idx not in units:  # TODO: add to refactor branch
+                pass
+            elif isinstance(arg, pint.Quantity):
                 arg = arg.to(units[idx])
             elif not strict:
                 arg = ureg.Quantity(arg, units[idx])
             else:
                 raise ValueError('Pint quantities are required in strict mode.')
             if not quantify:
-                arg = arg.magnitude
+                arg = getattr(arg, 'magnitude', arg)
             args_new.append(arg)
 
         return args_new, definitions
@@ -240,20 +242,21 @@ def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_de
             if not is_container_out:
                 result = (result,)
             for res, unit in zip(result, units_out_fmt):
-                container, is_ref = _units_container(unit)
-                name = getattr(res, 'name', None)  # data frame or array name
-                if is_ref:
-                    unit = _replace_units(container, definitions)
-                else:
-                    unit = pint.Unit(container)
-                if isinstance(res, pint.Quantity):
-                    res = res.to(unit)
-                else:
-                    res = ureg.Quantity(res, unit)
-                if not result_quantify:
-                    res = res.magnitude
-                if name is not None:
-                    res.name = name
+                if unit is not None:  # TODO: add to refactor branch
+                    container, is_ref = _units_container(unit)
+                    name = getattr(res, 'name', None)  # data frame or array name
+                    if is_ref:
+                        unit = _replace_units(container, definitions)
+                    else:
+                        unit = pint.Unit(container)
+                    if isinstance(res, pint.Quantity):
+                        res = res.to(unit)
+                    else:
+                        res = ureg.Quantity(res, unit)
+                    if not result_quantify:
+                        res = res.magnitude
+                    if name is not None:
+                        res.name = name
                 result_new.append(res)
 
             # Return sanitized values

@@ -51,6 +51,7 @@ REGEX_CONSTANTS = re.compile(r'\b([-+]?[0-9]+[a-zA-Z]+)')
 #:     _366_day_year = 365 * day = _366_day = all_leap_year = allleap_year
 #:     _365_day_year = 365 * day = _365_day = no_leap_year = noleap_year
 #:     _360_day_year = 360 * day = _360_day
+#:     _decade = 10 * year = decade = dec
 #:     bar = 10^5 Pa = b = baro
 #:     level = 1 = layer = sigma_level = sigma_layer = model_level = model_layer
 #:     inch_mercury = 3386.389 Pa = inHg = inchHg = inchesHg = in_Hg = inch_Hg = ...
@@ -127,6 +128,7 @@ ureg.define('year = 365.25 day = yr = annum = a')
 # and adds other CF compliant calendars. See: https://en.wikipedia.org/wiki/Year
 ureg.define('julian_year = 365.25 day = julian_year = julian')
 ureg.define('gregorian_year = 365.2425 day = gregorian_year = gregorian = proleptic_gregorian = proleptic_gregorian_year')  # noqa: E501
+ureg.define('_decade = 10 * year = decade = dec')  # overwrite unitless decade
 ureg.define('_366_day_year = 365 day = _366_day = all_leap_year = allleap_year')
 ureg.define('_365_day_year = 365 day = _365_day = no_leap_year = noleap_year')
 ureg.define('_360_day_year = 360 day = _360_day')
