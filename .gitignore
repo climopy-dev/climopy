@@ -1,6 +1,7 @@
 # VIM extras
 .session.vim
 .vimsession
+.*.vimsession
 .*.sw[a-z]
 
 # Sample data
