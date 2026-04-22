@@ -156,7 +156,7 @@ def _parse_args(units, *, quantify=False):
     return _converter
 
 
-def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_defaults):  # noqa: E501
+def _while_converted(units_in=None, units_out=None, quantify=False, strict=False, **fmt_defaults):  # noqa: E501
     """
     Driver function for `while_quantified` and `while_dequantified`.
     See above for the full documentation.
@@ -164,6 +164,8 @@ def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_de
     # Handle singleton input or multiple input
     # NOTE: Pint cannot handle singleton-tuple of return value unit specifications.
     # So when passing to wrapper simply expand singleton tuples.
+    units_in = '=x' if units_in is None else units_in
+    units_out = units_in if units_out is None else units_out
     is_container_in = isinstance(units_in, (tuple, list))
     is_container_out = isinstance(units_out, (tuple, list))
     if not is_container_in:
@@ -177,7 +179,7 @@ def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_de
         for unit in units:
             if isinstance(unit, str):
                 fmt_args.extend(REGEX_FORMAT.findall(unit))
-    if set(fmt_args) != set(fmt_defaults):
+    if len(set(fmt_args) & set(fmt_defaults)) < len(set(fmt_args)):
         raise ValueError(
             f'Invalid or insufficient keyword args {tuple(fmt_defaults)} '
             f'when string unit specification includes terms {tuple(fmt_args)}.'
@@ -271,7 +273,7 @@ def _while_converted(units_in, units_out, quantify=False, strict=False, **fmt_de
 
 
 @docstring.inject_snippets(descrip='dequantified')
-def while_quantified(units_in, units_out, strict=False, **fmt_defaults):
+def while_quantified(units_in=None, units_out=None, strict=False, **fmt_defaults):
     """
     %(quant.quantified)s
     """
@@ -281,7 +283,7 @@ def while_quantified(units_in, units_out, strict=False, **fmt_defaults):
 
 
 @docstring.inject_snippets(descrip='dequantified')
-def while_dequantified(units_in, units_out, strict=False, **fmt_defaults):
+def while_dequantified(units_in=None, units_out=None, strict=False, **fmt_defaults):
     """
     %(quant.quantified)s
     """

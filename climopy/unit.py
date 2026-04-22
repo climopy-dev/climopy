@@ -5,7 +5,8 @@ formatting CF-compliant unit strings.
 """
 import re
 
-from pint import Unit, UnitRegistry, formatter
+from pint import Unit, UnitRegistry
+from pint.formatting import formatter
 
 __all__ = [
     'ureg',  # pint convention
