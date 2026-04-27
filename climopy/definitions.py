@@ -73,7 +73,8 @@ def cell_width(self):
     # NOTE: Add measures as coords to be consistent with result of ds['cell_width']
     # for datasets with measures already present in coordinates, while preventing
     # recalculation of exact same measures.
-    data = const.a * self.coords['cosine_latitude'] * self.coords['longitude_delta']
+    data = const.a * self.coords.get('cosine_latitude', quantify=True)
+    data = data * self.coords.get('longitude_delta', quantify=True)
     data = data.astype(np.float32)
     data = data.climo.to_units('km')  # removes 'deg'
     data.name = 'cell_width'  # avoids calculation of other measures
@@ -85,7 +86,7 @@ def cell_width(self):
 def cell_depth(self):
     # NOTE: Depth is interpreted as if looking northward at 3D cell rectangle.
     # Think of depth as 'into the distance' instead of 'into the ground'.
-    data = const.a * self.coords['latitude_delta']
+    data = const.a * self.coords.get('latitude_delta', quantify=True)
     data = data.astype(np.float32)
     data = data.climo.to_units('km')  # removes 'deg'
     data.name = 'cell_depth'
@@ -100,7 +101,7 @@ def cell_duration(self):
     # TODO: Auto-detect monthly data and apply days-per-month weightings independent
     # of actual days in the time coordinate (e.g. common to use central month day of
     # 14, 15, or 16 which would mess up the correct days-per-month weighting).
-    data = self.coords['time_delta']
+    data = self.coords.get('time_delta', quantify=True)
     if data.data.dtype.kind == 'm':  # datetime64, if time coordinate was decoded
         data = ureg.days * data.dt.days
     data = data.astype(np.float32)
@@ -117,7 +118,7 @@ def cell_height(self, surface=False, tropopause=False):
     # models but better instead to always use surface pressure... otherwise
     # this will give weird weightings for datasets with realistic topography.
     type_ = self.cf.vertical_type
-    data = self.coords['vertical_bnds']
+    data = self.coords.get('vertical_bnds', quantify=True)
     data = data.astype(np.float32)
     dbot = dtop = None
     name = self.cf._decode_name('vertical')
